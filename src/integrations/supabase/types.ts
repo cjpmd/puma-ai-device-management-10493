@@ -130,6 +130,36 @@ export type Database = {
           },
         ]
       }
+      ml_models: {
+        Row: {
+          accuracy: number | null
+          created_at: string | null
+          id: string
+          model_data: Json | null
+          name: string
+          updated_at: string | null
+          version: string
+        }
+        Insert: {
+          accuracy?: number | null
+          created_at?: string | null
+          id?: string
+          model_data?: Json | null
+          name: string
+          updated_at?: string | null
+          version: string
+        }
+        Update: {
+          accuracy?: number | null
+          created_at?: string | null
+          id?: string
+          model_data?: Json | null
+          name?: string
+          updated_at?: string | null
+          version?: string
+        }
+        Relationships: []
+      }
       ml_training_sessions: {
         Row: {
           activity_type: string
@@ -262,6 +292,94 @@ export type Database = {
         }
         Relationships: []
       }
+      pass_analysis: {
+        Row: {
+          created_at: string | null
+          end_x: number | null
+          end_y: number | null
+          id: string
+          is_successful: boolean | null
+          player_id: string | null
+          start_x: number | null
+          start_y: number | null
+          timestamp: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          end_x?: number | null
+          end_y?: number | null
+          id?: string
+          is_successful?: boolean | null
+          player_id?: string | null
+          start_x?: number | null
+          start_y?: number | null
+          timestamp?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          end_x?: number | null
+          end_y?: number | null
+          id?: string
+          is_successful?: boolean | null
+          player_id?: string | null
+          start_x?: number | null
+          start_y?: number | null
+          timestamp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pass_analysis_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_physical_data: {
+        Row: {
+          body_fat_percentage: number | null
+          created_at: string | null
+          height: number | null
+          id: string
+          max_heart_rate: number | null
+          player_id: string | null
+          resting_heart_rate: number | null
+          updated_at: string | null
+          weight: number | null
+        }
+        Insert: {
+          body_fat_percentage?: number | null
+          created_at?: string | null
+          height?: number | null
+          id?: string
+          max_heart_rate?: number | null
+          player_id?: string | null
+          resting_heart_rate?: number | null
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Update: {
+          body_fat_percentage?: number | null
+          created_at?: string | null
+          height?: number | null
+          id?: string
+          max_heart_rate?: number | null
+          player_id?: string | null
+          resting_heart_rate?: number | null
+          updated_at?: string | null
+          weight?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_physical_data_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_tracking: {
         Row: {
           confidence: number | null
@@ -393,6 +511,71 @@ export type Database = {
             columns: ["training_session_id"]
             isOneToOne: false
             referencedRelation: "ml_training_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          created_at: string | null
+          end_time: string | null
+          id: string
+          notes: string | null
+          session_type: string | null
+          start_time: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          end_time?: string | null
+          id?: string
+          notes?: string | null
+          session_type?: string | null
+          start_time?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          end_time?: string | null
+          id?: string
+          notes?: string | null
+          session_type?: string | null
+          start_time?: string | null
+        }
+        Relationships: []
+      }
+      shot_analysis: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_goal: boolean | null
+          location_x: number | null
+          location_y: number | null
+          player_id: string | null
+          timestamp: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_goal?: boolean | null
+          location_x?: number | null
+          location_y?: number | null
+          player_id?: string | null
+          timestamp?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_goal?: boolean | null
+          location_x?: number | null
+          location_y?: number | null
+          player_id?: string | null
+          timestamp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shot_analysis_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
