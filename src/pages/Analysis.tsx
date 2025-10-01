@@ -10,6 +10,7 @@ import VideoAnalysisTab from "@/components/VideoAnalysis/VideoAnalysisTab";
 import IndividualPlayerTab from "@/components/Analysis/IndividualPlayerTab";
 import GroupSelectionTab from "@/components/Analysis/GroupSelectionTab";
 import BiometricsTab from "@/components/Analysis/BiometricsTab";
+import SyncStatusIndicator from "@/components/Analysis/SyncStatusIndicator";
 import { Activity, Footprints, Target, Repeat, Users, User, ChartBar, Video, Settings, Bluetooth, Share2, HeartPulse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -462,6 +463,8 @@ const Analysis = () => {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+              
+              <SyncStatusIndicator entity="all" showDetails={false} />
               
               <Dialog open={isBluetoothDialogOpen} onOpenChange={setIsBluetoothDialogOpen}>
                 <DialogTrigger asChild>
