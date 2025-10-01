@@ -14,7 +14,389 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      biometric_readings: {
+        Row: {
+          created_at: string | null
+          device_id: number | null
+          distance: number | null
+          heart_rate: number | null
+          hydration: number | null
+          id: string
+          lactic_acid: number | null
+          muscle_fatigue: number | null
+          player_id: string | null
+          speed: number | null
+          steps: number | null
+          temperature: number | null
+          timestamp: string | null
+          vo2_max: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          device_id?: number | null
+          distance?: number | null
+          heart_rate?: number | null
+          hydration?: number | null
+          id?: string
+          lactic_acid?: number | null
+          muscle_fatigue?: number | null
+          player_id?: string | null
+          speed?: number | null
+          steps?: number | null
+          temperature?: number | null
+          timestamp?: string | null
+          vo2_max?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          device_id?: number | null
+          distance?: number | null
+          heart_rate?: number | null
+          hydration?: number | null
+          id?: string
+          lactic_acid?: number | null
+          muscle_fatigue?: number | null
+          player_id?: string | null
+          speed?: number | null
+          steps?: number | null
+          temperature?: number | null
+          timestamp?: string | null
+          vo2_max?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "biometric_readings_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "biometric_readings_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      devices: {
+        Row: {
+          assigned_player_id: string | null
+          bluetooth_id: string | null
+          connection_type: string | null
+          created_at: string | null
+          device_id: string | null
+          device_name: string
+          device_type: string | null
+          id: number
+          last_connected: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          assigned_player_id?: string | null
+          bluetooth_id?: string | null
+          connection_type?: string | null
+          created_at?: string | null
+          device_id?: string | null
+          device_name: string
+          device_type?: string | null
+          id?: number
+          last_connected?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          assigned_player_id?: string | null
+          bluetooth_id?: string | null
+          connection_type?: string | null
+          created_at?: string | null
+          device_id?: string | null
+          device_name?: string
+          device_type?: string | null
+          id?: number
+          last_connected?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "devices_assigned_player_id_fkey"
+            columns: ["assigned_player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_training_sessions: {
+        Row: {
+          activity_type: string
+          created_at: string | null
+          device_id: number | null
+          duration: number | null
+          end_time: string | null
+          id: string
+          parameters: Json | null
+          player_id: string | null
+          start_time: string | null
+          updated_at: string | null
+          video_id: string | null
+          video_timestamp: number | null
+        }
+        Insert: {
+          activity_type: string
+          created_at?: string | null
+          device_id?: number | null
+          duration?: number | null
+          end_time?: string | null
+          id?: string
+          parameters?: Json | null
+          player_id?: string | null
+          start_time?: string | null
+          updated_at?: string | null
+          video_id?: string | null
+          video_timestamp?: number | null
+        }
+        Update: {
+          activity_type?: string
+          created_at?: string | null
+          device_id?: number | null
+          duration?: number | null
+          end_time?: string | null
+          id?: string
+          parameters?: Json | null
+          player_id?: string | null
+          start_time?: string | null
+          updated_at?: string | null
+          video_id?: string | null
+          video_timestamp?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_training_sessions_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_training_sessions_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      model_versions: {
+        Row: {
+          accuracy: number | null
+          created_at: string | null
+          id: string
+          model_file_path: string | null
+          parameters: Json | null
+          training_date: string | null
+          updated_at: string | null
+          version: string
+        }
+        Insert: {
+          accuracy?: number | null
+          created_at?: string | null
+          id?: string
+          model_file_path?: string | null
+          parameters?: Json | null
+          training_date?: string | null
+          updated_at?: string | null
+          version: string
+        }
+        Update: {
+          accuracy?: number | null
+          created_at?: string | null
+          id?: string
+          model_file_path?: string | null
+          parameters?: Json | null
+          training_date?: string | null
+          updated_at?: string | null
+          version?: string
+        }
+        Relationships: []
+      }
+      object_detections: {
+        Row: {
+          confidence: number | null
+          created_at: string | null
+          frame_time: number | null
+          height: number | null
+          id: string
+          object_class: string | null
+          video_id: string | null
+          width: number | null
+          x_coord: number | null
+          y_coord: number | null
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string | null
+          frame_time?: number | null
+          height?: number | null
+          id?: string
+          object_class?: string | null
+          video_id?: string | null
+          width?: number | null
+          x_coord?: number | null
+          y_coord?: number | null
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string | null
+          frame_time?: number | null
+          height?: number | null
+          id?: string
+          object_class?: string | null
+          video_id?: string | null
+          width?: number | null
+          x_coord?: number | null
+          y_coord?: number | null
+        }
+        Relationships: []
+      }
+      player_tracking: {
+        Row: {
+          confidence: number | null
+          created_at: string | null
+          frame_number: number | null
+          id: string
+          player_id: string | null
+          timestamp: string | null
+          video_id: string | null
+          x_coord: number | null
+          y_coord: number | null
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string | null
+          frame_number?: number | null
+          id?: string
+          player_id?: string | null
+          timestamp?: string | null
+          video_id?: string | null
+          x_coord?: number | null
+          y_coord?: number | null
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string | null
+          frame_number?: number | null
+          id?: string
+          player_id?: string | null
+          timestamp?: string | null
+          video_id?: string | null
+          x_coord?: number | null
+          y_coord?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_tracking_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      players: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          player_type: string | null
+          position: string | null
+          squad_number: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          player_type?: string | null
+          position?: string | null
+          squad_number?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          player_type?: string | null
+          position?: string | null
+          squad_number?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      sensor_recordings: {
+        Row: {
+          created_at: string | null
+          device_id: number | null
+          id: string
+          player_id: string | null
+          sensor_type: string | null
+          timestamp: string | null
+          training_session_id: string | null
+          x: number | null
+          y: number | null
+          z: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          device_id?: number | null
+          id?: string
+          player_id?: string | null
+          sensor_type?: string | null
+          timestamp?: string | null
+          training_session_id?: string | null
+          x?: number | null
+          y?: number | null
+          z?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          device_id?: number | null
+          id?: string
+          player_id?: string | null
+          sensor_type?: string | null
+          timestamp?: string | null
+          training_session_id?: string | null
+          x?: number | null
+          y?: number | null
+          z?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sensor_recordings_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sensor_recordings_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sensor_recordings_training_session_id_fkey"
+            columns: ["training_session_id"]
+            isOneToOne: false
+            referencedRelation: "ml_training_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
