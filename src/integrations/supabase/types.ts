@@ -157,6 +157,73 @@ export type Database = {
           },
         ]
       }
+      gps_tracking: {
+        Row: {
+          accuracy: number | null
+          altitude: number | null
+          created_at: string
+          device_id: number | null
+          heading: number | null
+          id: string
+          latitude: number
+          longitude: number
+          player_id: string | null
+          session_id: string | null
+          speed: number | null
+          timestamp: string
+        }
+        Insert: {
+          accuracy?: number | null
+          altitude?: number | null
+          created_at?: string
+          device_id?: number | null
+          heading?: number | null
+          id?: string
+          latitude: number
+          longitude: number
+          player_id?: string | null
+          session_id?: string | null
+          speed?: number | null
+          timestamp: string
+        }
+        Update: {
+          accuracy?: number | null
+          altitude?: number | null
+          created_at?: string
+          device_id?: number | null
+          heading?: number | null
+          id?: string
+          latitude?: number
+          longitude?: number
+          player_id?: string | null
+          session_id?: string | null
+          speed?: number | null
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gps_tracking_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gps_tracking_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gps_tracking_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_models: {
         Row: {
           accuracy: number | null
@@ -280,6 +347,66 @@ export type Database = {
         }
         Relationships: []
       }
+      movement_analytics: {
+        Row: {
+          avg_speed: number | null
+          created_at: string
+          id: string
+          player_id: string | null
+          session_id: string | null
+          sprint_count: number | null
+          time_in_attacking_third: number | null
+          time_in_defensive_third: number | null
+          time_in_middle_third: number | null
+          timestamp: string
+          top_speed: number | null
+          total_distance: number | null
+        }
+        Insert: {
+          avg_speed?: number | null
+          created_at?: string
+          id?: string
+          player_id?: string | null
+          session_id?: string | null
+          sprint_count?: number | null
+          time_in_attacking_third?: number | null
+          time_in_defensive_third?: number | null
+          time_in_middle_third?: number | null
+          timestamp: string
+          top_speed?: number | null
+          total_distance?: number | null
+        }
+        Update: {
+          avg_speed?: number | null
+          created_at?: string
+          id?: string
+          player_id?: string | null
+          session_id?: string | null
+          sprint_count?: number | null
+          time_in_attacking_third?: number | null
+          time_in_defensive_third?: number | null
+          time_in_middle_third?: number | null
+          timestamp?: string
+          top_speed?: number | null
+          total_distance?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "movement_analytics_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "movement_analytics_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       object_detections: {
         Row: {
           confidence: number | null
@@ -362,6 +489,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      pitch_calibration: {
+        Row: {
+          corner_ne_lat: number
+          corner_ne_lon: number
+          corner_nw_lat: number
+          corner_nw_lon: number
+          corner_se_lat: number
+          corner_se_lon: number
+          corner_sw_lat: number
+          corner_sw_lon: number
+          created_at: string
+          id: string
+          is_active: boolean | null
+          name: string
+          pitch_length: number
+          pitch_width: number
+          updated_at: string
+        }
+        Insert: {
+          corner_ne_lat: number
+          corner_ne_lon: number
+          corner_nw_lat: number
+          corner_nw_lon: number
+          corner_se_lat: number
+          corner_se_lon: number
+          corner_sw_lat: number
+          corner_sw_lon: number
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          name: string
+          pitch_length: number
+          pitch_width: number
+          updated_at?: string
+        }
+        Update: {
+          corner_ne_lat?: number
+          corner_ne_lon?: number
+          corner_nw_lat?: number
+          corner_nw_lon?: number
+          corner_se_lat?: number
+          corner_se_lon?: number
+          corner_sw_lat?: number
+          corner_sw_lon?: number
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          pitch_length?: number
+          pitch_width?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       player_physical_data: {
         Row: {

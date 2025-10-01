@@ -12,6 +12,7 @@ export interface Device {
   connection_type?: string | null;
   last_connected?: string;
   device_type?: string;
+  assigned_player_id?: string;
 }
 
 export interface BiometricReading {
@@ -25,6 +26,16 @@ export interface BiometricReading {
   distance?: number;
   speed?: number;
   timestamp: number;
+}
+
+export interface GpsReading extends BiometricReading {
+  latitude?: number;
+  longitude?: number;
+  altitude?: number;
+  heading?: number;
+  accuracy?: number;
+  playerId?: string;
+  sessionId?: string;
 }
 
 export const useDeviceManagement = () => {
@@ -141,17 +152,37 @@ export const useDeviceManagement = () => {
   // Helper function to determine device type based on available services
   const getDeviceType = async (device: BluetoothDevice): Promise<string> => {
     try {
+      // Check device name first for quick identification
+      const name = device.name?.toLowerCase() || '';
+      if (name.includes('gps') || name.includes('location') || name.includes('tracker')) {
+        return 'GPS';
+      }
+      if (name.includes('heart') || name.includes('hrm')) {
+        return 'heart_rate_monitor';
+      }
+      if (name.includes('temp')) {
+        return 'thermometer';
+      }
+
       const server = await device.gatt?.connect();
       if (!server) return 'unknown';
       
       // Try to get services to identify the device type
       try {
+        await server.getPrimaryService('0x1819'); // Location and Navigation Service
+        server.disconnect();
+        return 'GPS';
+      } catch (e) {/* Not a GPS device */}
+      
+      try {
         await server.getPrimaryService('heart_rate');
+        server.disconnect();
         return 'heart_rate_monitor';
       } catch (e) {/* Not a heart rate monitor */}
       
       try {
         await server.getPrimaryService('health_thermometer');
+        server.disconnect();
         return 'thermometer';
       } catch (e) {/* Not a thermometer */}
       
@@ -286,7 +317,9 @@ export const useDeviceManagement = () => {
         if (!server) throw new Error("Could not connect to GATT server");
         
         // Now set up monitoring based on device type
-        if (device.device_type === 'heart_rate_monitor') {
+        if (device.device_type === 'GPS') {
+          await setupGpsMonitoring(server, device.id);
+        } else if (device.device_type === 'heart_rate_monitor') {
           await setupHeartRateMonitoring(server, device.bluetooth_id);
         } else if (device.device_type === 'thermometer') {
           await setupTemperatureMonitoring(server, device.bluetooth_id);
@@ -325,6 +358,78 @@ export const useDeviceManagement = () => {
     }
   };
   
+  // Set up GPS monitoring for a connected device
+  const setupGpsMonitoring = async (server: BluetoothRemoteGATTServer, deviceId: number) => {
+    try {
+      // Try to get Location and Navigation Service
+      const service = await server.getPrimaryService('0x1819').catch(() => null);
+      if (!service) {
+        console.log('GPS service not found, device may use custom protocol');
+        return;
+      }
+
+      // Location and Speed characteristic
+      const characteristic = await service.getCharacteristic('0x2A67').catch(() => null);
+      if (!characteristic) {
+        console.log('GPS characteristic not found');
+        return;
+      }
+
+      characteristic.addEventListener('characteristicvaluechanged', async (event) => {
+        const target = (event.target as unknown) as BluetoothRemoteGATTCharacteristic;
+        const value = target.value;
+        
+        if (value) {
+          // Parse GPS data (simplified - adjust based on actual device protocol)
+          const latitude = value.byteLength >= 6 ? value.getInt32(2, true) / 10000000 : 0;
+          const longitude = value.byteLength >= 10 ? value.getInt32(6, true) / 10000000 : 0;
+          const speed = value.byteLength >= 12 ? value.getUint16(10, true) / 100 : undefined;
+          
+          const device = devices.find(d => d.id === deviceId);
+          
+          // Store GPS data if player is assigned
+          if (device?.assigned_player_id) {
+            const { data: sessionData } = await supabase
+              .from('sessions')
+              .select('id')
+              .order('start_time', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (sessionData) {
+              await supabase.from('gps_tracking').insert({
+                player_id: device.assigned_player_id,
+                device_id: deviceId,
+                session_id: sessionData.id,
+                timestamp: new Date().toISOString(),
+                latitude,
+                longitude,
+                speed,
+                accuracy: 5.0,
+              });
+            }
+          }
+
+          // Also update local biometric data
+          setBiometricData(prev => ({
+            ...prev,
+            [deviceId]: {
+              ...(prev[deviceId] || {}),
+              deviceId: deviceId.toString(),
+              speed,
+              timestamp: Date.now()
+            }
+          }));
+        }
+      });
+
+      await characteristic.startNotifications();
+      console.log('GPS monitoring started for device', deviceId);
+    } catch (error) {
+      console.error('Error setting up GPS monitoring:', error);
+    }
+  };
+
   // Set up heart rate monitoring for a connected device
   const setupHeartRateMonitoring = async (server: BluetoothRemoteGATTServer, deviceId: string) => {
     try {
