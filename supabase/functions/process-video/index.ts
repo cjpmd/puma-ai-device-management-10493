@@ -15,6 +15,8 @@ serve(async (req) => {
   try {
     const { videoId, frameNumber, frameData } = await req.json()
     
+    console.log('Processing video frame:', { videoId, frameNumber })
+    
     // Initialize Supabase client
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -52,7 +54,8 @@ serve(async (req) => {
     })
   } catch (error) {
     console.error('Error processing request:', error)
-    return new Response(JSON.stringify({ error: error.message }), {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    return new Response(JSON.stringify({ error: errorMessage }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
     })
