@@ -29,9 +29,11 @@ interface Player {
 interface PlayerSelectorProps {
   onPlayerSelect: (player: Player) => void;
   selectedPlayerId?: string;
+  teamId?: string;
+  clubId?: string;
 }
 
-const PlayerSelector = ({ onPlayerSelect, selectedPlayerId }: PlayerSelectorProps) => {
+const PlayerSelector = ({ onPlayerSelect, selectedPlayerId, teamId, clubId }: PlayerSelectorProps) => {
   const [open, setOpen] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,11 +42,24 @@ const PlayerSelector = ({ onPlayerSelect, selectedPlayerId }: PlayerSelectorProp
     const fetchPlayers = async () => {
       try {
         setLoading(true);
-        // Fetch players from the database with team and club info
-        const { data, error } = await supabase
+        
+        // Build query with team and club joins
+        let query = supabase
           .from('players')
           .select('id, name, player_type, position, team:teams(name, club:clubs(name))')
           .order('name');
+        
+        // Filter by team if specified
+        if (teamId) {
+          query = query.eq('team_id', teamId);
+        }
+        
+        // Filter by club if specified (and no team filter)
+        if (clubId && !teamId) {
+          query = query.eq('club_id', clubId);
+        }
+          
+        const { data, error } = await query;
           
         if (error) throw error;
         
@@ -76,7 +91,7 @@ const PlayerSelector = ({ onPlayerSelect, selectedPlayerId }: PlayerSelectorProp
     };
 
     fetchPlayers();
-  }, []);
+  }, [teamId, clubId]);
 
   const selectedPlayer = players.find(player => player.id === selectedPlayerId);
 
