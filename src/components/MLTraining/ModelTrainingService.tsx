@@ -56,9 +56,10 @@ export const useModelTrainingService = () => {
         const { error } = await supabase
           .from('ml_models')
           .insert({
+            name: 'Activity Recognition Model',
             version: '1.0',
-            accuracy: accuracy,
-            parameters: JSON.stringify(model.getWeights())
+            accuracy,
+            model_data: { note: 'demo parameters omitted' }
           });
 
         if (error) {

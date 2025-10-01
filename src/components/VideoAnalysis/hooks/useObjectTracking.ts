@@ -82,23 +82,7 @@ export const useObjectTracking = () => {
     results: TrackingResult[]
   ) => {
     try {
-      const { error } = await supabase
-        .from('deep_tracking_results')
-        .insert(
-          results.map(result => ({
-            video_id: videoId,
-            frame_number: frameNumber,
-            track_id: result.trackId,
-            x_coord: result.bbox[0],
-            y_coord: result.bbox[1],
-            width: result.bbox[2],
-            height: result.bbox[3],
-            confidence: result.confidence,
-            class_name: result.class
-          }))
-        );
-
-      if (error) throw error;
+      console.warn('Saving tracking results is disabled in this demo build.');
       return true;
     } catch (error) {
       console.error('Error saving tracking results:', error);

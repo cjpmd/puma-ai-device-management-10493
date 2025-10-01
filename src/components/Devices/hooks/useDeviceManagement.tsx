@@ -8,8 +8,8 @@ export interface Device {
   device_name: string;
   device_id?: string;
   bluetooth_id?: string;
-  status?: 'connected' | 'disconnected' | 'inactive';
-  connection_type?: 'bluetooth' | 'usb';
+  status?: string | null;
+  connection_type?: string | null;
   last_connected?: string;
   device_type?: string;
 }

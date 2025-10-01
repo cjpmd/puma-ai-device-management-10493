@@ -41,7 +41,7 @@ const IndividualPlayerTab = ({ sessionId, isLiveMode = true }: IndividualPlayerT
   const fetchPlayerSessions = async (playerId: string) => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('sessions')
         .select('id, start_time')
         .eq('player_id', playerId)

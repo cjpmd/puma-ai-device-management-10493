@@ -26,18 +26,19 @@ const PassingHeatmap = ({ videoId }: PassingHeatmapProps) => {
     const fetchPasses = async () => {
       const { data, error } = await supabase
         .from('pass_analysis')
-        .select('*')
-        .eq('video_id', videoId);
+        .select('start_x, start_y, end_x, end_y, is_successful')
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       if (error) {
         console.error('Error fetching passes:', error);
         return;
       }
 
-      setPasses(data);
-      setTotalPasses(data.length);
-      const successfulPasses = data.filter(pass => pass.is_successful).length;
-      setSuccessRate(data.length > 0 ? (successfulPasses / data.length) * 100 : 0);
+      setPasses((data || []) as Pass[]);
+      setTotalPasses(data?.length || 0);
+      const successfulPasses = (data || []).filter(pass => pass.is_successful).length;
+      setSuccessRate((data && data.length > 0) ? (successfulPasses / data.length) * 100 : 0);
     };
 
     fetchPasses();

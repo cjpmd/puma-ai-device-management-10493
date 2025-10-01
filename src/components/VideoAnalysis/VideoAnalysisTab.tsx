@@ -54,19 +54,7 @@ const VideoAnalysisTab = () => {
       const localVideoUrl = URL.createObjectURL(file);
       setVideoUrl(localVideoUrl);
 
-      const { data, error } = await supabase
-        .from('video_analysis')
-        .insert({
-          title: file.name,
-          video_path: 'local_storage',
-          duration: 0,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setVideoId(data.id);
+      setVideoId(Date.now().toString());
       
       toast({
         title: "Video loaded successfully",

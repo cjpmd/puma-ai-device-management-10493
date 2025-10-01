@@ -37,10 +37,10 @@ export const saveModelVersion = async (
     const { data, error } = await supabase
       .from('ml_models')
       .insert({
+        name: `Model ${version}`,
         version,
         accuracy,
-        parameters: JSON.stringify(parameters),
-        training_date: new Date().toISOString()
+        model_data: JSON.stringify(parameters)
       })
       .select()
       .single();
@@ -73,10 +73,9 @@ export const loadModelById = async (modelId: string): Promise<tf.Sequential> => 
       throw new Error('Model not found');
     }
     
-    // Convert parameters to string if it's not already a string
-    const parametersStr = typeof data.parameters === 'string' 
-      ? data.parameters 
-      : JSON.stringify(data.parameters);
+    const parametersStr = typeof (data as any).model_data === 'string' 
+      ? (data as any).model_data 
+      : JSON.stringify((data as any).model_data);
     
     return loadModelFromParameters(parametersStr);
   } catch (error) {
@@ -154,15 +153,15 @@ export const getAllModelVersions = async (): Promise<ModelVersion[]> => {
       return [];
     }
     
-    return data.map(item => ({
+    return data.map((item: any) => ({
       id: item.id,
       version: item.version,
       accuracy: item.accuracy,
-      parameters: typeof item.parameters === 'string' ? item.parameters : JSON.stringify(item.parameters),
+      parameters: typeof item.model_data === 'string' ? item.model_data : JSON.stringify(item.model_data),
       created_at: item.created_at,
       updated_at: item.updated_at,
-      training_date: item.training_date || item.created_at,
-      model_file_path: item.model_file_path
+      training_date: item.created_at,
+      model_file_path: undefined,
     }));
   } catch (error) {
     console.error('Error fetching model versions:', error);

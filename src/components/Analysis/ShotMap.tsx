@@ -7,7 +7,6 @@ interface Shot {
   location_x: number;
   location_y: number;
   is_goal: boolean;
-  timestamp: number;
 }
 
 interface ShotMapProps {
@@ -20,22 +19,23 @@ const ShotMap = ({ videoId }: ShotMapProps) => {
   const [goalsScored, setGoalsScored] = useState(0);
 
   useEffect(() => {
-    if (!videoId) return;
+    // Fetch latest shots regardless of video
 
     const fetchShots = async () => {
       const { data, error } = await supabase
         .from('shot_analysis')
-        .select('*')
-        .eq('video_id', videoId);
+        .select('location_x, location_y, is_goal')
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       if (error) {
         console.error('Error fetching shots:', error);
         return;
       }
 
-      setShots(data);
-      setTotalShots(data.length);
-      setGoalsScored(data.filter(shot => shot.is_goal).length);
+      setShots((data || []) as Shot[]);
+      setTotalShots(data?.length || 0);
+      setGoalsScored((data || []).filter(shot => shot.is_goal).length);
     };
 
     fetchShots();

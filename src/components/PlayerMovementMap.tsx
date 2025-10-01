@@ -566,7 +566,7 @@ const PlayerMovementMap = ({
       if (data && data.length > 0) {
         // Transform the data into the expected format [timestamp, lat, lng]
         const formattedData = data.map(record => [
-          record.timestamp,
+          typeof record.timestamp === 'string' ? Date.parse(record.timestamp) : (record.timestamp as number),
           record.x, // latitude
           record.y  // longitude
         ]) as [number, number, number][];

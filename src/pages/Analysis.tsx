@@ -52,7 +52,7 @@ interface SensorRecordingFromDB {
   x: number;
   y: number;
   z: number;
-  timestamp: number;
+  timestamp: string;
   created_at: string;
   sensor_type: string;
 }
@@ -177,8 +177,7 @@ const Analysis = () => {
       const query = supabase.from('sessions').select('*');
       
       if (activeSessionId) {
-        // Convert activeSessionId to a number if it's being used in a numeric context
-        query.eq('id', parseInt(activeSessionId, 10));
+        query.eq('id', activeSessionId);
       } else if (isLiveMode) {
         query.is('end_time', null);
       } else {
@@ -228,9 +227,8 @@ const Analysis = () => {
       
       if (shotAnalytics) {
         setShotData(shotAnalytics.map(shot => ({
-          time: new Date(shot.timestamp).toLocaleTimeString(),
-          // Fix: Convert string to number using parseFloat or Number()
-          value: shot.is_goal ? 100 : Math.floor(Math.random() * 70) + 10 // Power score, simulated for now
+          time: new Date(shot.timestamp as unknown as string).toLocaleTimeString(),
+          value: shot.is_goal ? 100 : Math.floor(Math.random() * 70) + 10
         })));
       }
       
