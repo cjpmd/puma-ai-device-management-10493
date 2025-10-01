@@ -80,6 +80,33 @@ export type Database = {
           },
         ]
       }
+      clubs: {
+        Row: {
+          created_at: string | null
+          external_id: string
+          id: string
+          name: string
+          synced_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          external_id: string
+          id?: string
+          name: string
+          synced_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          external_id?: string
+          id?: string
+          name?: string
+          synced_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       devices: {
         Row: {
           assigned_player_id: string | null
@@ -426,33 +453,60 @@ export type Database = {
       }
       players: {
         Row: {
+          club_id: string | null
           created_at: string | null
+          external_id: string | null
           id: string
           name: string
           player_type: string | null
           position: string | null
           squad_number: number | null
+          synced_at: string | null
+          team_id: string | null
           updated_at: string | null
         }
         Insert: {
+          club_id?: string | null
           created_at?: string | null
+          external_id?: string | null
           id?: string
           name: string
           player_type?: string | null
           position?: string | null
           squad_number?: number | null
+          synced_at?: string | null
+          team_id?: string | null
           updated_at?: string | null
         }
         Update: {
+          club_id?: string | null
           created_at?: string | null
+          external_id?: string | null
           id?: string
           name?: string
           player_type?: string | null
           position?: string | null
           squad_number?: number | null
+          synced_at?: string | null
+          team_id?: string | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "players_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "players_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sensor_recordings: {
         Row: {
@@ -576,6 +630,44 @@ export type Database = {
             columns: ["player_id"]
             isOneToOne: false
             referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          club_id: string | null
+          created_at: string | null
+          external_id: string
+          id: string
+          name: string
+          synced_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          club_id?: string | null
+          created_at?: string | null
+          external_id: string
+          id?: string
+          name: string
+          synced_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          club_id?: string | null
+          created_at?: string | null
+          external_id?: string
+          id?: string
+          name?: string
+          synced_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teams_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
             referencedColumns: ["id"]
           },
         ]

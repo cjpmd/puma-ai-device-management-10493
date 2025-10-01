@@ -22,7 +22,8 @@ interface Player {
   id: string;
   name: string;
   position?: string;
-  player_type?: string; // Added this field since it might be useful for displaying positions
+  player_type?: string;
+  team?: { name: string; club?: { name: string } };
 }
 
 interface PlayerSelectorProps {
@@ -39,10 +40,10 @@ const PlayerSelector = ({ onPlayerSelect, selectedPlayerId }: PlayerSelectorProp
     const fetchPlayers = async () => {
       try {
         setLoading(true);
-        // Fetch players from the database
+        // Fetch players from the database with team and club info
         const { data, error } = await supabase
           .from('players')
-          .select('id, name, player_type')
+          .select('id, name, player_type, position, team:teams(name, club:clubs(name))')
           .order('name');
           
         if (error) throw error;
@@ -57,14 +58,7 @@ const PlayerSelector = ({ onPlayerSelect, selectedPlayerId }: PlayerSelectorProp
             { id: '5', name: 'Morgan Lee', position: 'Forward' },
           ]);
         } else {
-          // Map player_type to position for display purposes
-          const mappedPlayers = data.map(player => ({
-            id: player.id,
-            name: player.name,
-            position: player.player_type === 'GOALKEEPER' ? 'Goalkeeper' : 
-                    player.player_type === 'OUTFIELD' ? 'Outfield' : player.player_type
-          }));
-          setPlayers(mappedPlayers);
+          setPlayers(data as Player[]);
         }
       } catch (error) {
         console.error('Error fetching players:', error);
@@ -121,12 +115,16 @@ const PlayerSelector = ({ onPlayerSelect, selectedPlayerId }: PlayerSelectorProp
                       selectedPlayerId === player.id ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  <span>{player.name}</span>
-                  {player.position && (
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      {player.position}
-                    </span>
-                  )}
+                  <div className="flex flex-col">
+                    <span>{player.name}</span>
+                    {(player.team || player.position) && (
+                      <span className="text-xs text-muted-foreground">
+                        {player.team?.club?.name && `${player.team.club.name} - `}
+                        {player.team?.name && `${player.team.name}`}
+                        {player.position && ` (${player.position})`}
+                      </span>
+                    )}
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>
