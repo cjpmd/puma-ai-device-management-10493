@@ -85,6 +85,7 @@ export type Database = {
           created_at: string | null
           external_id: string
           id: string
+          logo_url: string | null
           name: string
           synced_at: string | null
           updated_at: string | null
@@ -93,6 +94,7 @@ export type Database = {
           created_at?: string | null
           external_id: string
           id?: string
+          logo_url?: string | null
           name: string
           synced_at?: string | null
           updated_at?: string | null
@@ -101,6 +103,7 @@ export type Database = {
           created_at?: string | null
           external_id?: string
           id?: string
+          logo_url?: string | null
           name?: string
           synced_at?: string | null
           updated_at?: string | null
@@ -634,11 +637,14 @@ export type Database = {
       }
       players: {
         Row: {
+          availability: string | null
           club_id: string | null
           created_at: string | null
+          date_of_birth: string | null
           external_id: string | null
           id: string
           name: string
+          photo_url: string | null
           player_type: string | null
           position: string | null
           squad_number: number | null
@@ -647,11 +653,14 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          availability?: string | null
           club_id?: string | null
           created_at?: string | null
+          date_of_birth?: string | null
           external_id?: string | null
           id?: string
           name: string
+          photo_url?: string | null
           player_type?: string | null
           position?: string | null
           squad_number?: number | null
@@ -660,11 +669,14 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          availability?: string | null
           club_id?: string | null
           created_at?: string | null
+          date_of_birth?: string | null
           external_id?: string | null
           id?: string
           name?: string
+          photo_url?: string | null
           player_type?: string | null
           position?: string | null
           squad_number?: number | null
@@ -817,28 +829,37 @@ export type Database = {
       }
       teams: {
         Row: {
+          age_group: string | null
           club_id: string | null
           created_at: string | null
           external_id: string
+          game_format: string | null
           id: string
+          logo_url: string | null
           name: string
           synced_at: string | null
           updated_at: string | null
         }
         Insert: {
+          age_group?: string | null
           club_id?: string | null
           created_at?: string | null
           external_id: string
+          game_format?: string | null
           id?: string
+          logo_url?: string | null
           name: string
           synced_at?: string | null
           updated_at?: string | null
         }
         Update: {
+          age_group?: string | null
           club_id?: string | null
           created_at?: string | null
           external_id?: string
+          game_format?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
           synced_at?: string | null
           updated_at?: string | null
