@@ -1,26 +1,23 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.lovableqaecjlqraydbprsjfjdg',
+  appId: 'app.lovable.cb1a7443dfe74413bc7a813cf6770aa3',
   appName: 'Player Analysis',
   webDir: 'dist',
   server: {
-    url: 'https://qaecjlqraydbprsjfjdg.lovableproject.com?forceHideBadge=true',
-    cleartext: true
+    url: 'https://cb1a7443-dfe7-4413-bc7a-813cf6770aa3.lovableproject.com?forceHideBadge=true',
+    cleartext: true,
   },
   ios: {
     contentInset: 'always',
     scheme: 'Player Analysis',
     backgroundColor: '#ffffff',
-    permissions: {
-      'bluetooth-peripheral': {
-        'usageDescription': 'This app needs access to Bluetooth to connect to player tracking devices'
-      },
-      'motion': {
-        'usageDescription': 'Motion data is used to analyze player movements and performance'
-      }
-    }
-  }
+  },
+  plugins: {
+    CameraPreview: {
+      iosDisableAudio: false,
+    },
+  },
 };
 
 export default config;
