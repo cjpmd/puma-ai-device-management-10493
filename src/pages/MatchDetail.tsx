@@ -8,6 +8,7 @@ import { VideoUploadCard } from '@/components/Matches/VideoUploadCard';
 import { ProcessingStatus } from '@/components/Matches/ProcessingStatus';
 import { CameraQRSetup } from '@/components/Matches/CameraQRSetup';
 import { MatchOutputViewer } from '@/components/Matches/MatchOutputViewer';
+import { RecordingControls } from '@/components/Matches/RecordingControls';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -71,6 +72,9 @@ const MatchDetail = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Recording Controls */}
+        <RecordingControls matchId={id!} />
 
         {/* Upload Cards (direct upload fallback) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
