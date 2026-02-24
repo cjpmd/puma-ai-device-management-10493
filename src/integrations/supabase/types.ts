@@ -227,6 +227,104 @@ export type Database = {
           },
         ]
       }
+      match_videos: {
+        Row: {
+          camera_side: string
+          created_at: string
+          duration_seconds: number | null
+          file_size: number | null
+          id: string
+          match_id: string
+          resolution: string | null
+          upload_status: string
+          wasabi_path: string | null
+        }
+        Insert: {
+          camera_side: string
+          created_at?: string
+          duration_seconds?: number | null
+          file_size?: number | null
+          id?: string
+          match_id: string
+          resolution?: string | null
+          upload_status?: string
+          wasabi_path?: string | null
+        }
+        Update: {
+          camera_side?: string
+          created_at?: string
+          duration_seconds?: number | null
+          file_size?: number | null
+          id?: string
+          match_id?: string
+          resolution?: string | null
+          upload_status?: string
+          wasabi_path?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_videos_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matches: {
+        Row: {
+          club_id: string | null
+          created_at: string
+          id: string
+          location: string | null
+          match_date: string | null
+          status: string
+          team_id: string | null
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          club_id?: string | null
+          created_at?: string
+          id?: string
+          location?: string | null
+          match_date?: string | null
+          status?: string
+          team_id?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          club_id?: string | null
+          created_at?: string
+          id?: string
+          location?: string | null
+          match_date?: string | null
+          status?: string
+          team_id?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matches_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matches_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_models: {
         Row: {
           accuracy: number | null
@@ -697,6 +795,59 @@ export type Database = {
             columns: ["team_id"]
             isOneToOne: false
             referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      processing_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          gpu_type: string | null
+          id: string
+          match_id: string
+          output_highlights_path: string | null
+          output_metadata_path: string | null
+          output_video_path: string | null
+          processing_logs: string | null
+          runpod_job_id: string | null
+          started_at: string | null
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          gpu_type?: string | null
+          id?: string
+          match_id: string
+          output_highlights_path?: string | null
+          output_metadata_path?: string | null
+          output_video_path?: string | null
+          processing_logs?: string | null
+          runpod_job_id?: string | null
+          started_at?: string | null
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          gpu_type?: string | null
+          id?: string
+          match_id?: string
+          output_highlights_path?: string | null
+          output_metadata_path?: string | null
+          output_video_path?: string | null
+          processing_logs?: string | null
+          runpod_job_id?: string | null
+          started_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "processing_jobs_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
             referencedColumns: ["id"]
           },
         ]
