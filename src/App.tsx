@@ -10,6 +10,7 @@ import Index from "./pages/Index";
 import MLTraining from "./pages/MLTraining";
 import Analysis from "./pages/Analysis";
 import Devices from "./pages/Devices";
+import PitchCalibration from "./pages/PitchCalibration";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -82,6 +83,14 @@ const App = () => (
             element={
               <PrivateRoute>
                 <Devices />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/pitch-calibration"
+            element={
+              <PrivateRoute>
+                <PitchCalibration />
               </PrivateRoute>
             }
           />
