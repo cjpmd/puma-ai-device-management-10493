@@ -50,10 +50,28 @@ export function CameraRecorder({ onRecordingComplete, remoteCommand, onStatusCha
 
   const requestCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      // Request 4K resolution with ultra-wide (0.5x) lens
+      // The wide-angle lens is typically accessed via a smaller zoom level
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 3840 },
+          height: { ideal: 2160 },
+        },
         audio: true,
-      });
+      };
+
+      let stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      // Try to select the ultra-wide (0.5x) lens by setting zoom to minimum
+      const videoTrack = stream.getVideoTracks()[0];
+      const capabilities = videoTrack.getCapabilities?.() as any;
+      if (capabilities?.zoom) {
+        const minZoom = capabilities.zoom.min;
+        await videoTrack.applyConstraints({
+          advanced: [{ zoom: minZoom } as any],
+        });
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
