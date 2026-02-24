@@ -1,122 +1,97 @@
 
 
-# Mobile Camera Capture: 3-Phone Workflow
+# Synchronized Recording via Control Phone
 
-## Concept
+## Overview
 
-Three phones per match:
-- **Control Phone** (logged-in user): Creates the match, generates QR codes for left and right cameras
-- **Left Camera Phone** (no account needed): Scans QR, records video using native camera, uploads via a token-authenticated link when on WiFi
-- **Right Camera Phone** (same as above)
+The control phone will be able to remotely start and stop recording on both camera phones simultaneously. This uses Realtime broadcast channels -- no database tables needed for the signaling, just pub/sub messages between the 3 phones.
 
 ## How It Works
 
 ```text
-Control Phone (authenticated user)
+Control Phone (Match Detail page)
   |
-  |--> Creates match
-  |--> Generates QR code for "Left Camera"
-  |--> Generates QR code for "Right Camera"
+  |--> Both camera phones scan QR and land on /capture/:token
+  |--> Camera phones subscribe to a Realtime channel: "match-{match_id}"
+  |--> Camera phones report their "ready" status back via broadcast
   |
-  v
-Camera Phones (no login required)
+  |--> Control phone sees: "Left: Ready | Right: Ready"
+  |--> Control phone taps "START RECORDING" 
+  |      --> Broadcasts { command: "start", timestamp: Date.now() }
+  |      --> Both camera phones receive it simultaneously
+  |      --> Both phones open the native camera via MediaRecorder API
   |
-  |--> Scan QR code
-  |--> Land on a guest upload page with:
-  |      - Match name + camera side pre-filled
-  |      - "Record Video" button (uses native camera)
-  |      - "Upload" button (when ready, on WiFi)
-  |--> Upload goes directly to Wasabi via presigned URL
-  |--> Control phone sees status update in real-time
+  |--> Control phone taps "STOP RECORDING"
+  |      --> Broadcasts { command: "stop" }
+  |      --> Both phones stop recording, save file locally
+  |      --> Phones show "Upload when ready" button
+  |
+  |--> Camera operators upload when on WiFi (existing flow)
 ```
 
-## Database Changes
+## Key Design Decisions
 
-**New table: `upload_tokens`**
-- id (uuid, PK)
-- match_id (uuid, FK to matches)
-- camera_side (text: left / right)
-- token (text, unique, random string)
-- expires_at (timestamptz, e.g. 24 hours from creation)
-- used (boolean, default false)
-- created_at (timestamptz)
+**MediaRecorder API instead of `<input capture>`**: The current flow uses a file input which hands control to the native camera app. To support remote start/stop, we need to use the browser's MediaRecorder API which gives us programmatic control over recording. This works in Safari on iOS 14.3+ and all modern Android browsers.
 
-No RLS needed on this table from the client side -- it will be accessed via edge functions only. RLS policies will allow the match owner to create tokens, and a new edge function will validate tokens for guest uploads.
+**Realtime Broadcast (not database)**: Broadcast channels are fire-and-forget messages -- no database writes, no RLS concerns, sub-millisecond delivery. Perfect for signaling commands.
 
-## Edge Function Changes
+**Timestamp synchronization**: The start command includes a server timestamp so both recordings can be aligned in post-processing even if there's slight network delay.
 
-**New: `generate-camera-token`** (authenticated)
-- Input: match_id, camera_side
-- Validates the user owns the match
-- Creates a random token in `upload_tokens` table (expires in 24h)
-- Returns: token string + full URL for the guest upload page
+## Changes
 
-**Modified: `generate-upload-url`**
-- Currently requires authentication (Bearer token)
-- Add a second auth path: accept an `upload_token` in the request body
-- If token provided: validate it against `upload_tokens` table (not expired, not used, matches camera_side)
-- If valid: generate presigned URL as normal, no user login required
-- After successful upload: mark token as used
+### 1. New Component: `RecordingControls.tsx`
+Added to the Match Detail page (control phone). Shows:
+- Connection status for each camera phone (disconnected / ready / recording)
+- A large "START RECORDING" button (enabled only when both cameras are ready)
+- A "STOP RECORDING" button (enabled during recording)
+- A recording timer showing elapsed time
+- Uses Realtime broadcast to send commands and receive status updates
 
-## Frontend Changes
+### 2. Updated: `CameraCapture.tsx` (guest capture page)
+Major changes to support remote-controlled recording:
+- On load, subscribes to the Realtime broadcast channel `match-{match_id}`
+- Sends a "ready" presence message so the control phone knows it's connected
+- Listens for "start" command: opens rear camera via `navigator.mediaDevices.getUserMedia()`, begins recording with MediaRecorder
+- Listens for "stop" command: stops recording, converts to blob/file
+- Shows a live camera preview while recording (small viewfinder)
+- After recording stops, shows the recorded file with option to upload (existing upload flow)
+- Falls back to manual record button if Realtime connection fails
+- Requests camera permission on page load so it's ready for the start command
 
-### New Route: `/capture/:token`
-A guest-accessible page (no login required) that:
-- Validates the token via an edge function call
-- Shows the match name and camera side (e.g. "Left Camera - Arsenal vs Chelsea")
-- Has a large "Record Video" button that uses `<input type="file" accept="video/*" capture="environment">` to open the native camera directly
-- Shows upload progress bar
-- Designed for mobile-first: large tap targets, simple layout, clear status
-- Can work offline for recording -- the file stays on the phone until the user taps "Upload"
-- Shows a "waiting for WiFi" suggestion if on cellular
+### 3. Updated: `MatchDetail.tsx`
+- Adds the `RecordingControls` component between the Camera QR Setup section and the upload cards
+- Passes the match ID for channel naming
 
-### Updated: Match Detail Page (`/matches/:id`)
-- Add a "Camera Setup" section with two QR code cards
-- Each card shows:
-  - Camera side label (Left / Right)
-  - A QR code encoding the guest upload URL (`/capture/{token}`)
-  - A "Copy Link" button (for sharing via iMessage as alternative)
-  - Token expiry countdown
-  - Upload status from that camera (synced via polling)
-- QR codes generated client-side using a lightweight library (e.g. `qrcode.react`)
+### 4. Updated: `CameraQRSetup.tsx`
+- Shows camera connection status (connected/disconnected) received via a callback from the parent
 
-### Updated: App.tsx
-- Add `/capture/:token` as a public route (no auth wrapper)
+## Realtime Channel Design
 
-## New Dependency
+Channel name: `recording-{match_id}`
 
-- `qrcode.react` -- lightweight QR code rendering for React
+**Control phone broadcasts:**
+- `{ type: "command", command: "start", timestamp: number }`
+- `{ type: "command", command: "stop" }`
 
-## Security Model
+**Camera phones broadcast:**
+- `{ type: "status", camera_side: "left"|"right", status: "ready"|"recording"|"stopped"|"error", error?: string }`
 
-- Tokens are single-use, time-limited (24h), and scoped to a specific match + camera side
-- The guest upload page cannot access any other data -- only upload to the specific match/camera
-- Presigned URLs from Wasabi expire in 15 minutes
-- Token validation happens server-side in edge functions
-- The match owner can regenerate tokens if needed (invalidates old ones)
+Both sides use `.on('broadcast', { event: 'recording' }, callback)` to listen.
 
-## File Summary
+## Technical Notes
 
-### New files:
-1. `supabase/functions/generate-camera-token/index.ts` -- Token generation (authenticated)
-2. `src/pages/CameraCapture.tsx` -- Guest upload page
-3. `src/components/Matches/CameraQRSetup.tsx` -- QR code display for control phone
+- **No database migration needed** -- Realtime broadcast doesn't persist data
+- **No new edge functions needed** -- all signaling is client-side via the existing Realtime connection
+- **Camera permissions**: The capture page will request camera access when the user first lands, with a clear prompt explaining why
+- **Fallback**: If Realtime connection drops, camera phones can still manually record and upload using the existing file-pick flow
+- **iOS Safari compatibility**: MediaRecorder is supported on iOS 14.3+. For older devices, the manual record fallback remains available
+- **Recording format**: Uses `video/mp4` where supported, falls back to `video/webm`
 
-### Modified files:
-1. `supabase/functions/generate-upload-url/index.ts` -- Add token-based auth path
-2. `src/pages/MatchDetail.tsx` -- Add Camera Setup section
-3. `src/App.tsx` -- Add /capture/:token public route
-4. `supabase/config.toml` -- Add verify_jwt=false for generate-camera-token (we handle auth in code)
+## Files to Create
+1. `src/components/Matches/RecordingControls.tsx` -- Control phone recording UI with start/stop and status
 
-### Database migration:
-- Create `upload_tokens` table with RLS policies (owner can SELECT/INSERT/DELETE, no public access)
+## Files to Modify
+1. `src/pages/CameraCapture.tsx` -- Add Realtime subscription, MediaRecorder integration, remote start/stop handling
+2. `src/pages/MatchDetail.tsx` -- Add RecordingControls component
+3. `src/components/Matches/CameraQRSetup.tsx` -- Show camera connection status
 
-## Implementation Order
-
-1. Database migration for `upload_tokens` table
-2. `generate-camera-token` edge function
-3. Update `generate-upload-url` to accept tokens
-4. `CameraCapture.tsx` guest upload page
-5. `CameraQRSetup.tsx` QR code component
-6. Update `MatchDetail.tsx` with camera setup section
-7. Update `App.tsx` routing
