@@ -11,6 +11,8 @@ import IndividualPlayerTab from "@/components/Analysis/IndividualPlayerTab";
 import GroupSelectionTab from "@/components/Analysis/GroupSelectionTab";
 import BiometricsTab from "@/components/Analysis/BiometricsTab";
 import SyncStatusIndicator from "@/components/Analysis/SyncStatusIndicator";
+import ClubSelector from "@/components/Analysis/ClubSelector";
+import TeamSelector from "@/components/Analysis/TeamSelector";
 import { Activity, Footprints, Target, Repeat, Users, User, ChartBar, Video, Settings, Bluetooth, Share2, HeartPulse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -85,6 +87,8 @@ const Analysis = () => {
   const [isLiveMode, setIsLiveMode] = useState(true);
   const [isBluetoothDialogOpen, setIsBluetoothDialogOpen] = useState(false);
   const [bluetoothStatus, setBluetoothStatus] = useState<"connected" | "disconnected" | "searching">("disconnected");
+  const [selectedClubId, setSelectedClubId] = useState<string | undefined>();
+  const [selectedTeamId, setSelectedTeamId] = useState<string | undefined>();
   const { toast } = useToast();
   const location = useLocation();
   
@@ -597,6 +601,29 @@ const Analysis = () => {
           </div>
         </div>
 
+        <div className="mb-4 flex items-end gap-4">
+          <div className="w-48">
+            <label className="text-sm font-medium text-muted-foreground mb-1 block">Club</label>
+            <ClubSelector
+              selectedClubId={selectedClubId}
+              onClubSelect={(club) => {
+                setSelectedClubId(club?.id);
+                setSelectedTeamId(undefined); // Reset team when club changes
+              }}
+            />
+          </div>
+          <div className="w-48">
+            <label className="text-sm font-medium text-muted-foreground mb-1 block">Team</label>
+            <TeamSelector
+              selectedTeamId={selectedTeamId}
+              clubId={selectedClubId}
+              onTeamSelect={(team) => {
+                setSelectedTeamId(team?.id);
+              }}
+            />
+          </div>
+        </div>
+
         <Tabs defaultValue="overall" className="w-full">
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="overall" className="flex items-center gap-2">
@@ -675,6 +702,8 @@ const Analysis = () => {
             <IndividualPlayerTab 
               sessionId={activeSessionId}
               isLiveMode={isLiveMode}
+              clubId={selectedClubId}
+              teamId={selectedTeamId}
             />
           </TabsContent>
 
@@ -682,6 +711,8 @@ const Analysis = () => {
             <GroupSelectionTab 
               sessionId={activeSessionId}
               isLiveMode={isLiveMode}
+              clubId={selectedClubId}
+              teamId={selectedTeamId}
             />
           </TabsContent>
 
