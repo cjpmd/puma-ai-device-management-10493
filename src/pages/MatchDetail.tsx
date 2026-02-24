@@ -6,6 +6,7 @@ import { ArrowLeft, Calendar, MapPin, RefreshCw, XCircle } from 'lucide-react';
 import { useMatchPolling } from '@/hooks/useMatchPolling';
 import { VideoUploadCard } from '@/components/Matches/VideoUploadCard';
 import { ProcessingStatus } from '@/components/Matches/ProcessingStatus';
+import { CameraQRSetup } from '@/components/Matches/CameraQRSetup';
 import { MatchOutputViewer } from '@/components/Matches/MatchOutputViewer';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
@@ -59,7 +60,19 @@ const MatchDetail = () => {
           <Badge>{match.status}</Badge>
         </div>
 
-        {/* Upload Cards */}
+        {/* Camera QR Setup */}
+        <Card className="border-emerald-200">
+          <CardHeader><CardTitle className="text-base">📱 Camera Setup</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">Generate QR codes for camera phones to scan. No login required.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <CameraQRSetup matchId={id!} cameraSide="left" uploadStatus={leftVideo?.upload_status} />
+              <CameraQRSetup matchId={id!} cameraSide="right" uploadStatus={rightVideo?.upload_status} />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Upload Cards (direct upload fallback) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <VideoUploadCard matchId={id!} cameraSide="left" existingVideo={leftVideo} onUploadComplete={refetch} />
           <VideoUploadCard matchId={id!} cameraSide="right" existingVideo={rightVideo} onUploadComplete={refetch} />

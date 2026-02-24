@@ -1025,6 +1025,44 @@ export type Database = {
           },
         ]
       }
+      upload_tokens: {
+        Row: {
+          camera_side: string
+          created_at: string
+          expires_at: string
+          id: string
+          match_id: string
+          token: string
+          used: boolean
+        }
+        Insert: {
+          camera_side: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          match_id: string
+          token: string
+          used?: boolean
+        }
+        Update: {
+          camera_side?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          match_id?: string
+          token?: string
+          used?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "upload_tokens_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

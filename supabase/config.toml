@@ -3,6 +3,15 @@ project_id = "zibxzgrjjfdwcxgmptjb"
 [functions.generate-upload-url]
 verify_jwt = false
 
+[functions.generate-camera-token]
+verify_jwt = false
+
+[functions.validate-camera-token]
+verify_jwt = false
+
+[functions.confirm-guest-upload]
+verify_jwt = false
+
 [functions.trigger-processing]
 verify_jwt = false
 
