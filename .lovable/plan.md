@@ -1,100 +1,73 @@
 
 
-# Connect Performance App to Football Central App
+# Fix Data Sync and Add Club/Team Filtering
 
-## What We're Doing
+## Problem Identified
 
-You already have the [puma-ai-football-central](/projects/5d10e51a-8461-40f2-a899-60ebdbbef2fc) app managing clubs, teams, and players. This performance app already has a sync mechanism (edge function + UI button), but it has bugs that prevent it from actually working. We need to fix those and enhance the integration.
+The sync is failing because the `EXTERNAL_SUPABASE_URL` secret is set to the wrong value. The edge function logs show it's returning an HTML page (the Supabase dashboard) instead of JSON data. The correct URL for your Football Central project should be `https://pdarngodvrzehnpvdrii.supabase.co`.
 
-## Current State
+Additionally, Football Central has RLS policies that likely require authentication -- since the sync uses the anon key, it may also need the **service role key** from Football Central to bypass RLS and read all clubs/teams/players.
 
-- The `sync-external-data` edge function exists and the `EXTERNAL_SUPABASE_URL` and `EXTERNAL_SUPABASE_ANON_KEY` secrets are configured
-- The `SyncStatusIndicator` component is already in the Analysis page
-- Local `clubs`, `teams`, and `players` tables exist with `external_id` columns for mapping
-- A `club_teams` junction table exists in Football Central (clubs can have multiple teams)
+## Plan
 
-## Problems to Fix
+### 1. Fix the EXTERNAL_SUPABASE_URL secret
 
-The edge function has **field name mismatches** with the actual Football Central database schema:
+The `EXTERNAL_SUPABASE_URL` needs to be updated to the correct value:
+```text
+https://pdarngodvrzehnpvdrii.supabase.co
+```
 
-| What the sync function uses | What Football Central actually has |
+I'll prompt you to re-enter this secret with the correct value.
+
+### 2. Upgrade to Service Role Key (if needed)
+
+Football Central likely has RLS policies requiring authentication. The anon key won't be able to read clubs/teams/players without being logged in. We should:
+- Add a new secret `EXTERNAL_SUPABASE_SERVICE_ROLE_KEY` with the service role key from your Football Central project
+- Update the edge function to use the service role key instead of the anon key
+- This allows the sync function to bypass RLS and read all data
+
+### 3. Fix field mapping in edge function
+
+Based on Football Central's actual schema:
+
+| Football Central field | What the sync maps to locally |
 |---|---|
-| `club.club_name` | `club.name` |
-| `team.team_name` | `team.name` |
-| `player.player_name` | `player.name` |
-| `player.player_type` | `player.type` |
+| `player.type` | `player_type` (correct already) |
+| `player.play_style` | `position` (currently unmapped -- FC has no `position` column) |
+| `player.availability` | `availability` (correct) |
+| `player.date_of_birth` | `date_of_birth` (correct) |
 
-Additionally, teams in Football Central link to clubs via both `teams.club_id` and a `club_teams` junction table -- the sync currently only handles `teams.club_id` which is fine.
+Fix: Map `player.play_style` to local `position` column since Football Central doesn't have a `position` field.
 
-The edge function also needs the entity passed as a **query parameter**, but the `SyncStatusIndicator` sends it in the **request body**. This mismatch means the entity filter is ignored.
+### 4. Add Club and Team filtering to the Analysis page
 
-## Implementation Plan
+Update the Analysis page to include:
+- **ClubSelector** dropdown at the top of the page (already exists as a component)
+- **TeamSelector** dropdown that filters by selected club (already exists as a component)
+- **PlayerSelector** updated to filter by selected club/team
+- State management to cascade the filters: Club -> Team -> Player
 
-### 1. Fix the Edge Function (`supabase/functions/sync-external-data/index.ts`)
+### 5. Update edge function to use batch upserts
 
-- Fix field name mappings to match Football Central's actual schema:
-  - `club.name` (not `club_name`)
-  - `team.name` (not `team_name`)
-  - `player.name` (not `player_name`)
-  - `player.type` (not `player_type`)
-- Read entity from both query params AND request body for flexibility
-- Add additional player fields from Football Central: `date_of_birth`, `availability`, `photo_url`, `play_style`
-- Add additional team fields: `age_group`, `game_format`, `logo_url`
-- Add additional club fields: `logo_url`, `subscription_type`
-- Add CORS headers for the additional Supabase client headers
-- Improve error handling and logging
-
-### 2. Update Local Database Schema
-
-Add columns to local tables to store the richer data from Football Central:
-
-**players table:**
-- `date_of_birth` (text, nullable)
-- `availability` (text, nullable)
-- `photo_url` (text, nullable)
-
-**teams table:**
-- `age_group` (text, nullable)
-- `game_format` (text, nullable)
-- `logo_url` (text, nullable)
-
-**clubs table:**
-- `logo_url` (text, nullable)
-
-### 3. Fix the SyncStatusIndicator Component
-
-- Pass entity as query parameter (not body) to match the edge function
-- OR update edge function to also read from body (preferred -- we'll do both)
-
-### 4. Add Route for Pitch Calibration
-
-- Add the `/pitch-calibration` route to `App.tsx` (it was created previously but never added to routing)
+Instead of upserting one record at a time (N network round-trips), batch the upserts for better performance.
 
 ## Technical Details
 
-### Edge Function Changes
+### Files to change:
 
-The core fix is straightforward -- updating field references:
+1. **`supabase/functions/sync-external-data/index.ts`**
+   - Use `EXTERNAL_SUPABASE_SERVICE_ROLE_KEY` instead of `EXTERNAL_SUPABASE_ANON_KEY`
+   - Map `player.play_style` to `position`
+   - Add team `club_id` lookup via `club_teams` junction table as fallback
+   - Use batch upserts instead of individual calls
 
-```text
-Before: name: club.club_name
-After:  name: club.name
+2. **`src/pages/Analysis.tsx`**
+   - Add `selectedClubId` and `selectedTeamId` state variables
+   - Import and render `ClubSelector` and `TeamSelector` components at the top
+   - Pass `clubId` and `teamId` to `PlayerSelector` for cascading filter
+   - Wire the filter state so selecting a club filters teams, and selecting a team filters players
 
-Before: name: team.team_name  
-After:  name: team.name
-
-Before: name: player.player_name, player_type: player.player_type
-After:  name: player.name, player_type: player.type
-```
-
-### Security Note
-
-The sync uses `EXTERNAL_SUPABASE_ANON_KEY` which relies on RLS policies in Football Central allowing read access. If the external app requires authentication, you may need to update the secret to use a service role key from that project instead. We can test this after deployment.
-
-### Files Changed
-
-1. `supabase/functions/sync-external-data/index.ts` -- Fix field mappings, add entity from body, sync additional fields
-2. `src/components/Analysis/SyncStatusIndicator.tsx` -- Minor fix to pass entity correctly
-3. Database migration -- Add new columns to players, teams, clubs tables
-4. `src/App.tsx` -- Add `/pitch-calibration` route
+3. **Secrets update**
+   - Update `EXTERNAL_SUPABASE_URL` to the correct value
+   - Add `EXTERNAL_SUPABASE_SERVICE_ROLE_KEY` secret (you'll need to get this from your Football Central project settings)
 
