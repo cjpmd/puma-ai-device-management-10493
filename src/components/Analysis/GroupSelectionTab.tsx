@@ -19,9 +19,11 @@ interface Player {
 interface GroupSelectionTabProps {
   sessionId?: string | null;
   isLiveMode?: boolean;
+  clubId?: string;
+  teamId?: string;
 }
 
-const GroupSelectionTab = ({ sessionId, isLiveMode = true }: GroupSelectionTabProps) => {
+const GroupSelectionTab = ({ sessionId, isLiveMode = true, clubId, teamId }: GroupSelectionTabProps) => {
   const [selectedPlayers, setSelectedPlayers] = useState<Player[]>([]);
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [selectionMethod, setSelectionMethod] = useState<'players' | 'positions'>('players');
@@ -169,6 +171,8 @@ const GroupSelectionTab = ({ sessionId, isLiveMode = true }: GroupSelectionTabPr
             <MultiPlayerSelector 
               onSelectionChange={handlePlayerSelectionChange}
               selectedPlayerIds={selectedPlayers.map(p => p.id)}
+              clubId={clubId}
+              teamId={teamId}
             />
           </TabsContent>
           <TabsContent value="positions" className="space-y-4 mt-4">

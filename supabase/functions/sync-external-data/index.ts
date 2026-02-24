@@ -27,9 +27,10 @@ Deno.serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
+    // Connect to external Football Central using service role key to bypass RLS
     const externalSupabase = createClient(
       Deno.env.get('EXTERNAL_SUPABASE_URL')!,
-      Deno.env.get('EXTERNAL_SUPABASE_ANON_KEY')!
+      Deno.env.get('EXTERNAL_SUPABASE_SERVICE_ROLE_KEY')!
     );
 
     // Read entity from query params OR request body
@@ -95,6 +96,7 @@ Deno.serve(async (req) => {
         results.teams.errors++;
       } else if (externalTeams) {
         for (const team of externalTeams) {
+          // Look up local club by external_id matching the team's club_id
           const { data: localClub } = await localSupabase
             .from('clubs')
             .select('id')
@@ -149,8 +151,8 @@ Deno.serve(async (req) => {
               name: player.name,
               team_id: localTeam?.id || null,
               club_id: localTeam?.club_id || null,
-              position: player.position,
-              player_type: player.type,
+              position: player.play_style || player.position || null,
+              player_type: player.type || player.player_type || null,
               squad_number: player.squad_number,
               date_of_birth: player.date_of_birth || null,
               availability: player.availability || null,

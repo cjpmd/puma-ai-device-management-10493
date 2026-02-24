@@ -29,11 +29,15 @@ interface Player {
 interface MultiPlayerSelectorProps {
   onSelectionChange: (players: Player[]) => void;
   selectedPlayerIds?: string[];
+  clubId?: string;
+  teamId?: string;
 }
 
 const MultiPlayerSelector = ({ 
   onSelectionChange, 
-  selectedPlayerIds = [] 
+  selectedPlayerIds = [],
+  clubId,
+  teamId,
 }: MultiPlayerSelectorProps) => {
   const [open, setOpen] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -43,11 +47,18 @@ const MultiPlayerSelector = ({
     const fetchPlayers = async () => {
       try {
         setLoading(true);
-        // Fetch players from the database
-        const { data, error } = await supabase
+        let query = supabase
           .from('players')
           .select('id, name, player_type')
           .order('name');
+        
+        if (teamId) {
+          query = query.eq('team_id', teamId);
+        } else if (clubId) {
+          query = query.eq('club_id', clubId);
+        }
+          
+        const { data, error } = await query;
           
         if (error) throw error;
         
@@ -92,7 +103,7 @@ const MultiPlayerSelector = ({
     };
 
     fetchPlayers();
-  }, []);
+  }, [clubId, teamId]);
 
   const selectedPlayers = players.filter(player => 
     selectedPlayerIds.includes(player.id)

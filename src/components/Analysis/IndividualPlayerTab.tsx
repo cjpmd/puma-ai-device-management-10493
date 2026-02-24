@@ -17,9 +17,11 @@ interface Player {
 interface IndividualPlayerTabProps {
   sessionId?: string | null;
   isLiveMode?: boolean;
+  clubId?: string;
+  teamId?: string;
 }
 
-const IndividualPlayerTab = ({ sessionId, isLiveMode = true }: IndividualPlayerTabProps) => {
+const IndividualPlayerTab = ({ sessionId, isLiveMode = true, clubId, teamId }: IndividualPlayerTabProps) => {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [availableSessions, setAvailableSessions] = useState<{id: string, date: string}[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(sessionId);
@@ -93,6 +95,8 @@ const IndividualPlayerTab = ({ sessionId, isLiveMode = true }: IndividualPlayerT
           <PlayerSelector 
             onPlayerSelect={handlePlayerSelect} 
             selectedPlayerId={selectedPlayer?.id}
+            clubId={clubId}
+            teamId={teamId}
           />
         </div>
         
