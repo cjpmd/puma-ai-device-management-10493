@@ -1,1 +1,10 @@
 project_id = "zibxzgrjjfdwcxgmptjb"
+
+[functions.generate-upload-url]
+verify_jwt = false
+
+[functions.trigger-processing]
+verify_jwt = false
+
+[functions.runpod-webhook]
+verify_jwt = false

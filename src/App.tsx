@@ -11,6 +11,8 @@ import MLTraining from "./pages/MLTraining";
 import Analysis from "./pages/Analysis";
 import Devices from "./pages/Devices";
 import PitchCalibration from "./pages/PitchCalibration";
+import Matches from "./pages/Matches";
+import MatchDetail from "./pages/MatchDetail";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -91,6 +93,22 @@ const App = () => (
             element={
               <PrivateRoute>
                 <PitchCalibration />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/matches"
+            element={
+              <PrivateRoute>
+                <Matches />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/matches/:id"
+            element={
+              <PrivateRoute>
+                <MatchDetail />
               </PrivateRoute>
             }
           />
