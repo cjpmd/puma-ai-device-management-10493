@@ -13,6 +13,7 @@ import Devices from "./pages/Devices";
 import PitchCalibration from "./pages/PitchCalibration";
 import Matches from "./pages/Matches";
 import MatchDetail from "./pages/MatchDetail";
+import CameraCapture from "./pages/CameraCapture";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -56,6 +57,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<Auth />} />
+          <Route path="/capture/:token" element={<CameraCapture />} />
           <Route
             path="/"
             element={

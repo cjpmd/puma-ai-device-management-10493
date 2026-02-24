@@ -33,24 +33,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
-    }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const { data: claims, error: authError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
-    if (authError || !claims?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
-    }
-    const userId = claims.claims.sub as string;
-
-    const { match_id, camera_side, filename, content_type } = await req.json();
+    const { match_id, camera_side, filename, content_type, upload_token } = await req.json();
 
     if (!match_id || !camera_side || !filename || !content_type) {
       return new Response(JSON.stringify({ error: "Missing required fields" }), { status: 400, headers: corsHeaders });
@@ -60,16 +43,61 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "camera_side must be left or right" }), { status: 400, headers: corsHeaders });
     }
 
-    // Verify user owns this match
-    const { data: match, error: matchError } = await supabase
-      .from("matches")
-      .select("id")
-      .eq("id", match_id)
-      .eq("user_id", userId)
-      .single();
+    const adminClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
 
-    if (matchError || !match) {
-      return new Response(JSON.stringify({ error: "Match not found" }), { status: 404, headers: corsHeaders });
+    // Auth path 1: upload_token (guest camera phone)
+    // Auth path 2: Bearer token (authenticated user)
+    if (upload_token) {
+      const { data: tokenRow, error: tokenError } = await adminClient
+        .from("upload_tokens")
+        .select("*")
+        .eq("token", upload_token)
+        .eq("match_id", match_id)
+        .eq("camera_side", camera_side)
+        .single();
+
+      if (tokenError || !tokenRow) {
+        return new Response(JSON.stringify({ error: "Invalid upload token" }), { status: 401, headers: corsHeaders });
+      }
+      if (tokenRow.used) {
+        return new Response(JSON.stringify({ error: "Token already used" }), { status: 410, headers: corsHeaders });
+      }
+      if (new Date(tokenRow.expires_at) < new Date()) {
+        return new Response(JSON.stringify({ error: "Token expired" }), { status: 410, headers: corsHeaders });
+      }
+    } else {
+      // Standard JWT auth
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader?.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      }
+
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: authHeader } } }
+      );
+
+      const { data: claims, error: authError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+      if (authError || !claims?.claims) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      }
+      const userId = claims.claims.sub as string;
+
+      // Verify user owns this match
+      const { data: match, error: matchError } = await supabase
+        .from("matches")
+        .select("id")
+        .eq("id", match_id)
+        .eq("user_id", userId)
+        .single();
+
+      if (matchError || !match) {
+        return new Response(JSON.stringify({ error: "Match not found" }), { status: 404, headers: corsHeaders });
+      }
     }
 
     // Generate presigned URL for Wasabi
