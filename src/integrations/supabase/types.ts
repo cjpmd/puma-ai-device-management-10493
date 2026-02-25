@@ -978,6 +978,87 @@ export type Database = {
           },
         ]
       }
+      team_events: {
+        Row: {
+          created_at: string
+          date: string
+          end_time: string | null
+          event_type: string
+          external_id: string
+          game_duration: number | null
+          game_format: string | null
+          id: string
+          is_home: boolean | null
+          location: string | null
+          match_id: string | null
+          meeting_time: string | null
+          notes: string | null
+          opponent: string | null
+          start_time: string | null
+          synced_at: string | null
+          team_id: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          end_time?: string | null
+          event_type: string
+          external_id: string
+          game_duration?: number | null
+          game_format?: string | null
+          id?: string
+          is_home?: boolean | null
+          location?: string | null
+          match_id?: string | null
+          meeting_time?: string | null
+          notes?: string | null
+          opponent?: string | null
+          start_time?: string | null
+          synced_at?: string | null
+          team_id?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          end_time?: string | null
+          event_type?: string
+          external_id?: string
+          game_duration?: number | null
+          game_format?: string | null
+          id?: string
+          is_home?: boolean | null
+          location?: string | null
+          match_id?: string | null
+          meeting_time?: string | null
+          notes?: string | null
+          opponent?: string | null
+          start_time?: string | null
+          synced_at?: string | null
+          team_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_events_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_events_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       teams: {
         Row: {
           age_group: string | null
