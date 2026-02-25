@@ -8,7 +8,7 @@ import { CreateMatchDialog } from '@/components/Matches/CreateMatchDialog';
 import { EventCard, type TeamEvent } from '@/components/Matches/EventCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
 
 const Matches = () => {
   const { matches, loading, refetch } = useMatchPolling();
@@ -87,13 +87,21 @@ const Matches = () => {
     }
   };
 
-  // Split events into upcoming (no match linked) and linked
-  const upcomingEvents = events.filter(e => !e.match_id);
+  // Split events: upcoming (future, no match linked) and recent (past, sorted newest first)
+  const today = new Date().toISOString().split('T')[0];
+  const upcomingEvents = events
+    .filter(e => !e.match_id && e.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 5);
+  const recentEvents = events
+    .filter(e => e.date < today || e.match_id)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-green-50 p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <Link to="/">
               <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
@@ -112,54 +120,62 @@ const Matches = () => {
           </div>
         </div>
 
-        <Tabs defaultValue="events" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="events">
-              Team Events {upcomingEvents.length > 0 && `(${upcomingEvents.length})`}
-            </TabsTrigger>
-            <TabsTrigger value="matches">
-              Matches {matches.length > 0 && `(${matches.length})`}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="events" className="space-y-4">
-            {eventsLoading ? (
-              <p className="text-muted-foreground text-center py-12">Loading events...</p>
-            ) : upcomingEvents.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-muted-foreground">No upcoming events. Tap "Sync Events" to pull from your team calendar.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {upcomingEvents.map((event) => (
+        {/* Upcoming & Recent Events Banner */}
+        {!eventsLoading && (upcomingEvents.length > 0 || recentEvents.length > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {/* Upcoming */}
+            <div className="space-y-2">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Upcoming</h2>
+              {upcomingEvents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No upcoming events</p>
+              ) : (
+                upcomingEvents.map((event) => (
                   <EventCard
                     key={event.id}
                     event={event}
                     teamName={event.team_id ? teams[event.team_id] : undefined}
                     onSetupRecording={handleSetupRecording}
                   />
-                ))}
-              </div>
-            )}
-          </TabsContent>
+                ))
+              )}
+            </div>
+            {/* Recent */}
+            <div className="space-y-2">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Recent</h2>
+              {recentEvents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No recent events</p>
+              ) : (
+                recentEvents.map((event) => (
+                  <EventCard
+                    key={event.id}
+                    event={event}
+                    teamName={event.team_id ? teams[event.team_id] : undefined}
+                    onSetupRecording={handleSetupRecording}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
-          <TabsContent value="matches" className="space-y-4">
-            {loading ? (
-              <p className="text-muted-foreground text-center py-12">Loading matches...</p>
-            ) : matches.length === 0 ? (
-              <div className="text-center py-12">
-                <Video className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No matches yet. Create one or set up recording from a team event.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {matches.map((match) => (
-                  <MatchCard key={match.id} match={match} />
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+        {/* Matches List */}
+        <div className="space-y-4">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">All Matches</h2>
+          {loading ? (
+            <p className="text-muted-foreground text-center py-12">Loading matches...</p>
+          ) : matches.length === 0 ? (
+            <div className="text-center py-12">
+              <Video className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">No matches yet. Create one or set up recording from a team event.</p>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {matches.map((match) => (
+                <MatchCard key={match.id} match={match} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
