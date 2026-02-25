@@ -90,11 +90,11 @@ const Matches = () => {
   // Split events: upcoming (future, no match linked) and recent (past, sorted newest first)
   const today = new Date().toISOString().split('T')[0];
   const upcomingEvents = events
-    .filter(e => !e.match_id && e.date >= today)
+    .filter(e => e.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 5);
   const recentEvents = events
-    .filter(e => e.date < today || e.match_id)
+    .filter(e => e.date < today)
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5);
 
