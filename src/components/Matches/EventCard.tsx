@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ const typeColors: Record<string, string> = {
 };
 
 export function EventCard({ event, teamName, onSetupRecording }: EventCardProps) {
+  const navigate = useNavigate();
   const hasMatch = !!event.match_id;
 
   return (
@@ -85,7 +87,11 @@ export function EventCard({ event, teamName, onSetupRecording }: EventCardProps)
               </span>
             )}
           </div>
-          {!hasMatch && (
+          {hasMatch ? (
+            <Button size="sm" variant="outline" onClick={() => navigate(`/matches/${event.match_id}`)}>
+              <Video className="h-4 w-4 mr-1" /> Open Recording
+            </Button>
+          ) : (
             <Button size="sm" onClick={() => onSetupRecording(event)}>
               <Video className="h-4 w-4 mr-1" /> Set Up Recording
             </Button>
