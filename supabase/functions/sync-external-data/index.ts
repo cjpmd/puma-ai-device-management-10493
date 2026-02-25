@@ -50,6 +50,7 @@ Deno.serve(async (req) => {
       clubs: { inserted: 0, updated: 0, errors: 0 },
       teams: { inserted: 0, updated: 0, errors: 0 },
       players: { inserted: 0, updated: 0, errors: 0 },
+      events: { inserted: 0, updated: 0, errors: 0 },
     };
 
     // Sync clubs
@@ -169,6 +170,56 @@ Deno.serve(async (req) => {
         }
       }
       console.log(`Players synced: ${results.players.updated} updated, ${results.players.errors} errors`);
+    }
+
+    // Sync events
+    if (entity === 'events' || entity === 'all') {
+      console.log('Syncing events...');
+      const { data: externalEvents, error: eventsError } = await externalSupabase
+        .from('events')
+        .select('*');
+
+      if (eventsError) {
+        console.error('Error fetching events:', eventsError);
+        results.events.errors++;
+      } else if (externalEvents) {
+        for (const event of externalEvents) {
+          // Look up local team by external_id
+          const { data: localTeam } = await localSupabase
+            .from('teams')
+            .select('id')
+            .eq('external_id', event.team_id)
+            .single();
+
+          const { error } = await localSupabase
+            .from('team_events')
+            .upsert({
+              external_id: event.id,
+              team_id: localTeam?.id || null,
+              title: event.title,
+              event_type: event.event_type || 'match',
+              date: event.date,
+              start_time: event.start_time || null,
+              end_time: event.end_time || null,
+              meeting_time: event.meeting_time || null,
+              location: event.location || null,
+              opponent: event.opponent || null,
+              is_home: event.is_home ?? true,
+              game_format: event.game_format || null,
+              game_duration: event.game_duration || null,
+              notes: event.notes || null,
+              synced_at: new Date().toISOString(),
+            }, { onConflict: 'external_id' });
+
+          if (error) {
+            console.error(`Error upserting event ${event.id}:`, error);
+            results.events.errors++;
+          } else {
+            results.events.updated++;
+          }
+        }
+      }
+      console.log(`Events synced: ${results.events.updated} updated, ${results.events.errors} errors`);
     }
 
     return new Response(
