@@ -1,72 +1,37 @@
 
 
-# Prep Work for RunPod Ball-Following Pipeline
+# Fix: Event Filtering and Recording Setup Access
 
-## Current State
+## Problems Found
 
-- **`trigger-processing`**: Still has the broken `getClaims()` auth bug. Will crash on any call.
-- **`runpod-webhook`**: Works but has outdated CORS headers.
-- **`gpu-server/`**: Empty scaffold -- Dockerfile and requirements.txt only, no `main.py` handler.
-- **`MatchOutputViewer`**: View/Download buttons are non-functional (no presigned URL generation).
-- **No RunPod handler**: There's no code defining what the GPU worker actually does with the two videos.
+1. **Upcoming events appearing in "Recent"**: The filter on line 93 of `Matches.tsx` requires `!e.match_id` for upcoming events. So any future event that already has a linked match gets excluded from "Upcoming" and falls into "Recent" (line 96 uses `e.date < today || e.match_id`). The "Video Analysis Test" on 27/02 likely has a `match_id`, so it lands in "Recent" despite being in the future.
 
-## What We Can Build Now (No RunPod Secrets Needed)
+2. **"Set Up Recording" button disappears**: In `EventCard.tsx`, the button is only rendered when `!hasMatch`. Once a match is linked, there is no way to navigate to the recording setup from the event card.
 
-### 1. Fix `trigger-processing` edge function
-Replace broken `getClaims()` with `getUser()` and update CORS headers. Same fix already applied to `generate-upload-url`.
+## Changes
 
-### 2. Fix `runpod-webhook` CORS headers
-Update to include full Supabase client header set.
+### 1. `src/pages/Matches.tsx` -- Fix filtering logic
 
-### 3. Create the RunPod serverless handler (`gpu-server/handler.py`)
-This is the actual code that will run on RunPod. It defines the ball-following + virtual pan/zoom pipeline:
+Change the event categorization to be **purely date-based**:
+- **Upcoming**: `e.date >= today` (regardless of `match_id`)
+- **Recent**: `e.date < today`
 
-```text
-Input (from trigger-processing):
-├── left_video: Wasabi path to left camera MP4
-├── right_video: Wasabi path to right camera MP4
-├── output_bucket: Wasabi bucket name
-├── match_id: UUID
-└── webhook_url: callback URL
+This ensures future events always appear under "Upcoming", whether or not they have a linked match.
 
-Processing Pipeline:
-1. Download both videos from Wasabi
-2. Synchronize frames (using audio fingerprint or timecode)
-3. Stitch into a wide panoramic frame
-4. Run ball detection (YOLOv8 or similar)
-5. Compute virtual camera crop that follows the ball
-6. Apply smooth pan/zoom with easing
-7. Render output video at target resolution
-8. Upload output + highlights + metadata to Wasabi
-9. POST webhook with output paths
+### 2. `src/components/Matches/EventCard.tsx` -- Always show action button
 
-Output (via webhook):
-├── video_path: Wasabi path to follow-cam video
-├── highlights_path: Wasabi path to key moments
-└── metadata_path: Wasabi path to JSON (ball positions, events)
-```
+Instead of hiding the button when a match exists, change the button behavior:
+- **No match linked**: Show "Set Up Recording" button (creates a new match and navigates to it -- current behavior)
+- **Match already linked**: Show "Open Recording" button that navigates to `/matches/{match_id}` (so users can access the recording setup they already created)
 
-We'll write the full Python handler with all pipeline stages stubbed out so you can fill in the ML models on RunPod.
+This ensures every event card has an actionable button regardless of state.
 
-### 4. Create `get-output-url` edge function
-New edge function that generates presigned Wasabi GET URLs for output videos, so the `MatchOutputViewer` can actually stream them.
+## Technical Details
 
-### 5. Make `MatchOutputViewer` functional
-Wire the View/Download buttons to call `get-output-url` and open the presigned URL in a video player or new tab.
+### Files to modify:
+1. **`src/pages/Matches.tsx`** lines 92-98: Remove `!e.match_id` from the upcoming filter and remove `|| e.match_id` from the recent filter
+2. **`src/components/Matches/EventCard.tsx`** lines 87-90: Replace the conditional hide with a conditional button label/action, add `useNavigate` for the "Open Recording" navigation
 
-### 6. Add processing config to trigger payload
-Extend `trigger-processing` to pass processing parameters (output resolution, follow mode, zoom level) so the RunPod handler can use them.
-
-## Files to Create/Modify
-
-| File | Action |
-|------|--------|
-| `supabase/functions/trigger-processing/index.ts` | Fix auth + CORS + add config params |
-| `supabase/functions/runpod-webhook/index.ts` | Update CORS |
-| `gpu-server/handler.py` | Create -- RunPod serverless handler with full pipeline |
-| `gpu-server/requirements.txt` | Update with RunPod SDK |
-| `supabase/functions/get-output-url/index.ts` | Create -- presigned URL generator for outputs |
-| `src/components/Matches/MatchOutputViewer.tsx` | Wire buttons to stream/download via presigned URLs |
-
-## No database changes needed
+### No database changes needed
+### No new dependencies needed
 
