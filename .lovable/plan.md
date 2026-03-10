@@ -1,47 +1,37 @@
 
 
-# Add DeepSORT / Player Tracking to GPU Pipeline
+# Fix: Event Filtering and Recording Setup Access
 
-## Current gaps
+## Problems Found
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Ball detection (YOLO) | Done | Works, uses yolov8n |
-| Ball following (smooth crop) | Done | SmoothFollower class |
-| Panorama stitching | Basic | Linear blend, no homography |
-| Player tracking (DeepSORT) | Missing | No multi-object tracking at all |
-| Audio sync | Stubbed | Returns (0, 0) |
-| Highlight detection | Stubbed | Copies first 30s |
+1. **Upcoming events appearing in "Recent"**: The filter on line 93 of `Matches.tsx` requires `!e.match_id` for upcoming events. So any future event that already has a linked match gets excluded from "Upcoming" and falls into "Recent" (line 96 uses `e.date < today || e.match_id`). The "Video Analysis Test" on 27/02 likely has a `match_id`, so it lands in "Recent" despite being in the future.
 
-## Recommendation
-
-**DeepSORT is overkill for ball-following** -- the current SmoothFollower already handles that well. DeepSORT (or ByteTrack) is needed for **player tracking** -- assigning consistent IDs to each player across frames so you can generate per-player heatmaps, distance stats, etc.
-
-The `supervision` library is already in `requirements.txt` and includes **ByteTrack** (a faster, simpler alternative to DeepSORT). I recommend using that instead of adding a separate `deep-sort-realtime` dependency.
+2. **"Set Up Recording" button disappears**: In `EventCard.tsx`, the button is only rendered when `!hasMatch`. Once a match is linked, there is no way to navigate to the recording setup from the event card.
 
 ## Changes
 
-### 1. `gpu-server/handler.py`
-- Add a `PlayerTracker` class using `supervision.ByteTrack` that:
-  - Runs YOLO person detection on each frame
-  - Assigns persistent track IDs via ByteTrack
-  - Records per-player positions over time
-- Integrate it into `process_videos()` alongside ball detection (runs on same YOLO inference pass -- YOLO detects both "person" and "sports ball" classes simultaneously)
-- Add player position data to the output metadata JSON
-- Upgrade stitching to use ORB feature matching + homography (OpenCV has this built in) with a fallback to the current linear blend
+### 1. `src/pages/Matches.tsx` -- Fix filtering logic
 
-### 2. `gpu-server/requirements.txt`
-- Remove `fastapi`, `uvicorn`, `python-multipart` (unused -- this is a serverless handler, not an API server)
-- Update `supervision` to latest for ByteTrack stability
-- Add `scipy` for audio cross-correlation sync
-- Add `filterpy` and `lap` if we want classic DeepSORT as a fallback
+Change the event categorization to be **purely date-based**:
+- **Upcoming**: `e.date >= today` (regardless of `match_id`)
+- **Recent**: `e.date < today`
 
-### 3. `gpu-server/handler.py` -- audio sync
-- Implement actual audio cross-correlation using `scipy.signal.correlate` to find the frame offset between left and right cameras
+This ensures future events always appear under "Upcoming", whether or not they have a linked match.
 
-### 4. Output metadata schema
-- Extend the metadata JSON to include `player_tracks` array with per-player position timeseries, so the frontend can render heatmaps and distance stats from real data
+### 2. `src/components/Matches/EventCard.tsx` -- Always show action button
 
-## No database or edge function changes needed
-All changes are in `gpu-server/` only -- the RunPod handler code you'll deploy separately.
+Instead of hiding the button when a match exists, change the button behavior:
+- **No match linked**: Show "Set Up Recording" button (creates a new match and navigates to it -- current behavior)
+- **Match already linked**: Show "Open Recording" button that navigates to `/matches/{match_id}` (so users can access the recording setup they already created)
+
+This ensures every event card has an actionable button regardless of state.
+
+## Technical Details
+
+### Files to modify:
+1. **`src/pages/Matches.tsx`** lines 92-98: Remove `!e.match_id` from the upcoming filter and remove `|| e.match_id` from the recent filter
+2. **`src/components/Matches/EventCard.tsx`** lines 87-90: Replace the conditional hide with a conditional button label/action, add `useNavigate` for the "Open Recording" navigation
+
+### No database changes needed
+### No new dependencies needed
 
