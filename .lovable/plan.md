@@ -1,37 +1,46 @@
 
 
-# Fix: Event Filtering and Recording Setup Access
+# Test Results: Wasabi Upload
 
-## Problems Found
+## What I tested
 
-1. **Upcoming events appearing in "Recent"**: The filter on line 93 of `Matches.tsx` requires `!e.match_id` for upcoming events. So any future event that already has a linked match gets excluded from "Upcoming" and falls into "Recent" (line 96 uses `e.date < today || e.match_id`). The "Video Analysis Test" on 27/02 likely has a `match_id`, so it lands in "Recent" despite being in the future.
+1. **Edge function is running** — confirmed it boots and processes requests.
+2. **Token-based auth path** — correctly rejects invalid tokens (401).
+3. **JWT auth path** — **BROKEN**. Line 85 of `generate-upload-url/index.ts` still calls `supabase.auth.getClaims(token)`, which does not exist in supabase-js v2. This means **no authenticated user can get a presigned URL**. The fix from the previous plan was never applied to this file.
 
-2. **"Set Up Recording" button disappears**: In `EventCard.tsx`, the button is only rendered when `!hasMatch`. Once a match is linked, there is no way to navigate to the recording setup from the event card.
+## Root cause
 
-## Changes
+The previous plan proposed replacing `getClaims()` with `getUser()`, but the deployed code still has the old broken call. The source file hasn't been updated.
 
-### 1. `src/pages/Matches.tsx` -- Fix filtering logic
+## Fix (single file change)
 
-Change the event categorization to be **purely date-based**:
-- **Upcoming**: `e.date >= today` (regardless of `match_id`)
-- **Recent**: `e.date < today`
+### `supabase/functions/generate-upload-url/index.ts`
 
-This ensures future events always appear under "Upcoming", whether or not they have a linked match.
+Replace lines 84-89:
+```typescript
+// OLD (broken)
+const token = authHeader.replace("Bearer ", "");
+const { data: claims, error: authError } = await supabase.auth.getClaims(token);
+if (authError || !claims?.claims) {
+  return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+}
+const userId = claims.claims.sub as string;
+```
 
-### 2. `src/components/Matches/EventCard.tsx` -- Always show action button
+With:
+```typescript
+// NEW (working)
+const { data: { user }, error: authError } = await supabase.auth.getUser();
+if (authError || !user) {
+  return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+}
+const userId = user.id;
+```
 
-Instead of hiding the button when a match exists, change the button behavior:
-- **No match linked**: Show "Set Up Recording" button (creates a new match and navigates to it -- current behavior)
-- **Match already linked**: Show "Open Recording" button that navigates to `/matches/{match_id}` (so users can access the recording setup they already created)
+After deploying this fix, I'll create a small test edge function that:
+1. Calls `generate-upload-url` internally to get a presigned URL
+2. Uploads a small text file ("hello world") to that presigned URL via `fetch` PUT
+3. Returns success/failure
 
-This ensures every event card has an actionable button regardless of state.
-
-## Technical Details
-
-### Files to modify:
-1. **`src/pages/Matches.tsx`** lines 92-98: Remove `!e.match_id` from the upcoming filter and remove `|| e.match_id` from the recent filter
-2. **`src/components/Matches/EventCard.tsx`** lines 87-90: Replace the conditional hide with a conditional button label/action, add `useNavigate` for the "Open Recording" navigation
-
-### No database changes needed
-### No new dependencies needed
+This will confirm the entire Wasabi pipeline works end-to-end without needing a browser or mobile device.
 
