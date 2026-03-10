@@ -1,37 +1,43 @@
 
 
-# Fix: Event Filtering and Recording Setup Access
+# Fix Mobile Video Upload to Wasabi
 
-## Problems Found
+## Issues Found
 
-1. **Upcoming events appearing in "Recent"**: The filter on line 93 of `Matches.tsx` requires `!e.match_id` for upcoming events. So any future event that already has a linked match gets excluded from "Upcoming" and falls into "Recent" (line 96 uses `e.date < today || e.match_id`). The "Video Analysis Test" on 27/02 likely has a `match_id`, so it lands in "Recent" despite being in the future.
+### 1. **Duplicate variable declaration crashes the edge function** (CRITICAL)
+In `generate-upload-url/index.ts`, `adminClient` is declared on **line 46** and again on **line 154**. This causes a runtime error — the function never reaches the presigned URL generation step. The first declaration (line 46-49) is used for token validation; the second (line 154-157) is used for upserting `match_videos`. The second declaration should be removed since the first is already in scope.
 
-2. **"Set Up Recording" button disappears**: In `EventCard.tsx`, the button is only rendered when `!hasMatch`. Once a match is linked, there is no way to navigate to the recording setup from the event card.
+### 2. **`getClaims()` does not exist in supabase-js v2** (CRITICAL for authenticated uploads)
+Line 84 calls `supabase.auth.getClaims()` which is not a valid method. Should be `supabase.auth.getUser()` to extract the user ID from the JWT.
+
+### 3. **CORS headers incomplete** (may cause preflight failures on mobile)
+The edge functions use a minimal set of CORS headers. Newer versions of the Supabase JS client send additional headers (`x-supabase-client-platform`, etc.) that aren't allowed, which can cause `OPTIONS` preflight to fail on mobile browsers.
+
+### 4. **Native recording: base64 conversion will OOM on large files**
+In `CameraRecorder.tsx` lines 258-264, after stopping a native recording, the entire 4K video file is read into memory as base64, then converted byte-by-byte to an `ArrayBuffer`. For multi-GB files this will crash the app. Instead, the file should be uploaded directly using the native file path via `XMLHttpRequest` or `fetch` with a `Blob` URL.
 
 ## Changes
 
-### 1. `src/pages/Matches.tsx` -- Fix filtering logic
+### 1. Fix `supabase/functions/generate-upload-url/index.ts`
+- Remove the duplicate `adminClient` declaration on line 154-157 (reuse the one from line 46)
+- Replace `supabase.auth.getClaims()` with `supabase.auth.getUser()` and extract `user.id`
+- Update CORS headers to include all Supabase client headers
 
-Change the event categorization to be **purely date-based**:
-- **Upcoming**: `e.date >= today` (regardless of `match_id`)
-- **Recent**: `e.date < today`
+### 2. Fix `supabase/functions/confirm-guest-upload/index.ts`
+- Update CORS headers to match
 
-This ensures future events always appear under "Upcoming", whether or not they have a linked match.
+### 3. Fix `src/components/Matches/CameraRecorder.tsx`
+- Replace the base64-to-ArrayBuffer conversion with a chunked approach for smaller files
+- For large native files, pass the file path back to the parent and let the upload use `Filesystem.readFile` in chunks or use `fetch` with the native file URI directly
+- Add the chunked base64 conversion helper to avoid stack overflow
 
-### 2. `src/components/Matches/EventCard.tsx` -- Always show action button
+### 4. Fix `src/components/Matches/VideoUploadCard.tsx`
+- Update CORS-related headers if manually set (currently none — uses `supabase.functions.invoke` which handles this)
 
-Instead of hiding the button when a match exists, change the button behavior:
-- **No match linked**: Show "Set Up Recording" button (creates a new match and navigates to it -- current behavior)
-- **Match already linked**: Show "Open Recording" button that navigates to `/matches/{match_id}` (so users can access the recording setup they already created)
-
-This ensures every event card has an actionable button regardless of state.
-
-## Technical Details
+## File Summary
 
 ### Files to modify:
-1. **`src/pages/Matches.tsx`** lines 92-98: Remove `!e.match_id` from the upcoming filter and remove `|| e.match_id` from the recent filter
-2. **`src/components/Matches/EventCard.tsx`** lines 87-90: Replace the conditional hide with a conditional button label/action, add `useNavigate` for the "Open Recording" navigation
-
-### No database changes needed
-### No new dependencies needed
+1. `supabase/functions/generate-upload-url/index.ts` — Fix duplicate variable, fix auth method, update CORS
+2. `supabase/functions/confirm-guest-upload/index.ts` — Update CORS headers
+3. `src/components/Matches/CameraRecorder.tsx` — Fix native file conversion to avoid OOM
 
