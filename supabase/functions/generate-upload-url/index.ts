@@ -81,12 +81,11 @@ Deno.serve(async (req) => {
         { global: { headers: { Authorization: authHeader } } }
       );
 
-      const token = authHeader.replace("Bearer ", "");
-      const { data: claims, error: authError } = await supabase.auth.getClaims(token);
-      if (authError || !claims?.claims) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
       }
-      const userId = claims.claims.sub as string;
+      const userId = user.id;
 
       // Verify user owns this match
       const { data: match, error: matchError } = await adminClient
@@ -105,8 +104,9 @@ Deno.serve(async (req) => {
     const accessKey = Deno.env.get("WASABI_ACCESS_KEY");
     const secretKey = Deno.env.get("WASABI_SECRET_KEY");
     const bucket = Deno.env.get("WASABI_BUCKET");
-    const region = Deno.env.get("WASABI_REGION") || "us-east-1";
-    const endpoint = Deno.env.get("WASABI_ENDPOINT") || `https://s3.${region}.wasabisys.com`;
+    const region = (Deno.env.get("WASABI_REGION") || "us-east-1").trim();
+    let endpoint = (Deno.env.get("WASABI_ENDPOINT") || `https://s3.${region}.wasabisys.com`).trim();
+    if (!endpoint.startsWith("http")) endpoint = `https://${endpoint}`;
 
     if (!accessKey || !secretKey || !bucket) {
       return new Response(JSON.stringify({ error: "Storage not configured" }), { status: 500, headers: corsHeaders });
