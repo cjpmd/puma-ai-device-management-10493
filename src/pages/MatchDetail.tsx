@@ -98,7 +98,7 @@ const MatchDetail = () => {
         <ProcessingStatus job={latestJob} />
 
         {/* Outputs */}
-        <MatchOutputViewer job={latestJob} />
+        <MatchOutputViewer matchId={id!} job={latestJob} />
 
         {/* Developer Controls */}
         <Card>
