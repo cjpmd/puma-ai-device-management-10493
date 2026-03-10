@@ -20,8 +20,9 @@ Deno.serve(async (req) => {
     const accessKey = Deno.env.get("WASABI_ACCESS_KEY");
     const secretKey = Deno.env.get("WASABI_SECRET_KEY");
     const bucket = Deno.env.get("WASABI_BUCKET");
-    const region = Deno.env.get("WASABI_REGION") || "us-east-1";
-    const endpoint = Deno.env.get("WASABI_ENDPOINT") || `https://s3.${region}.wasabisys.com`;
+    const region = (Deno.env.get("WASABI_REGION") || "us-east-1").trim();
+    let endpoint = (Deno.env.get("WASABI_ENDPOINT") || `https://s3.${region}.wasabisys.com`).trim();
+    if (!endpoint.startsWith("http")) endpoint = `https://${endpoint}`;
 
     if (!accessKey || !secretKey || !bucket) {
       log("ERROR: Missing Wasabi credentials");
