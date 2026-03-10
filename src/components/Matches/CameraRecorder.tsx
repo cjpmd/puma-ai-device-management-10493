@@ -254,14 +254,12 @@ export function CameraRecorder({
         if (result?.videoFilePath) {
           nativeFilePathRef.current = result.videoFilePath;
           // Convert native file to File object for upload
-          const { Filesystem, Directory } = await import('@capacitor/filesystem');
-          const fileData = await Filesystem.readFile({ path: result.videoFilePath });
-          const base64 = fileData.data as string;
-          const byteString = atob(base64);
-          const ab = new ArrayBuffer(byteString.length);
-          const ia = new Uint8Array(ab);
-          for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
-          const blob = new Blob([ab], { type: 'video/mp4' });
+          // Fetch the native file directly as a blob to avoid OOM from base64 conversion
+          const fileUri = result.videoFilePath.startsWith('file://') 
+            ? result.videoFilePath 
+            : `file://${result.videoFilePath}`;
+          const response = await fetch(fileUri);
+          const blob = await response.blob();
           const file = new File([blob], `recording-${Date.now()}.mp4`, { type: 'video/mp4' });
           onRecordingComplete(file);
         }

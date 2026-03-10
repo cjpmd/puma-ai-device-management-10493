@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 function hmacSha256(key: Uint8Array, message: string): Promise<ArrayBuffer> {
@@ -81,14 +81,15 @@ Deno.serve(async (req) => {
         { global: { headers: { Authorization: authHeader } } }
       );
 
-      const { data: claims, error: authError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
+      const token = authHeader.replace("Bearer ", "");
+      const { data: claims, error: authError } = await supabase.auth.getClaims(token);
       if (authError || !claims?.claims) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
       }
       const userId = claims.claims.sub as string;
 
       // Verify user owns this match
-      const { data: match, error: matchError } = await supabase
+      const { data: match, error: matchError } = await adminClient
         .from("matches")
         .select("id")
         .eq("id", match_id)
@@ -150,12 +151,7 @@ Deno.serve(async (req) => {
 
     const presignedUrl = `${endpoint}/${bucket}/${storagePath}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
 
-    // Upsert match_videos record
-    const adminClient = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
+    // Upsert match_videos record (reuse adminClient from above)
     const { error: videoError } = await adminClient
       .from("match_videos")
       .upsert(
