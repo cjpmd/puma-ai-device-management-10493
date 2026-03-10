@@ -1,4 +1,3 @@
-
 # Use NVIDIA CUDA base image
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
@@ -20,8 +19,5 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Expose port
-EXPOSE 8000
-
-# Start the FastAPI server
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# RunPod serverless handler — no port needed
+CMD ["python3", "-u", "handler.py"]

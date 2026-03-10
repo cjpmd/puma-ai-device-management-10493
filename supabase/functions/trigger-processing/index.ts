@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 Deno.serve(async (req) => {
@@ -22,13 +22,13 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const { data: claims, error: authError } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
-    if (authError || !claims?.claims) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
-    const userId = claims.claims.sub as string;
+    const userId = user.id;
 
-    const { match_id, gpu_type } = await req.json();
+    const { match_id, gpu_type, config } = await req.json();
 
     if (!match_id) {
       return new Response(JSON.stringify({ error: "match_id required" }), { status: 400, headers: corsHeaders });
@@ -72,6 +72,15 @@ Deno.serve(async (req) => {
 
     const webhookUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/runpod-webhook`;
 
+    // Processing config with defaults
+    const processingConfig = {
+      output_resolution: config?.output_resolution || "1920x1080",
+      follow_mode: config?.follow_mode || "ball",       // ball | player | auto
+      zoom_level: config?.zoom_level || 1.5,
+      smooth_factor: config?.smooth_factor || 0.85,
+      output_fps: config?.output_fps || 30,
+    };
+
     // Call RunPod serverless API
     const runpodResponse = await fetch(`https://api.runpod.ai/v2/${runpodEndpointId}/run`, {
       method: "POST",
@@ -86,6 +95,12 @@ Deno.serve(async (req) => {
           output_bucket: Deno.env.get("WASABI_BUCKET"),
           match_id,
           webhook_url: webhookUrl,
+          config: processingConfig,
+          // Wasabi credentials for the handler to download/upload
+          wasabi_access_key: Deno.env.get("WASABI_ACCESS_KEY"),
+          wasabi_secret_key: Deno.env.get("WASABI_SECRET_KEY"),
+          wasabi_region: Deno.env.get("WASABI_REGION"),
+          wasabi_endpoint: Deno.env.get("WASABI_ENDPOINT"),
         },
       }),
     });
