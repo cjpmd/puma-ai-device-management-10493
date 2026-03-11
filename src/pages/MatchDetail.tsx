@@ -83,16 +83,9 @@ const MatchDetail = () => {
           <VideoUploadCard matchId={id!} cameraSide="right" existingVideo={rightVideo} onUploadComplete={refetch} />
         </div>
 
-        {/* Auto-trigger hint */}
+        {/* Processing Config */}
         {bothUploaded && !latestJob && (
-          <Card className="border-emerald-200 bg-emerald-50">
-            <CardContent className="pt-6 flex items-center justify-between">
-              <p className="text-sm text-emerald-700">Both videos uploaded. Ready to process!</p>
-              <Button onClick={handleTriggerProcessing} size="sm">
-                <RefreshCw className="h-4 w-4 mr-2" /> Start Processing
-              </Button>
-            </CardContent>
-          </Card>
+          <ProcessingConfigCard onTrigger={handleTriggerProcessing} disabled={!bothUploaded} />
         )}
 
         {/* Processing Status */}
