@@ -23,10 +23,10 @@ const MatchDetail = () => {
   const rightVideo = videos.find((v) => v.camera_side === 'right');
   const bothUploaded = leftVideo?.upload_status === 'uploaded' && rightVideo?.upload_status === 'uploaded';
 
-  const handleTriggerProcessing = async () => {
+  const handleTriggerProcessing = async (config?: ProcessingConfig) => {
     try {
       const res = await supabase.functions.invoke('trigger-processing', {
-        body: { match_id: id },
+        body: { match_id: id, config },
       });
       if (res.error) throw new Error(res.error.message);
       toast({ title: 'Processing triggered', description: `Job ID: ${res.data?.job_id}` });
