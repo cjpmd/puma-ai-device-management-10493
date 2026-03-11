@@ -98,7 +98,7 @@ const MatchDetail = () => {
         <Card>
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Developer Controls</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={handleTriggerProcessing} disabled={!bothUploaded}>
+            <Button variant="outline" size="sm" onClick={() => handleTriggerProcessing()} disabled={!bothUploaded}>
               <RefreshCw className="h-4 w-4 mr-1" /> Re-trigger Processing
             </Button>
             <Button variant="outline" size="sm" onClick={handleMarkFailed}>
