@@ -9,6 +9,7 @@ import { ProcessingStatus } from '@/components/Matches/ProcessingStatus';
 import { CameraQRSetup } from '@/components/Matches/CameraQRSetup';
 import { MatchOutputViewer } from '@/components/Matches/MatchOutputViewer';
 import { RecordingControls } from '@/components/Matches/RecordingControls';
+import ProcessingConfigCard, { type ProcessingConfig } from '@/components/Matches/ProcessingConfigCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -22,10 +23,10 @@ const MatchDetail = () => {
   const rightVideo = videos.find((v) => v.camera_side === 'right');
   const bothUploaded = leftVideo?.upload_status === 'uploaded' && rightVideo?.upload_status === 'uploaded';
 
-  const handleTriggerProcessing = async () => {
+  const handleTriggerProcessing = async (config?: ProcessingConfig) => {
     try {
       const res = await supabase.functions.invoke('trigger-processing', {
-        body: { match_id: id },
+        body: { match_id: id, config },
       });
       if (res.error) throw new Error(res.error.message);
       toast({ title: 'Processing triggered', description: `Job ID: ${res.data?.job_id}` });
@@ -82,16 +83,9 @@ const MatchDetail = () => {
           <VideoUploadCard matchId={id!} cameraSide="right" existingVideo={rightVideo} onUploadComplete={refetch} />
         </div>
 
-        {/* Auto-trigger hint */}
+        {/* Processing Config */}
         {bothUploaded && !latestJob && (
-          <Card className="border-emerald-200 bg-emerald-50">
-            <CardContent className="pt-6 flex items-center justify-between">
-              <p className="text-sm text-emerald-700">Both videos uploaded. Ready to process!</p>
-              <Button onClick={handleTriggerProcessing} size="sm">
-                <RefreshCw className="h-4 w-4 mr-2" /> Start Processing
-              </Button>
-            </CardContent>
-          </Card>
+          <ProcessingConfigCard onTrigger={handleTriggerProcessing} disabled={!bothUploaded} />
         )}
 
         {/* Processing Status */}
@@ -104,7 +98,7 @@ const MatchDetail = () => {
         <Card>
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Developer Controls</CardTitle></CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={handleTriggerProcessing} disabled={!bothUploaded}>
+            <Button variant="outline" size="sm" onClick={() => handleTriggerProcessing()} disabled={!bothUploaded}>
               <RefreshCw className="h-4 w-4 mr-1" /> Re-trigger Processing
             </Button>
             <Button variant="outline" size="sm" onClick={handleMarkFailed}>
