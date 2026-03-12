@@ -1,82 +1,37 @@
 
 
-# Upgrade GPU Handler: 3-Stage Ball Detection, Play-Switch Prediction, Smart Zoom
+# Fix: Event Filtering and Recording Setup Access
 
-## What's Already Done
+## Problems Found
 
-Your `gpu-server/handler.py` already has:
-- Panorama stitching (homography + blend fallback)
-- YOLOv8 ball detection (single-stage only)
-- ByteTrack player tracking
-- SmoothFollower for camera movement
-- Audio cross-correlation sync
-- Wasabi upload/download
-- RunPod serverless handler
+1. **Upcoming events appearing in "Recent"**: The filter on line 93 of `Matches.tsx` requires `!e.match_id` for upcoming events. So any future event that already has a linked match gets excluded from "Upcoming" and falls into "Recent" (line 96 uses `e.date < today || e.match_id`). The "Video Analysis Test" on 27/02 likely has a `match_id`, so it lands in "Recent" despite being in the future.
 
-## What's Missing (from the ChatGPT discussion)
-
-### 1. Multi-stage ball detection (CRITICAL)
-Currently if YOLO misses the ball, the camera drifts on momentum alone. Need:
-- **Stage 1**: YOLO detection (already done)
-- **Stage 2**: Motion detection fallback — frame differencing to find the fastest small object
-- **Stage 3**: Kalman filter trajectory prediction — predict ball position when both YOLO and motion fail
-
-### 2. Play-switch prediction
-Currently the camera reacts to ball position. On long passes/clearances it lags behind. Need:
-- Velocity-based ball trajectory extrapolation
-- When ball speed exceeds a threshold, move the camera **ahead** of the ball
-- Play-switch detection: when ball crosses >40% of pitch width rapidly, zoom out and pan faster
-
-### 3. Smart zoom logic
-Currently zoom is a fixed config value. Need dynamic zoom based on game state:
-- Ball moving fast → zoom out (wide view)
-- Ball near goal area → zoom in (tight)
-- Dead ball / low speed → center on midfield, medium zoom
-
-### 4. Video chunking prep
-The ChatGPT conversation recommends splitting videos into 2-minute chunks for parallel GPU processing. This is an optimization for later but we should structure the handler to support it.
+2. **"Set Up Recording" button disappears**: In `EventCard.tsx`, the button is only rendered when `!hasMatch`. Once a match is linked, there is no way to navigate to the recording setup from the event card.
 
 ## Changes
 
-### `gpu-server/handler.py`
-- Add `MotionDetector` class: frame differencing, contour filtering for small fast objects
-- Add `KalmanBallPredictor` class using `filterpy.kalman.KalmanFilter` for trajectory prediction when detection fails
-- Add `BallTrackingPipeline` class that combines all 3 stages with confidence scoring
-- Add `PlaySwitchDetector`: tracks ball velocity, detects rapid cross-pitch movement, outputs camera lead distance
-- Add `DynamicZoom` class: adjusts zoom level based on ball speed and pitch position (goal proximity)
-- Update `SmoothFollower` to accept lead distance from play-switch detection
-- Update main processing loop to use `BallTrackingPipeline` instead of raw YOLO
-- Add ball velocity and play-switch events to metadata output
+### 1. `src/pages/Matches.tsx` -- Fix filtering logic
 
-### `gpu-server/requirements.txt`
-- Already has `filterpy` and `scipy` — no changes needed
+Change the event categorization to be **purely date-based**:
+- **Upcoming**: `e.date >= today` (regardless of `match_id`)
+- **Recent**: `e.date < today`
 
-### No frontend or edge function changes
-All changes are in `gpu-server/` only.
+This ensures future events always appear under "Upcoming", whether or not they have a linked match.
 
-## Processing loop becomes
+### 2. `src/components/Matches/EventCard.tsx` -- Always show action button
 
-```text
-Frame
-  ↓
-YOLO detection (every 2nd frame)
-  ↓ if miss
-Motion detection (frame diff)
-  ↓ if miss
-Kalman prediction
-  ↓
-Ball position (with confidence score)
-  ↓
-Play-switch check (velocity + direction)
-  ↓
-Dynamic zoom calculation
-  ↓
-Camera target (with lead distance)
-  ↓
-Smooth camera movement
-  ↓
-Crop panorama at dynamic zoom
-  ↓
-Render frame
-```
+Instead of hiding the button when a match exists, change the button behavior:
+- **No match linked**: Show "Set Up Recording" button (creates a new match and navigates to it -- current behavior)
+- **Match already linked**: Show "Open Recording" button that navigates to `/matches/{match_id}` (so users can access the recording setup they already created)
+
+This ensures every event card has an actionable button regardless of state.
+
+## Technical Details
+
+### Files to modify:
+1. **`src/pages/Matches.tsx`** lines 92-98: Remove `!e.match_id` from the upcoming filter and remove `|| e.match_id` from the recent filter
+2. **`src/components/Matches/EventCard.tsx`** lines 87-90: Replace the conditional hide with a conditional button label/action, add `useNavigate` for the "Open Recording" navigation
+
+### No database changes needed
+### No new dependencies needed
 

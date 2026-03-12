@@ -5,11 +5,12 @@ This handler runs on RunPod GPU workers. It:
 1. Downloads dual-camera footage from Wasabi
 2. Synchronizes frames via audio cross-correlation
 3. Stitches frames into a panorama (homography or linear blend fallback)
-4. Detects the ball using YOLOv8
+4. Detects the ball using a 3-stage pipeline (YOLO → motion fallback → Kalman prediction)
 5. Tracks players using ByteTrack (persistent IDs across frames)
-6. Computes a smooth virtual camera crop that follows the ball
-7. Renders the output and uploads back to Wasabi
-8. POSTs results to the webhook
+6. Applies play-switch prediction and dynamic zoom
+7. Computes a smooth virtual camera crop that follows the ball
+8. Renders the output and uploads back to Wasabi
+9. POSTs results to the webhook
 """
 
 import os
@@ -25,6 +26,7 @@ import numpy as np
 from ultralytics import YOLO
 import supervision as sv
 from scipy.signal import correlate
+from filterpy.kalman import KalmanFilter
 
 
 # ─── Wasabi S3 helpers ────────────────────────────────────────────────
@@ -272,6 +274,369 @@ def parse_detections(results, target_classes: set) -> list:
     return detections
 
 
+# ─── Stage 2: Motion detection fallback ─────────────────────────────
+
+class MotionDetector:
+    """
+    Detects fast-moving small objects via frame differencing.
+    Used as fallback when YOLO misses the ball.
+    """
+
+    def __init__(self, min_area: int = 30, max_area: int = 2000, speed_threshold: float = 8.0):
+        self.prev_gray = None
+        self.prev_candidates = []
+        self.min_area = min_area
+        self.max_area = max_area
+        self.speed_threshold = speed_threshold
+
+    def detect(self, frame: np.ndarray) -> tuple | None:
+        """
+        Returns (cx, cy, confidence) of the most likely ball candidate,
+        or None if no good candidate found.
+        """
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        if self.prev_gray is None:
+            self.prev_gray = gray
+            return None
+
+        # Frame difference
+        diff = cv2.absdiff(self.prev_gray, gray)
+        _, thresh = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)
+
+        # Morphological cleanup
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+        thresh = cv2.dilate(thresh, kernel, iterations=1)
+
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        candidates = []
+        for c in contours:
+            area = cv2.contourArea(c)
+            if self.min_area < area < self.max_area:
+                M = cv2.moments(c)
+                if M["m00"] == 0:
+                    continue
+                cx = M["m10"] / M["m00"]
+                cy = M["m01"] / M["m00"]
+
+                # Check speed against previous candidates
+                speed = 0.0
+                for pcx, pcy in self.prev_candidates:
+                    d = np.sqrt((cx - pcx) ** 2 + (cy - pcy) ** 2)
+                    speed = max(speed, d)
+
+                if speed > self.speed_threshold:
+                    # Score: prefer small, fast, round objects
+                    perimeter = cv2.arcLength(c, True)
+                    circularity = 4 * np.pi * area / (perimeter * perimeter + 1e-6)
+                    score = speed * circularity / (area + 1.0)
+                    candidates.append((cx, cy, score))
+
+        # Save current candidates for next frame speed calculation
+        self.prev_candidates = [(cx, cy) for cx, cy, _ in candidates] if candidates else []
+        self.prev_gray = gray
+
+        if not candidates:
+            return None
+
+        # Return best candidate with confidence capped at 0.5 (lower than YOLO)
+        best = max(candidates, key=lambda c: c[2])
+        confidence = min(0.5, best[2] / 10.0)
+        return (best[0], best[1], confidence)
+
+
+# ─── Stage 3: Kalman filter trajectory prediction ───────────────────
+
+class KalmanBallPredictor:
+    """
+    Predicts ball position using a Kalman filter when detection fails.
+    State: [x, y, vx, vy, ax, ay] — position, velocity, acceleration.
+    """
+
+    def __init__(self, fps: float = 30.0):
+        self.kf = KalmanFilter(dim_x=6, dim_z=2)
+        dt = 1.0 / fps
+
+        # State transition: constant acceleration model
+        self.kf.F = np.array([
+            [1, 0, dt, 0, 0.5 * dt ** 2, 0],
+            [0, 1, 0, dt, 0, 0.5 * dt ** 2],
+            [0, 0, 1, 0, dt, 0],
+            [0, 0, 0, 1, 0, dt],
+            [0, 0, 0, 0, 1, 0],
+            [0, 0, 0, 0, 0, 1],
+        ])
+
+        # Measurement: we observe x, y
+        self.kf.H = np.array([
+            [1, 0, 0, 0, 0, 0],
+            [0, 1, 0, 0, 0, 0],
+        ])
+
+        # Measurement noise
+        self.kf.R = np.eye(2) * 10.0
+
+        # Process noise
+        self.kf.Q = np.eye(6) * 0.5
+        self.kf.Q[4, 4] = 1.0  # acceleration noise
+        self.kf.Q[5, 5] = 1.0
+
+        # Initial covariance
+        self.kf.P *= 100.0
+
+        self.initialized = False
+        self.frames_without_measurement = 0
+        self.max_predict_frames = 30  # ~1 second at 30fps
+
+    def update(self, measurement: tuple | None):
+        """
+        Call every frame. Pass (x, y) when detected, None when lost.
+        """
+        if measurement is not None:
+            x, y = measurement
+            if not self.initialized:
+                self.kf.x = np.array([x, y, 0, 0, 0, 0]).reshape(6, 1)
+                self.initialized = True
+                self.frames_without_measurement = 0
+                return
+            self.kf.predict()
+            self.kf.update(np.array([x, y]).reshape(2, 1))
+            self.frames_without_measurement = 0
+        else:
+            if self.initialized:
+                self.kf.predict()
+                self.frames_without_measurement += 1
+
+    def predict_position(self) -> tuple | None:
+        """
+        Returns (x, y, confidence) prediction, or None if not initialized
+        or too many frames without measurement.
+        """
+        if not self.initialized:
+            return None
+        if self.frames_without_measurement > self.max_predict_frames:
+            return None
+
+        x = float(self.kf.x[0, 0])
+        y = float(self.kf.x[1, 0])
+        # Confidence decays with frames lost
+        confidence = max(0.1, 0.4 * (1.0 - self.frames_without_measurement / self.max_predict_frames))
+        return (x, y, confidence)
+
+    def get_velocity(self) -> tuple:
+        """Returns (vx, vy) in pixels/frame."""
+        if not self.initialized:
+            return (0.0, 0.0)
+        return (float(self.kf.x[2, 0]), float(self.kf.x[3, 0]))
+
+
+# ─── 3-Stage Ball Tracking Pipeline ─────────────────────────────────
+
+class BallTrackingPipeline:
+    """
+    Combines three detection stages with confidence scoring:
+    1. YOLO detection (highest confidence)
+    2. Motion detection fallback (medium confidence)
+    3. Kalman filter prediction (low but smooth confidence)
+    """
+
+    def __init__(self, fps: float = 30.0):
+        self.motion_detector = MotionDetector()
+        self.kalman = KalmanBallPredictor(fps=fps)
+        self.last_stage = "none"
+        self.consecutive_predictions = 0
+
+    def update(self, yolo_detection: tuple | None, frame: np.ndarray) -> tuple | None:
+        """
+        Returns (x, y, confidence, stage) or None.
+        yolo_detection: (cx, cy, conf) from YOLO, or None.
+        frame: current panorama frame for motion detection.
+        """
+        # Stage 1: YOLO
+        if yolo_detection is not None:
+            x, y, conf = yolo_detection
+            self.kalman.update((x, y))
+            self.motion_detector.detect(frame)  # keep motion detector in sync
+            self.last_stage = "yolo"
+            self.consecutive_predictions = 0
+            return (x, y, conf, "yolo")
+
+        # Stage 2: Motion detection
+        motion_result = self.motion_detector.detect(frame)
+        if motion_result is not None:
+            mx, my, mconf = motion_result
+            # Validate against Kalman prediction if available
+            kalman_pred = self.kalman.predict_position()
+            if kalman_pred is not None:
+                kx, ky, _ = kalman_pred
+                dist = np.sqrt((mx - kx) ** 2 + (my - ky) ** 2)
+                # Accept motion detection only if reasonably close to prediction
+                if dist < 300:
+                    self.kalman.update((mx, my))
+                    self.last_stage = "motion"
+                    self.consecutive_predictions = 0
+                    return (mx, my, mconf, "motion")
+            else:
+                # No Kalman reference, accept motion detection
+                self.kalman.update((mx, my))
+                self.last_stage = "motion"
+                self.consecutive_predictions = 0
+                return (mx, my, mconf, "motion")
+
+        # Stage 3: Kalman prediction
+        self.kalman.update(None)
+        prediction = self.kalman.predict_position()
+        if prediction is not None:
+            px, py, pconf = prediction
+            self.last_stage = "kalman"
+            self.consecutive_predictions += 1
+            return (px, py, pconf, "kalman")
+
+        self.last_stage = "none"
+        self.consecutive_predictions += 1
+        return None
+
+
+# ─── Play-switch detection ───────────────────────────────────────────
+
+class PlaySwitchDetector:
+    """
+    Detects rapid play switches (long passes, clearances) and provides
+    camera lead distance to anticipate ball movement.
+    """
+
+    def __init__(self, panorama_width: float, fps: float = 30.0):
+        self.panorama_width = panorama_width
+        self.fps = fps
+        self.velocity_history = []  # recent (vx, vy) values
+        self.history_len = 10
+        self.pass_threshold = 40.0  # px/frame for fast movement
+        self.switch_threshold = 0.4  # fraction of pitch width
+
+        self.prev_x = None
+        self.is_switching = False
+        self.switch_events = []
+
+    def update(self, ball_x: float, ball_y: float, frame_idx: int) -> dict:
+        """
+        Returns {
+            "lead_x": float,  # how far ahead to place camera (pixels)
+            "lead_y": float,
+            "is_switching": bool,
+            "speed": float,   # ball speed in px/frame
+        }
+        """
+        if self.prev_x is None:
+            self.prev_x = ball_x
+            self.prev_y = ball_y
+            return {"lead_x": 0.0, "lead_y": 0.0, "is_switching": False, "speed": 0.0}
+
+        vx = ball_x - self.prev_x
+        vy = ball_y - self.prev_y
+        speed = np.sqrt(vx ** 2 + vy ** 2)
+
+        self.velocity_history.append((vx, vy))
+        if len(self.velocity_history) > self.history_len:
+            self.velocity_history.pop(0)
+
+        # Average velocity for smoother lead
+        avg_vx = np.mean([v[0] for v in self.velocity_history])
+        avg_vy = np.mean([v[1] for v in self.velocity_history])
+
+        # Detect play switch
+        self.is_switching = False
+        if speed > self.pass_threshold:
+            # Check if ball has crossed significant portion of pitch
+            dx = abs(ball_x - self.prev_x)
+            if dx > self.panorama_width * 0.05:  # 5% per frame = very fast
+                self.is_switching = True
+                self.switch_events.append({
+                    "frame": frame_idx,
+                    "time": round(frame_idx / self.fps, 2),
+                    "from_x": round(self.prev_x, 1),
+                    "to_x": round(ball_x, 1),
+                    "speed": round(speed, 1),
+                })
+
+        # Calculate lead distance
+        # Fast ball: lead further ahead (up to 200px)
+        lead_factor = min(1.0, speed / self.pass_threshold) * 5.0
+        lead_x = avg_vx * lead_factor
+        lead_y = avg_vy * lead_factor * 0.5  # less vertical lead
+
+        self.prev_x = ball_x
+        self.prev_y = ball_y
+
+        return {
+            "lead_x": lead_x,
+            "lead_y": lead_y,
+            "is_switching": self.is_switching,
+            "speed": speed,
+        }
+
+
+# ─── Dynamic zoom ───────────────────────────────────────────────────
+
+class DynamicZoom:
+    """
+    Adjusts zoom level based on game state:
+    - Ball moving fast → zoom out (wide view)
+    - Ball near goal → zoom in (tight)
+    - Dead ball / slow → medium zoom, center midfield
+    """
+
+    def __init__(self, panorama_width: float, base_zoom: float = 1.5,
+                 min_zoom: float = 1.0, max_zoom: float = 3.0):
+        self.panorama_width = panorama_width
+        self.base_zoom = base_zoom
+        self.min_zoom = min_zoom
+        self.max_zoom = max_zoom
+        self.current_zoom = base_zoom
+        self.smooth_factor = 0.92  # slow zoom transitions
+
+        # Goal zones: left 15% and right 15% of panorama
+        self.goal_zone_fraction = 0.15
+        self.dead_ball_speed = 3.0  # px/frame
+        self.fast_play_speed = 25.0  # px/frame
+        self.dead_ball_frames = 0
+        self.dead_ball_threshold = 45  # 1.5s at 30fps
+
+    def update(self, ball_x: float, ball_speed: float, is_switching: bool) -> float:
+        """Returns the target zoom level for this frame."""
+        target_zoom = self.base_zoom
+
+        # Dead ball detection
+        if ball_speed < self.dead_ball_speed:
+            self.dead_ball_frames += 1
+        else:
+            self.dead_ball_frames = 0
+
+        if self.dead_ball_frames > self.dead_ball_threshold:
+            # Dead ball: medium zoom
+            target_zoom = self.base_zoom
+        elif is_switching or ball_speed > self.fast_play_speed:
+            # Fast play or switch: zoom out
+            zoom_reduction = min(0.5, (ball_speed - self.fast_play_speed) / 50.0)
+            target_zoom = max(self.min_zoom, self.base_zoom - zoom_reduction)
+        else:
+            # Check if near goal
+            left_goal = self.panorama_width * self.goal_zone_fraction
+            right_goal = self.panorama_width * (1.0 - self.goal_zone_fraction)
+
+            if ball_x < left_goal or ball_x > right_goal:
+                # Near goal: zoom in
+                target_zoom = min(self.max_zoom, self.base_zoom + 0.3)
+
+        # Smooth zoom transition
+        target_zoom = np.clip(target_zoom, self.min_zoom, self.max_zoom)
+        self.current_zoom = self.smooth_factor * self.current_zoom + (1.0 - self.smooth_factor) * target_zoom
+
+        return self.current_zoom
+
+
 # ─── Player tracking (ByteTrack) ────────────────────────────────────
 
 class PlayerTracker:
@@ -365,10 +730,10 @@ class PlayerTracker:
         return summaries
 
 
-# ─── Ball follower ───────────────────────────────────────────────────
+# ─── Ball follower (with play-switch lead) ───────────────────────────
 
 class SmoothFollower:
-    """Smoothly follows a target position with exponential smoothing."""
+    """Smoothly follows a target position with exponential smoothing and lead distance."""
 
     def __init__(self, smooth_factor: float = 0.85):
         self.smooth_factor = smooth_factor
@@ -378,9 +743,13 @@ class SmoothFollower:
         self.vy = 0.0
         self.frames_lost = 0
 
-    def update(self, detection: tuple | None) -> tuple:
+    def update(self, detection: tuple | None, lead_x: float = 0.0, lead_y: float = 0.0) -> tuple:
         if detection is not None:
             cx, cy = detection[0], detection[1]
+            # Apply lead distance to target
+            cx += lead_x
+            cy += lead_y
+
             if self.x is None:
                 self.x, self.y = cx, cy
             else:
@@ -424,15 +793,17 @@ def process_videos(
     tmpdir: str,
 ):
     """
-    Main pipeline: sync → stitch → detect ball + track players → virtual crop → render.
+    Main pipeline: sync → stitch → 3-stage ball detection → play-switch →
+    dynamic zoom → virtual crop → render.
     """
     print("🎬 Starting video processing pipeline...")
 
     res_str = config.get("output_resolution", "1920x1080")
     output_w, output_h = [int(x) for x in res_str.split("x")]
-    zoom = config.get("zoom_level", 1.5)
+    base_zoom = config.get("zoom_level", 1.5)
     smooth_factor = config.get("smooth_factor", 0.85)
     output_fps = config.get("output_fps", 30)
+    follow_mode = config.get("follow_mode", "ball")
 
     # Load YOLO model
     print("🤖 Loading YOLOv8 model...")
@@ -466,13 +837,31 @@ def process_videos(
     follower = SmoothFollower(smooth_factor=smooth_factor)
     player_tracker = PlayerTracker()
 
+    # Read first frame to get panorama dimensions for play-switch and zoom
+    ret_l, first_l = cap_left.read()
+    ret_r, first_r = cap_right.read()
+    if not ret_l or not ret_r:
+        raise RuntimeError("Cannot read first frame from videos")
+    first_pano = stitcher.stitch(first_l, first_r)
+    pano_h, pano_w = first_pano.shape[:2]
+
+    # Reset captures to after sync offset
+    cap_left.set(cv2.CAP_PROP_POS_FRAMES, left_offset)
+    cap_right.set(cv2.CAP_PROP_POS_FRAMES, right_offset)
+
+    # Init 3-stage pipeline and smart camera components
+    ball_pipeline = BallTrackingPipeline(fps=fps_left)
+    play_switch = PlaySwitchDetector(panorama_width=pano_w, fps=fps_left)
+    dynamic_zoom = DynamicZoom(panorama_width=pano_w, base_zoom=base_zoom)
+
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(output_path, fourcc, output_fps, (output_w, output_h))
 
     ball_positions = []
+    stage_counts = {"yolo": 0, "motion": 0, "kalman": 0, "none": 0}
     frame_idx = 0
 
-    print(f"⚙ Processing {total_frames} frames...")
+    print(f"⚙ Processing {total_frames} frames (3-stage detection, play-switch, dynamic zoom)...")
 
     while True:
         ret_l, frame_l = cap_left.read()
@@ -485,33 +874,57 @@ def process_videos(
         pano_h, pano_w = panorama.shape[:2]
 
         # Run YOLO (every other frame for speed)
-        ball_det = None
+        yolo_ball_det = None
         if frame_idx % 2 == 0:
             results = model(panorama, verbose=False, conf=0.3)
 
-            # Ball detection
+            # YOLO ball detection
             ball_dets = parse_detections(results, BALL_CLASSES)
             if ball_dets:
                 best = max(ball_dets, key=lambda d: d[6])
-                ball_det = (best[0], best[1], best[6])
+                yolo_ball_det = (best[0], best[1], best[6])
 
             # Player tracking
             player_tracker.update(results, frame_idx)
 
-        # Update ball follower
-        target_x, target_y = follower.update(ball_det)
+        # 3-stage ball tracking pipeline
+        ball_result = ball_pipeline.update(yolo_ball_det, panorama)
 
-        if ball_det:
+        # Extract position and stage
+        if ball_result is not None:
+            bx, by, bconf, stage = ball_result
+            stage_counts[stage] += 1
+
+            # Play-switch detection
+            ps = play_switch.update(bx, by, frame_idx)
+
+            # Dynamic zoom
+            current_zoom = dynamic_zoom.update(bx, ps["speed"], ps["is_switching"])
+
+            # Update follower with lead distance
+            target_x, target_y = follower.update(
+                (bx, by, bconf),
+                lead_x=ps["lead_x"],
+                lead_y=ps["lead_y"],
+            )
+
             ball_positions.append({
                 "frame": frame_idx,
                 "time": round(frame_idx / fps_left, 3),
-                "x": round(ball_det[0], 1),
-                "y": round(ball_det[1], 1),
-                "confidence": round(ball_det[2], 3),
+                "x": round(bx, 1),
+                "y": round(by, 1),
+                "confidence": round(bconf, 3),
+                "stage": stage,
+                "speed": round(ps["speed"], 1),
+                "zoom": round(current_zoom, 2),
             })
+        else:
+            stage_counts["none"] += 1
+            target_x, target_y = follower.update(None)
+            current_zoom = dynamic_zoom.update(pano_w / 2, 0, False)
 
-        # Compute and apply crop
-        x1, y1, x2, y2 = compute_crop(pano_w, pano_h, target_x, target_y, output_w, output_h, zoom)
+        # Compute and apply crop with dynamic zoom
+        x1, y1, x2, y2 = compute_crop(pano_w, pano_h, target_x, target_y, output_w, output_h, current_zoom)
         crop = panorama[y1:y2, x1:x2]
         output_frame = cv2.resize(crop, (output_w, output_h), interpolation=cv2.INTER_LINEAR)
         writer.write(output_frame)
@@ -525,6 +938,8 @@ def process_videos(
     cap_right.release()
 
     print(f"✅ Rendered {frame_idx} frames")
+    print(f"📊 Detection stages: YOLO={stage_counts['yolo']}, Motion={stage_counts['motion']}, "
+          f"Kalman={stage_counts['kalman']}, Lost={stage_counts['none']}")
 
     # Generate highlights placeholder
     print("🎯 Generating highlights (placeholder)...")
@@ -538,7 +953,7 @@ def process_videos(
     highlight_writer.release()
     cap_out.release()
 
-    # Write metadata with player tracks
+    # Write metadata with player tracks and detection stats
     player_summaries = player_tracker.get_track_summary(fps_left)
     print(f"👥 Tracked {len(player_summaries)} players")
 
@@ -547,9 +962,12 @@ def process_videos(
         "total_frames": frame_idx,
         "fps": output_fps,
         "resolution": f"{output_w}x{output_h}",
-        "zoom_level": zoom,
+        "zoom_level": base_zoom,
+        "follow_mode": follow_mode,
         "ball_detections": len(ball_positions),
+        "detection_stages": stage_counts,
         "ball_positions": ball_positions[:1000],
+        "play_switch_events": play_switch.switch_events,
         "player_tracks": player_summaries[:30],  # top 30 by duration
         "highlights": [],
         "processing_time": None,
@@ -558,7 +976,8 @@ def process_videos(
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"📊 Metadata: {len(ball_positions)} ball detections, {len(player_summaries)} player tracks")
+    print(f"📊 Metadata: {len(ball_positions)} ball detections, {len(player_summaries)} player tracks, "
+          f"{len(play_switch.switch_events)} play switches")
 
 
 # ─── RunPod handler ──────────────────────────────────────────────────
