@@ -1,49 +1,37 @@
 
 
-# Wire GPU Output Data to the Frontend
+# Fix: Event Filtering and Recording Setup Access
 
-## Goal
-Store and display the rich metadata the GPU handler already produces (player tracks, ball positions, play-switch events) so coaches can actually see analytics after processing completes.
+## Problems Found
+
+1. **Upcoming events appearing in "Recent"**: The filter on line 93 of `Matches.tsx` requires `!e.match_id` for upcoming events. So any future event that already has a linked match gets excluded from "Upcoming" and falls into "Recent" (line 96 uses `e.date < today || e.match_id`). The "Video Analysis Test" on 27/02 likely has a `match_id`, so it lands in "Recent" despite being in the future.
+
+2. **"Set Up Recording" button disappears**: In `EventCard.tsx`, the button is only rendered when `!hasMatch`. Once a match is linked, there is no way to navigate to the recording setup from the event card.
 
 ## Changes
 
-### 1. Database: Add JSON columns to `processing_jobs`
-Add three nullable JSONB columns:
-- `player_tracking_data` — stores player tracks from metadata
-- `ball_tracking_data` — stores ball positions and detection stats
-- `event_data` — stores play-switch events and future highlight events
+### 1. `src/pages/Matches.tsx` -- Fix filtering logic
 
-### 2. Update `runpod-webhook` edge function
-When the webhook receives results, download `metadata.json` from Wasabi and populate the new JSON columns on the `processing_jobs` row.
+Change the event categorization to be **purely date-based**:
+- **Upcoming**: `e.date >= today` (regardless of `match_id`)
+- **Recent**: `e.date < today`
 
-### 3. Create `VideoTimeline` component
-A horizontal bar below the video player showing:
-- Ball detection confidence over time (color-coded by stage: green=YOLO, yellow=motion, red=Kalman)
-- Play-switch event markers
-- Clickable to seek (future, when video player supports it)
+This ensures future events always appear under "Upcoming", whether or not they have a linked match.
 
-### 4. Create `PlayerTracksSummary` component
-A table/card showing for each tracked player:
-- Track ID, duration on screen, distance traveled
-- Small sparkline of movement intensity
+### 2. `src/components/Matches/EventCard.tsx` -- Always show action button
 
-### 5. Create `MatchAnalyticsDashboard` section in MatchDetail
-Below the video viewer, add a tabbed section:
-- **Timeline** tab → `VideoTimeline`
-- **Players** tab → `PlayerTracksSummary`
-- **Detection Stats** tab → pie chart of YOLO/motion/Kalman/lost percentages
+Instead of hiding the button when a match exists, change the button behavior:
+- **No match linked**: Show "Set Up Recording" button (creates a new match and navigates to it -- current behavior)
+- **Match already linked**: Show "Open Recording" button that navigates to `/matches/{match_id}` (so users can access the recording setup they already created)
 
-### 6. Update `MatchDetail.tsx`
-Import and render `MatchAnalyticsDashboard` when `processing_jobs` status is `complete`.
+This ensures every event card has an actionable button regardless of state.
 
-## Files
+## Technical Details
 
-| File | Action |
-|------|--------|
-| Migration SQL | Add 3 JSONB columns to `processing_jobs` |
-| `supabase/functions/runpod-webhook/index.ts` | Parse metadata and store in new columns |
-| `src/components/Matches/VideoTimeline.tsx` | Create |
-| `src/components/Matches/PlayerTracksSummary.tsx` | Create |
-| `src/components/Matches/MatchAnalyticsDashboard.tsx` | Create — tabs wrapper |
-| `src/pages/MatchDetail.tsx` | Add analytics dashboard section |
+### Files to modify:
+1. **`src/pages/Matches.tsx`** lines 92-98: Remove `!e.match_id` from the upcoming filter and remove `|| e.match_id` from the recent filter
+2. **`src/components/Matches/EventCard.tsx`** lines 87-90: Replace the conditional hide with a conditional button label/action, add `useNavigate` for the "Open Recording" navigation
+
+### No database changes needed
+### No new dependencies needed
 

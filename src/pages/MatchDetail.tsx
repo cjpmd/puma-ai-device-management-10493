@@ -9,6 +9,7 @@ import { ProcessingStatus } from '@/components/Matches/ProcessingStatus';
 import { CameraQRSetup } from '@/components/Matches/CameraQRSetup';
 import { MatchOutputViewer } from '@/components/Matches/MatchOutputViewer';
 import { RecordingControls } from '@/components/Matches/RecordingControls';
+import { MatchAnalyticsDashboard } from '@/components/Matches/MatchAnalyticsDashboard';
 import ProcessingConfigCard, { type ProcessingConfig } from '@/components/Matches/ProcessingConfigCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
@@ -93,6 +94,11 @@ const MatchDetail = () => {
 
         {/* Outputs */}
         <MatchOutputViewer matchId={id!} job={latestJob} />
+
+        {/* Analytics Dashboard */}
+        {latestJob?.status === 'complete' && (
+          <MatchAnalyticsDashboard job={latestJob} />
+        )}
 
         {/* Developer Controls */}
         <Card>
