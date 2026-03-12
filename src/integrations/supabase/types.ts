@@ -801,42 +801,51 @@ export type Database = {
       }
       processing_jobs: {
         Row: {
+          ball_tracking_data: Json | null
           completed_at: string | null
           created_at: string
+          event_data: Json | null
           gpu_type: string | null
           id: string
           match_id: string
           output_highlights_path: string | null
           output_metadata_path: string | null
           output_video_path: string | null
+          player_tracking_data: Json | null
           processing_logs: string | null
           runpod_job_id: string | null
           started_at: string | null
           status: string
         }
         Insert: {
+          ball_tracking_data?: Json | null
           completed_at?: string | null
           created_at?: string
+          event_data?: Json | null
           gpu_type?: string | null
           id?: string
           match_id: string
           output_highlights_path?: string | null
           output_metadata_path?: string | null
           output_video_path?: string | null
+          player_tracking_data?: Json | null
           processing_logs?: string | null
           runpod_job_id?: string | null
           started_at?: string | null
           status?: string
         }
         Update: {
+          ball_tracking_data?: Json | null
           completed_at?: string | null
           created_at?: string
+          event_data?: Json | null
           gpu_type?: string | null
           id?: string
           match_id?: string
           output_highlights_path?: string | null
           output_metadata_path?: string | null
           output_video_path?: string | null
+          player_tracking_data?: Json | null
           processing_logs?: string | null
           runpod_job_id?: string | null
           started_at?: string | null
