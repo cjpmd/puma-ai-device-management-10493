@@ -95,6 +95,11 @@ const MatchDetail = () => {
         {/* Outputs */}
         <MatchOutputViewer matchId={id!} job={latestJob} />
 
+        {/* Analytics Dashboard */}
+        {latestJob?.status === 'complete' && (
+          <MatchAnalyticsDashboard job={latestJob} />
+        )}
+
         {/* Developer Controls */}
         <Card>
           <CardHeader><CardTitle className="text-sm text-muted-foreground">Developer Controls</CardTitle></CardHeader>

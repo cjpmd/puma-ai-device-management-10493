@@ -24,6 +24,9 @@ interface ProcessingJob {
   output_video_path: string | null;
   output_highlights_path: string | null;
   output_metadata_path: string | null;
+  player_tracking_data: any;
+  ball_tracking_data: any;
+  event_data: any;
 }
 
 interface MatchVideo {
