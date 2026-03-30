@@ -316,10 +316,10 @@ const PlayerMovementMap = ({
       map.current?.remove();
       map.current = null;
       
-      // Clean up any subscriptions
+      // Clean up subscriptions using specific channel references
       if (isLiveMode) {
-        // Fix: Don't use string for channel, use the stored channel reference for removal
-        supabase.removeAllChannels();
+        const channels = supabase.getChannels();
+        channels.forEach(ch => supabase.removeChannel(ch));
       }
     };
   }, [isIndoorMode, showThirds, mapboxToken, sessionId, isLiveMode]);
