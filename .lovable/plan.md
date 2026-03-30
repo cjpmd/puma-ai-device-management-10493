@@ -1,37 +1,79 @@
 
 
-# Fix: Event Filtering and Recording Setup Access
+# Claude Review Upgrades
 
-## Problems Found
+## Summary of Issues and Fixes
 
-1. **Upcoming events appearing in "Recent"**: The filter on line 93 of `Matches.tsx` requires `!e.match_id` for upcoming events. So any future event that already has a linked match gets excluded from "Upcoming" and falls into "Recent" (line 96 uses `e.date < today || e.match_id`). The "Video Analysis Test" on 27/02 likely has a `match_id`, so it lands in "Recent" despite being in the future.
+### GPU Pipeline (`gpu-server/`)
 
-2. **"Set Up Recording" button disappears**: In `EventCard.tsx`, the button is only rendered when `!hasMatch`. Once a match is linked, there is no way to navigate to the recording setup from the event card.
+**1. Periodic homography recalibration**
+`PanoramaStitcher.stitch()` computes homography once and caches forever. Add `frame_idx` parameter; recalibrate every 500 frames.
 
-## Changes
+**2. Remove broken sync offset loop**
+Lines 830-833 read frames in a loop to skip offsets, then lines 849-850 do `cap.set(CAP_PROP_POS_FRAMES)` which resets position anyway. Remove the loop; keep only the `set()` calls.
 
-### 1. `src/pages/Matches.tsx` -- Fix filtering logic
+**3. Audio bandpass filter before cross-correlation**
+Add `scipy.signal.butter` + `sosfilt` bandpass (800-3000 Hz) to isolate sharp sounds (whistle, kick) before correlating. Dramatically improves sync accuracy.
 
-Change the event categorization to be **purely date-based**:
-- **Upcoming**: `e.date >= today` (regardless of `match_id`)
-- **Recent**: `e.date < today`
+**4. Run YOLO every frame for ball, every 2nd for players**
+Currently both ball and player detection skip odd frames. Split: run YOLO every frame, but only feed person detections to ByteTrack on even frames.
 
-This ensures future events always appear under "Upcoming", whether or not they have a linked match.
+**5. DynamicZoom smooth_factor 0.92 → 0.85**
+Current value takes ~3s to reach target zoom. Reduce to 0.85 for more responsive zooming.
 
-### 2. `src/components/Matches/EventCard.tsx` -- Always show action button
+**6. Adaptive overlap in `_stitch_blend`**
+Hardcoded 10% overlap. Make it configurable or measure from feature matches when homography fails.
 
-Instead of hiding the button when a match exists, change the button behavior:
-- **No match linked**: Show "Set Up Recording" button (creates a new match and navigates to it -- current behavior)
-- **Match already linked**: Show "Open Recording" button that navigates to `/matches/{match_id}` (so users can access the recording setup they already created)
+**7. Frame drift guard**
+After each stitch, verify `cap_left` and `cap_right` frame positions are within 2 frames of each other; resync the lagging one if not.
 
-This ensures every event card has an actionable button regardless of state.
+**8. Real highlights from play-switch events**
+Replace the "copy first 30s" placeholder with actual highlight clips: extract +/- 3 second windows around each play-switch event.
 
-## Technical Details
+**9. ffmpeg re-encode step**
+OpenCV's `mp4v` codec produces large, poorly compatible files. Add an ffmpeg post-process to re-encode with `libx264 -crf 22 -preset fast -movflags +faststart`.
 
-### Files to modify:
-1. **`src/pages/Matches.tsx`** lines 92-98: Remove `!e.match_id` from the upcoming filter and remove `|| e.match_id` from the recent filter
-2. **`src/components/Matches/EventCard.tsx`** lines 87-90: Replace the conditional hide with a conditional button label/action, add `useNavigate` for the "Open Recording" navigation
+**10. Wasabi credentials from env vars, not job payload**
+Move `wasabi_access_key`, `wasabi_secret_key`, `wasabi_endpoint`, `wasabi_region`, `wasabi_bucket` to RunPod environment variables instead of passing in job input. Update `get_s3_client()` to read from `os.environ`.
 
-### No database changes needed
-### No new dependencies needed
+**11. Pre-download YOLO weights in Dockerfile**
+Add `RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"` to avoid cold-start download latency.
+
+**12. Pin CUDA-matched torch in Dockerfile**
+Add `--index-url https://download.pytorch.org/whl/cu118` to ensure GPU-enabled torch.
+
+**13. Fix docker-compose volume mount**
+Remove `volumes: ./app:/app` which overwrites the built image.
+
+**14. Progress reporting**
+Every 100 frames, POST a progress update to the webhook endpoint so the frontend can show a percentage.
+
+### Frontend
+
+**15. Fix `removeAllChannels()` in PlayerMovementMap.tsx (line 322)**
+Replace `supabase.removeAllChannels()` with `supabase.removeChannel(channelRef)` using the stored channel reference, so it doesn't destroy other components' subscriptions.
+
+**16. Stabilize random biometric data**
+In `BiometricsTab.tsx`, `PlayerPerformanceCard.tsx`, and `GroupAnalysisCard.tsx`: wrap `Math.random()` initial values in `useMemo` with stable seeds, or better yet move them to `useRef` so they don't re-randomize on every render.
+
+### Files to Change
+
+| File | Changes |
+|------|---------|
+| `gpu-server/handler.py` | Items 1-10, 14 |
+| `gpu-server/Dockerfile` | Items 11-12 |
+| `gpu-server/docker-compose.yml` | Item 13 |
+| `gpu-server/requirements.txt` | No changes needed |
+| `src/components/PlayerMovementMap.tsx` | Item 15 |
+| `src/components/Analysis/BiometricsTab.tsx` | Item 16 |
+| `src/components/Analysis/PlayerPerformanceCard.tsx` | Item 16 |
+| `src/components/Analysis/GroupAnalysisCard.tsx` | Item 16 |
+
+### Not actioning (deferred)
+
+- Error boundaries around video components (low risk, can add later)
+- Web Worker for hyperparameter tuning (ML training is dev-only)
+- Storage check before recording (Capacitor-specific, separate task)
+- `movementAnalytics.ts` cumulative distance fix (requires session redesign)
+- Auth provider refactor (works correctly, just not optimal)
 
