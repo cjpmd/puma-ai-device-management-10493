@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   Legend 
 } from 'recharts';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from "@/integrations/supabase/client";
 
 interface GroupAnalysisCardProps {
@@ -26,9 +26,13 @@ interface GroupAnalysisCardProps {
 }
 
 const GroupAnalysisCard = ({ title, players, sessionId, isLiveMode = true }: GroupAnalysisCardProps) => {
+  const initialRandoms = useRef({
+    avgSpeed: Math.floor(Math.random() * 30 + 70),
+    avgEndurance: Math.floor(Math.random() * 30 + 70),
+  });
   const [groupMetrics, setGroupMetrics] = useState<any[]>([]);
-  const [averageSpeed, setAverageSpeed] = useState(Math.floor(Math.random() * 30 + 70));
-  const [averageEndurance, setAverageEndurance] = useState(Math.floor(Math.random() * 30 + 70));
+  const [averageSpeed, setAverageSpeed] = useState(initialRandoms.current.avgSpeed);
+  const [averageEndurance, setAverageEndurance] = useState(initialRandoms.current.avgEndurance);
   
   // Generate colors for each player
   const getPlayerColors = () => {

@@ -9,7 +9,7 @@ import {
   PolarRadiusAxis, 
   ResponsiveContainer,
 } from 'recharts';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from "@/integrations/supabase/client";
 
 interface PlayerPerformanceCardProps {
@@ -23,19 +23,24 @@ interface PlayerPerformanceCardProps {
 }
 
 const PlayerPerformanceCard = ({ player, sessionId, isLiveMode = true }: PlayerPerformanceCardProps) => {
+  const initialRandoms = useRef({
+    attrs: Array.from({ length: 6 }, () => Math.floor(Math.random() * 100)),
+    perfs: Array.from({ length: 3 }, () => Math.floor(Math.random() * 100)),
+  });
+  
   const [attributes, setAttributes] = useState([
-    { name: 'Speed', value: Math.floor(Math.random() * 100) },
-    { name: 'Endurance', value: Math.floor(Math.random() * 100) },
-    { name: 'Technique', value: Math.floor(Math.random() * 100) },
-    { name: 'Accuracy', value: Math.floor(Math.random() * 100) },
-    { name: 'Power', value: Math.floor(Math.random() * 100) },
-    { name: 'Agility', value: Math.floor(Math.random() * 100) },
+    { name: 'Speed', value: initialRandoms.current.attrs[0] },
+    { name: 'Endurance', value: initialRandoms.current.attrs[1] },
+    { name: 'Technique', value: initialRandoms.current.attrs[2] },
+    { name: 'Accuracy', value: initialRandoms.current.attrs[3] },
+    { name: 'Power', value: initialRandoms.current.attrs[4] },
+    { name: 'Agility', value: initialRandoms.current.attrs[5] },
   ]);
   
   const [recentPerformance, setRecentPerformance] = useState([
-    { game: 'vs. Team A', score: Math.floor(Math.random() * 100) },
-    { game: 'vs. Team B', score: Math.floor(Math.random() * 100) },
-    { game: 'vs. Team C', score: Math.floor(Math.random() * 100) },
+    { game: 'vs. Team A', score: initialRandoms.current.perfs[0] },
+    { game: 'vs. Team B', score: initialRandoms.current.perfs[1] },
+    { game: 'vs. Team C', score: initialRandoms.current.perfs[2] },
   ]);
   
   useEffect(() => {
