@@ -6,8 +6,6 @@ services:
     build: .
     ports:
       - "8000:8000"
-    volumes:
-      - ./app:/app
     deploy:
       resources:
         reservations:
@@ -17,3 +15,8 @@ services:
               capabilities: [gpu]
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
+      - WASABI_ACCESS_KEY=${WASABI_ACCESS_KEY}
+      - WASABI_SECRET_KEY=${WASABI_SECRET_KEY}
+      - WASABI_ENDPOINT=${WASABI_ENDPOINT}
+      - WASABI_REGION=${WASABI_REGION}
+      - WASABI_BUCKET=${WASABI_BUCKET}

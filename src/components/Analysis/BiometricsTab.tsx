@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -184,8 +184,21 @@ const BiometricsTab = () => {
     }
   }, [allPlayers]);
   
+  // Stable seeded random per player to avoid re-randomizing on every render
+  const stableRandomRef = React.useRef<Map<string, number[]>>(new Map());
+  
+  const getStableRandoms = (playerId: string): number[] => {
+    if (!stableRandomRef.current.has(playerId)) {
+      stableRandomRef.current.set(playerId, [
+        Math.random(), Math.random(), Math.random(), Math.random(), Math.random()
+      ]);
+    }
+    return stableRandomRef.current.get(playerId)!;
+  };
+
   // Current biometric values - in a real app, these would come from device readings
   const playerBiometrics = allPlayers.map(player => {
+    const randoms = getStableRandoms(player.id);
     // Generate slightly different values for each player
     const baseHR = playerMode === "performance" ? 132 : 76;
     const baseHydration = playerMode === "performance" ? 82 : 96;
@@ -193,12 +206,12 @@ const BiometricsTab = () => {
     const baseVO2 = playerMode === "performance" ? 52 : 48;
     const baseFatigue = playerMode === "performance" ? 65 : 15;
     
-    // Add some random variation
-    const heartRate = Math.round(baseHR + (Math.random() * 20 - 10));
-    const hydration = Math.round(baseHydration + (Math.random() * 10 - 5));
-    const lacticAcid = +(baseLactic + (Math.random() * 1 - 0.5)).toFixed(1);
-    const vo2Max = Math.round(baseVO2 + (Math.random() * 6 - 3));
-    const muscleFatigue = Math.round(baseFatigue + (Math.random() * 10 - 5));
+    // Use stable random values per player
+    const heartRate = Math.round(baseHR + (randoms[0] * 20 - 10));
+    const hydration = Math.round(baseHydration + (randoms[1] * 10 - 5));
+    const lacticAcid = +(baseLactic + (randoms[2] * 1 - 0.5)).toFixed(1);
+    const vo2Max = Math.round(baseVO2 + (randoms[3] * 6 - 3));
+    const muscleFatigue = Math.round(baseFatigue + (randoms[4] * 10 - 5));
     
     // Determine status based on values and tolerance
     const playerTolerance = playerTolerances[player.id] || globalTolerances;

@@ -3,14 +3,15 @@ RunPod Serverless Handler — Ball-Following Virtual Camera Pipeline
 
 This handler runs on RunPod GPU workers. It:
 1. Downloads dual-camera footage from Wasabi
-2. Synchronizes frames via audio cross-correlation
-3. Stitches frames into a panorama (homography or linear blend fallback)
+2. Synchronizes frames via audio cross-correlation (with bandpass filtering)
+3. Stitches frames into a panorama (homography with periodic recalibration)
 4. Detects the ball using a 3-stage pipeline (YOLO → motion fallback → Kalman prediction)
 5. Tracks players using ByteTrack (persistent IDs across frames)
 6. Applies play-switch prediction and dynamic zoom
 7. Computes a smooth virtual camera crop that follows the ball
-8. Renders the output and uploads back to Wasabi
-9. POSTs results to the webhook
+8. Re-encodes with ffmpeg for compatibility
+9. Generates highlights from play-switch events
+10. Uploads back to Wasabi and POSTs results to the webhook
 """
 
 import os
@@ -25,24 +26,31 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import supervision as sv
-from scipy.signal import correlate
+from scipy.signal import correlate, butter, sosfilt
 from filterpy.kalman import KalmanFilter
 
 
 # ─── Wasabi S3 helpers ────────────────────────────────────────────────
 
 def get_s3_client(job_input: dict):
-    """Create a boto3 S3 client configured for Wasabi."""
-    region = (job_input.get("wasabi_region") or "us-east-1").strip()
-    endpoint = (job_input.get("wasabi_endpoint") or f"https://s3.{region}.wasabisys.com").strip()
+    """Create a boto3 S3 client configured for Wasabi.
+    Reads credentials from environment variables first, falls back to job_input."""
+    region = (os.environ.get("WASABI_REGION") or job_input.get("wasabi_region") or "us-east-1").strip()
+    endpoint = (os.environ.get("WASABI_ENDPOINT") or job_input.get("wasabi_endpoint") or f"https://s3.{region}.wasabisys.com").strip()
     if not endpoint.startswith("http"):
         endpoint = f"https://{endpoint}"
+
+    access_key = os.environ.get("WASABI_ACCESS_KEY") or job_input.get("wasabi_access_key")
+    secret_key = os.environ.get("WASABI_SECRET_KEY") or job_input.get("wasabi_secret_key")
+
+    if not access_key or not secret_key:
+        raise RuntimeError("Wasabi credentials not found in environment variables or job input")
 
     return boto3.client(
         "s3",
         endpoint_url=endpoint,
-        aws_access_key_id=job_input["wasabi_access_key"],
-        aws_secret_access_key=job_input["wasabi_secret_key"],
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
         region_name=region,
     )
 
@@ -64,6 +72,12 @@ def upload_to_wasabi(s3, bucket: str, key: str, local_path: str, content_type: s
 
 # ─── Audio synchronization ──────────────────────────────────────────
 
+def bandpass_filter(signal: np.ndarray, lo: int = 800, hi: int = 3000, fs: int = 16000) -> np.ndarray:
+    """Bandpass filter to isolate sharp sounds (whistle, kick) for better cross-correlation."""
+    sos = butter(4, [lo, hi], btype='band', fs=fs, output='sos')
+    return sosfilt(sos, signal)
+
+
 def extract_audio_mono(video_path: str, audio_path: str, sample_rate: int = 16000):
     """Extract mono audio from video using ffmpeg."""
     cmd = [
@@ -80,7 +94,7 @@ def extract_audio_mono(video_path: str, audio_path: str, sample_rate: int = 1600
 
 def sync_videos(left_path: str, right_path: str, fps: float, tmpdir: str) -> tuple:
     """
-    Synchronize two video files using audio cross-correlation.
+    Synchronize two video files using audio cross-correlation with bandpass filtering.
     Returns (left_offset_frames, right_offset_frames) — one will be 0.
     """
     print("🔄 Synchronizing videos via audio cross-correlation...")
@@ -97,6 +111,10 @@ def sync_videos(left_path: str, right_path: str, fps: float, tmpdir: str) -> tup
     max_samples = sample_rate * 30
     left_chunk = left_audio[:max_samples]
     right_chunk = right_audio[:max_samples]
+
+    # Apply bandpass filter (800-3000 Hz) to isolate sharp sounds
+    left_chunk = bandpass_filter(left_chunk, fs=sample_rate)
+    right_chunk = bandpass_filter(right_chunk, fs=sample_rate)
 
     # Cross-correlate
     correlation = correlate(left_chunk, right_chunk, mode="full")
@@ -118,16 +136,18 @@ def sync_videos(left_path: str, right_path: str, fps: float, tmpdir: str) -> tup
 class PanoramaStitcher:
     """
     Stitches left and right camera frames into a panorama.
-    Uses ORB feature matching + homography on the first frame,
-    then caches the transform for subsequent frames.
+    Uses ORB feature matching + homography, recalibrating every N frames.
     Falls back to linear blend if feature matching fails.
     """
+
+    RECALIB_INTERVAL = 500  # recalibrate homography every 500 frames
 
     def __init__(self):
         self.homography = None
         self.calibrated = False
         self.orb = cv2.ORB_create(nfeatures=2000)
         self.bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+        self.last_overlap_width = None  # adaptive overlap from feature matches
 
     def _compute_homography(self, left: np.ndarray, right: np.ndarray) -> bool:
         """Compute homography from right frame to left frame's plane."""
@@ -166,10 +186,19 @@ class PanoramaStitcher:
         print(f"  ✓ Homography computed: {inliers}/{len(good)} inliers")
         self.homography = H
         self.calibrated = True
+
+        # Measure adaptive overlap from matched feature positions in left image
+        matched_x_in_left = dst_pts[mask.ravel().astype(bool), 0, 0]
+        if len(matched_x_in_left) > 5:
+            w_l = left.shape[1]
+            overlap_start = matched_x_in_left.min()
+            self.last_overlap_width = max(10, int(w_l - overlap_start))
+            print(f"  📐 Adaptive overlap: {self.last_overlap_width}px")
+
         return True
 
-    def stitch(self, left: np.ndarray, right: np.ndarray) -> np.ndarray:
-        """Stitch left and right into a panorama."""
+    def stitch(self, left: np.ndarray, right: np.ndarray, frame_idx: int = 0) -> np.ndarray:
+        """Stitch left and right into a panorama. Recalibrates periodically."""
         h_l, w_l = left.shape[:2]
         h_r, w_r = right.shape[:2]
 
@@ -179,9 +208,12 @@ class PanoramaStitcher:
             right = cv2.resize(right, (int(w_r * scale), h_l))
             w_r = int(w_r * scale)
 
-        # Try homography stitching
-        if not self.calibrated:
-            self._compute_homography(left, right)
+        # Recalibrate homography periodically or on first frame
+        if not self.calibrated or (frame_idx > 0 and frame_idx % self.RECALIB_INTERVAL == 0):
+            success = self._compute_homography(left, right)
+            if not success and not self.calibrated:
+                # First attempt failed, use fallback
+                pass
 
         if self.calibrated and self.homography is not None:
             return self._stitch_homography(left, right)
@@ -235,7 +267,12 @@ class PanoramaStitcher:
         h_l, w_l = left.shape[:2]
         h_r, w_r = right.shape[:2]
 
-        overlap = int(min(w_l, w_r) * 0.10)
+        # Use adaptive overlap if available, otherwise default to 10%
+        if self.last_overlap_width is not None:
+            overlap = min(self.last_overlap_width, min(w_l, w_r) // 2)
+        else:
+            overlap = int(min(w_l, w_r) * 0.10)
+
         if overlap < 10:
             return np.hstack([left, right])
 
@@ -595,7 +632,7 @@ class DynamicZoom:
         self.min_zoom = min_zoom
         self.max_zoom = max_zoom
         self.current_zoom = base_zoom
-        self.smooth_factor = 0.92  # slow zoom transitions
+        self.smooth_factor = 0.85  # more responsive zoom transitions (was 0.92)
 
         # Goal zones: left 15% and right 15% of panorama
         self.goal_zone_fraction = 0.15
@@ -655,13 +692,11 @@ class PlayerTracker:
         # track_id -> list of (frame_idx, cx, cy)
         self.tracks: dict[int, list] = {}
 
-    def update(self, results, frame_idx: int) -> list:
+    def update_from_detections(self, person_dets: list, frame_idx: int) -> list:
         """
-        Process YOLO results for person detections.
+        Process pre-parsed person detections.
         Returns list of (track_id, cx, cy, x1, y1, x2, y2).
         """
-        person_dets = parse_detections(results, PERSON_CLASSES)
-
         if not person_dets:
             return []
 
@@ -691,6 +726,11 @@ class PlayerTracker:
                 results_out.append((tid, cx, cy, x1, y1, x2, y2))
 
         return results_out
+
+    def update(self, results, frame_idx: int) -> list:
+        """Legacy: process YOLO results directly."""
+        person_dets = parse_detections(results, PERSON_CLASSES)
+        return self.update_from_detections(person_dets, frame_idx)
 
     def get_track_summary(self, fps: float) -> list:
         """Return summarized per-player tracks for metadata output."""
@@ -781,6 +821,126 @@ def compute_crop(pano_w, pano_h, target_x, target_y, output_w, output_h, zoom=1.
     return (x1, y1, x1 + crop_w, y1 + crop_h)
 
 
+# ─── ffmpeg re-encode ────────────────────────────────────────────────
+
+def reencode_with_ffmpeg(input_path: str, output_path: str):
+    """Re-encode OpenCV output with ffmpeg for better compatibility and smaller files."""
+    print("🔄 Re-encoding with ffmpeg (libx264)...")
+    cmd = [
+        "ffmpeg", "-y", "-i", input_path,
+        "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode != 0:
+        print(f"⚠ ffmpeg re-encode failed: {result.stderr.decode()[:300]}")
+        print("  Falling back to original OpenCV output")
+        # Copy original as fallback
+        import shutil
+        shutil.copy2(input_path, output_path)
+    else:
+        original_size = os.path.getsize(input_path) / 1e6
+        new_size = os.path.getsize(output_path) / 1e6
+        print(f"  ✓ Re-encoded: {original_size:.1f}MB → {new_size:.1f}MB")
+
+
+# ─── Highlight generation from play-switch events ───────────────────
+
+def generate_highlights(source_path: str, highlights_path: str, switch_events: list,
+                        fps: float, output_w: int, output_h: int, tmpdir: str):
+    """Extract highlight clips around play-switch events instead of just copying first 30s."""
+    if not switch_events:
+        print("  ⚠ No play-switch events, generating first 30s as fallback")
+        cmd = [
+            "ffmpeg", "-y", "-i", source_path,
+            "-t", "30", "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+            "-movflags", "+faststart", highlights_path,
+        ]
+        subprocess.run(cmd, capture_output=True)
+        return
+
+    print(f"🎯 Generating highlights from {len(switch_events)} play-switch events...")
+
+    # Create individual clips around each event (±3 seconds)
+    clip_paths = []
+    cap = cv2.VideoCapture(source_path)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+
+    # Limit to top 20 events by speed
+    events_sorted = sorted(switch_events, key=lambda e: e.get("speed", 0), reverse=True)[:20]
+    events_sorted.sort(key=lambda e: e["frame"])  # re-sort by time
+
+    # Merge overlapping windows
+    windows = []
+    for ev in events_sorted:
+        start_s = max(0, ev["time"] - 3.0)
+        end_s = ev["time"] + 3.0
+        if windows and start_s <= windows[-1][1]:
+            windows[-1] = (windows[-1][0], max(windows[-1][1], end_s))
+        else:
+            windows.append((start_s, end_s))
+
+    # Extract each window with ffmpeg
+    concat_list_path = os.path.join(tmpdir, "highlights_list.txt")
+    with open(concat_list_path, "w") as f:
+        for i, (start_s, end_s) in enumerate(windows):
+            clip_path = os.path.join(tmpdir, f"highlight_{i}.mp4")
+            duration = end_s - start_s
+            cmd = [
+                "ffmpeg", "-y", "-ss", str(start_s), "-i", source_path,
+                "-t", str(duration), "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+                clip_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True)
+            if result.returncode == 0:
+                clip_paths.append(clip_path)
+                f.write(f"file '{clip_path}'\n")
+
+    if not clip_paths:
+        print("  ⚠ Failed to extract highlight clips, generating first 30s")
+        cmd = [
+            "ffmpeg", "-y", "-i", source_path,
+            "-t", "30", "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+            "-movflags", "+faststart", highlights_path,
+        ]
+        subprocess.run(cmd, capture_output=True)
+        return
+
+    # Concatenate clips
+    cmd = [
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", concat_list_path,
+        "-c:v", "libx264", "-crf", "22", "-preset", "fast",
+        "-movflags", "+faststart", highlights_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode != 0:
+        print(f"  ⚠ Concat failed: {result.stderr.decode()[:200]}")
+        # Fallback: use first clip
+        import shutil
+        if clip_paths:
+            shutil.copy2(clip_paths[0], highlights_path)
+    else:
+        print(f"  ✓ Highlights: {len(windows)} clips, {os.path.getsize(highlights_path) / 1e6:.1f}MB")
+
+
+# ─── Progress reporting ─────────────────────────────────────────────
+
+def report_progress(webhook_url: str, job_id: str, frame_idx: int, total_frames: int):
+    """POST progress update to the webhook."""
+    try:
+        progress = round(frame_idx / total_frames * 100, 1) if total_frames > 0 else 0
+        requests.post(webhook_url, json={
+            "id": job_id,
+            "status": "IN_PROGRESS",
+            "output": {"progress": progress, "frame": frame_idx, "total_frames": total_frames},
+        }, timeout=5)
+    except Exception:
+        pass  # don't let progress reporting failures stop processing
+
+
 # ─── Main processing pipeline ───────────────────────────────────────
 
 def process_videos(
@@ -791,10 +951,12 @@ def process_videos(
     metadata_path: str,
     config: dict,
     tmpdir: str,
+    webhook_url: str = None,
+    runpod_job_id: str = None,
 ):
     """
     Main pipeline: sync → stitch → 3-stage ball detection → play-switch →
-    dynamic zoom → virtual crop → render.
+    dynamic zoom → virtual crop → render → re-encode → highlights.
     """
     print("🎬 Starting video processing pipeline...")
 
@@ -825,12 +987,10 @@ def process_videos(
     print(f"📹 Left: {int(cap_left.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap_left.get(cv2.CAP_PROP_FRAME_HEIGHT))} @ {fps_left:.0f}fps")
     print(f"📹 Right: {int(cap_right.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap_right.get(cv2.CAP_PROP_FRAME_HEIGHT))} @ {cap_right.get(cv2.CAP_PROP_FPS):.0f}fps")
 
-    # Synchronize via audio
+    # Synchronize via audio — just use set() to skip offset frames (no loop needed)
     left_offset, right_offset = sync_videos(left_path, right_path, fps_left, tmpdir)
-    for _ in range(left_offset):
-        cap_left.read()
-    for _ in range(right_offset):
-        cap_right.read()
+    cap_left.set(cv2.CAP_PROP_POS_FRAMES, left_offset)
+    cap_right.set(cv2.CAP_PROP_POS_FRAMES, right_offset)
 
     # Init components
     stitcher = PanoramaStitcher()
@@ -842,7 +1002,7 @@ def process_videos(
     ret_r, first_r = cap_right.read()
     if not ret_l or not ret_r:
         raise RuntimeError("Cannot read first frame from videos")
-    first_pano = stitcher.stitch(first_l, first_r)
+    first_pano = stitcher.stitch(first_l, first_r, frame_idx=0)
     pano_h, pano_w = first_pano.shape[:2]
 
     # Reset captures to after sync offset
@@ -854,12 +1014,15 @@ def process_videos(
     play_switch = PlaySwitchDetector(panorama_width=pano_w, fps=fps_left)
     dynamic_zoom = DynamicZoom(panorama_width=pano_w, base_zoom=base_zoom)
 
+    # Write to a temporary file, then re-encode
+    raw_output_path = os.path.join(tmpdir, "raw_output.mp4")
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(output_path, fourcc, output_fps, (output_w, output_h))
+    writer = cv2.VideoWriter(raw_output_path, fourcc, output_fps, (output_w, output_h))
 
     ball_positions = []
     stage_counts = {"yolo": 0, "motion": 0, "kalman": 0, "none": 0}
     frame_idx = 0
+    last_yolo_person_dets = []  # cache person detections for odd frames
 
     print(f"⚙ Processing {total_frames} frames (3-stage detection, play-switch, dynamic zoom)...")
 
@@ -869,23 +1032,39 @@ def process_videos(
         if not ret_l or not ret_r:
             break
 
-        # Stitch panorama
-        panorama = stitcher.stitch(frame_l, frame_r)
+        # Frame drift guard: verify both captures are within 2 frames
+        pos_l = cap_left.get(cv2.CAP_PROP_POS_FRAMES)
+        pos_r = cap_right.get(cv2.CAP_PROP_POS_FRAMES)
+        drift = abs(pos_l - left_offset - (pos_r - right_offset))
+        if drift > 2:
+            # Resync the lagging capture
+            target = max(pos_l - left_offset, pos_r - right_offset)
+            cap_left.set(cv2.CAP_PROP_POS_FRAMES, left_offset + target)
+            cap_right.set(cv2.CAP_PROP_POS_FRAMES, right_offset + target)
+            ret_l, frame_l = cap_left.read()
+            ret_r, frame_r = cap_right.read()
+            if not ret_l or not ret_r:
+                break
+
+        # Stitch panorama (with periodic homography recalibration)
+        panorama = stitcher.stitch(frame_l, frame_r, frame_idx=frame_idx)
         pano_h, pano_w = panorama.shape[:2]
 
-        # Run YOLO (every other frame for speed)
+        # Run YOLO every frame for ball detection, every 2nd frame for player tracking
         yolo_ball_det = None
+        results = model(panorama, verbose=False, conf=0.3)
+
+        # Ball detection: every frame
+        ball_dets = parse_detections(results, BALL_CLASSES)
+        if ball_dets:
+            best = max(ball_dets, key=lambda d: d[6])
+            yolo_ball_det = (best[0], best[1], best[6])
+
+        # Player tracking: every 2nd frame (players are robust to 2x downsampling)
         if frame_idx % 2 == 0:
-            results = model(panorama, verbose=False, conf=0.3)
-
-            # YOLO ball detection
-            ball_dets = parse_detections(results, BALL_CLASSES)
-            if ball_dets:
-                best = max(ball_dets, key=lambda d: d[6])
-                yolo_ball_det = (best[0], best[1], best[6])
-
-            # Player tracking
-            player_tracker.update(results, frame_idx)
+            person_dets = parse_detections(results, PERSON_CLASSES)
+            last_yolo_person_dets = person_dets
+            player_tracker.update_from_detections(person_dets, frame_idx)
 
         # 3-stage ball tracking pipeline
         ball_result = ball_pipeline.update(yolo_ball_det, panorama)
@@ -930,6 +1109,12 @@ def process_videos(
         writer.write(output_frame)
 
         frame_idx += 1
+
+        # Progress reporting every 100 frames
+        if frame_idx % 100 == 0:
+            if webhook_url and runpod_job_id:
+                report_progress(webhook_url, runpod_job_id, frame_idx, total_frames)
+
         if frame_idx % (int(fps_left) * 5) == 0:
             print(f"  {(frame_idx / total_frames) * 100:.0f}% ({frame_idx}/{total_frames})")
 
@@ -941,17 +1126,12 @@ def process_videos(
     print(f"📊 Detection stages: YOLO={stage_counts['yolo']}, Motion={stage_counts['motion']}, "
           f"Kalman={stage_counts['kalman']}, Lost={stage_counts['none']}")
 
-    # Generate highlights placeholder
-    print("🎯 Generating highlights (placeholder)...")
-    cap_out = cv2.VideoCapture(output_path)
-    highlight_writer = cv2.VideoWriter(highlights_path, fourcc, output_fps, (output_w, output_h))
-    for _ in range(min(output_fps * 30, frame_idx)):
-        ret, frame = cap_out.read()
-        if not ret:
-            break
-        highlight_writer.write(frame)
-    highlight_writer.release()
-    cap_out.release()
+    # Re-encode with ffmpeg for compatibility and smaller file size
+    reencode_with_ffmpeg(raw_output_path, output_path)
+
+    # Generate highlights from play-switch events
+    generate_highlights(output_path, highlights_path, play_switch.switch_events,
+                        fps_left, output_w, output_h, tmpdir)
 
     # Write metadata with player tracks and detection stats
     player_summaries = player_tracker.get_track_summary(fps_left)
@@ -969,7 +1149,9 @@ def process_videos(
         "ball_positions": ball_positions[:1000],
         "play_switch_events": play_switch.switch_events,
         "player_tracks": player_summaries[:30],  # top 30 by duration
-        "highlights": [],
+        "highlights": [{"start": w[0], "end": w[1]} for w in
+                       ([] if not play_switch.switch_events else
+                        _merge_highlight_windows(play_switch.switch_events))],
         "processing_time": None,
     }
 
@@ -980,14 +1162,33 @@ def process_videos(
           f"{len(play_switch.switch_events)} play switches")
 
 
+def _merge_highlight_windows(switch_events: list) -> list:
+    """Merge overlapping ±3s windows around switch events."""
+    events_sorted = sorted(switch_events, key=lambda e: e.get("speed", 0), reverse=True)[:20]
+    events_sorted.sort(key=lambda e: e["time"])
+    windows = []
+    for ev in events_sorted:
+        start_s = max(0, ev["time"] - 3.0)
+        end_s = ev["time"] + 3.0
+        if windows and start_s <= windows[-1][1]:
+            windows[-1] = (windows[-1][0], max(windows[-1][1], end_s))
+        else:
+            windows.append((start_s, end_s))
+    return windows
+
+
 # ─── RunPod handler ──────────────────────────────────────────────────
 
 def handler(job):
     job_input = job["input"]
     match_id = job_input["match_id"]
-    bucket = job_input["output_bucket"]
+    bucket = os.environ.get("WASABI_BUCKET") or job_input.get("output_bucket")
     config = job_input.get("config", {})
     config["match_id"] = match_id
+
+    # Webhook URL for progress reporting
+    webhook_url = job_input.get("webhook_url")
+    runpod_job_id = job.get("id")
 
     start_time = time.time()
 
@@ -1006,6 +1207,8 @@ def handler(job):
             left_local, right_local,
             output_local, highlights_local, metadata_local,
             config, tmpdir,
+            webhook_url=webhook_url,
+            runpod_job_id=runpod_job_id,
         )
 
         # Update processing time
