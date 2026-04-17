@@ -8,6 +8,7 @@ import { VideoUploadCard } from '@/components/Matches/VideoUploadCard';
 import { ProcessingStatus } from '@/components/Matches/ProcessingStatus';
 import { CameraQRSetup } from '@/components/Matches/CameraQRSetup';
 import { MatchOutputViewer } from '@/components/Matches/MatchOutputViewer';
+import { MatchVideoPlayer } from '@/components/Matches/MatchVideoPlayer';
 import { RecordingControls } from '@/components/Matches/RecordingControls';
 import { MatchAnalyticsDashboard } from '@/components/Matches/MatchAnalyticsDashboard';
 import ProcessingConfigCard, { type ProcessingConfig } from '@/components/Matches/ProcessingConfigCard';
@@ -92,12 +93,17 @@ const MatchDetail = () => {
         {/* Processing Status */}
         <ProcessingStatus job={latestJob} />
 
-        {/* Outputs */}
+        {/* Match Video Player with click-to-jump events */}
+        {latestJob?.status === 'complete' && (
+          <MatchVideoPlayer matchId={id!} job={latestJob} />
+        )}
+
+        {/* Outputs (downloads) */}
         <MatchOutputViewer matchId={id!} job={latestJob} />
 
         {/* Analytics Dashboard */}
         {latestJob?.status === 'complete' && (
-          <MatchAnalyticsDashboard job={latestJob} />
+          <MatchAnalyticsDashboard matchId={id!} job={latestJob} />
         )}
 
         {/* Developer Controls */}
