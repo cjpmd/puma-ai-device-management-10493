@@ -1137,18 +1137,49 @@ def process_videos(
     player_summaries = player_tracker.get_track_summary(fps_left)
     print(f"👥 Tracked {len(player_summaries)} players")
 
+    # ─── Event detection, team classification, metrics ───
+    print("🎯 Deriving events and metrics from tracks...")
+    team_assignment = TeamClassifier.assign_teams(player_tracker.tracks)
+    events = EventDetector.detect(
+        ball_positions=ball_positions,
+        player_tracks=player_tracker.tracks,
+        team_assignment=team_assignment,
+        pano_w=pano_w,
+        pano_h=pano_h,
+        fps=fps_left,
+    )
+    team_metrics, player_metrics = MetricsAggregator.compute(
+        events=events,
+        player_tracks=player_tracker.tracks,
+        team_assignment=team_assignment,
+        ball_positions=ball_positions,
+        pano_w=pano_w,
+        pano_h=pano_h,
+        fps=fps_left,
+    )
+    heatmaps = MetricsAggregator.build_heatmaps(
+        player_tracker.tracks, pano_w, pano_h, grid_w=20, grid_h=12
+    )
+    print(f"  ✓ {len(events)} events, {len(team_metrics)} teams, {len(player_metrics)} player metric sets")
+
     metadata = {
         "match_id": config.get("match_id"),
         "total_frames": frame_idx,
         "fps": output_fps,
         "resolution": f"{output_w}x{output_h}",
+        "pano_resolution": [pano_w, pano_h],
         "zoom_level": base_zoom,
         "follow_mode": follow_mode,
         "ball_detections": len(ball_positions),
         "detection_stages": stage_counts,
         "ball_positions": ball_positions[:1000],
         "play_switch_events": play_switch.switch_events,
-        "player_tracks": player_summaries[:30],  # top 30 by duration
+        "player_tracks": player_summaries[:30],
+        "team_assignment": {str(k): v for k, v in team_assignment.items()},
+        "events": events,
+        "team_metrics": team_metrics,
+        "player_metrics": player_metrics,
+        "heatmaps": heatmaps,
         "highlights": [{"start": w[0], "end": w[1]} for w in
                        ([] if not play_switch.switch_events else
                         _merge_highlight_windows(play_switch.switch_events))],
