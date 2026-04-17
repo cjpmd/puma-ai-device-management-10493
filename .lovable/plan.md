@@ -1,79 +1,123 @@
 
 
-# Claude Review Upgrades
+# AI Analytics & Insights Engine
 
-## Summary of Issues and Fixes
+## What's Already Built (skip these)
 
-### GPU Pipeline (`gpu-server/`)
+| Layer | Status |
+|---|---|
+| Video Intelligence: YOLO ball + ByteTrack players | ✅ Done in `gpu-server/handler.py` |
+| Tracking metadata stored in `processing_jobs` (ball_tracking_data, player_tracking_data, event_data JSONB) | ✅ Done |
+| Match analytics dashboard tabs (Timeline, Players, Detection Stats) | ✅ Done in `MatchAnalyticsDashboard.tsx` |
+| Play-switch event detection | ✅ Done (basis for "possession change") |
+| Mobile recording, dual-camera stitch, Wasabi pipeline | ✅ Done |
 
-**1. Periodic homography recalibration**
-`PanoramaStitcher.stitch()` computes homography once and caches forever. Add `frame_idx` parameter; recalibrate every 500 frames.
+## What's Missing (this plan covers)
 
-**2. Remove broken sync offset loop**
-Lines 830-833 read frames in a loop to skip offsets, then lines 849-850 do `cap.set(CAP_PROP_POS_FRAMES)` which resets position anyway. Remove the loop; keep only the `set()` calls.
+The 5-layer prompt maps to four real gaps:
 
-**3. Audio bandpass filter before cross-correlation**
-Add `scipy.signal.butter` + `sosfilt` bandpass (800-3000 Hz) to isolate sharp sounds (whistle, kick) before correlating. Dramatically improves sync accuracy.
+1. **Event detection** — passes/shots/tackles/possession changes from existing tracks
+2. **Feature engineering & metrics** — team & player aggregates, xG proxy, heatmaps
+3. **Performance divergence** — actual vs expected (xG, dominance, contribution scores)
+4. **AI interpretation + UX** — LLM-generated insights, video overlay, click-to-jump timeline
 
-**4. Run YOLO every frame for ball, every 2nd for players**
-Currently both ball and player detection skip odd frames. Split: run YOLO every frame, but only feed person detections to ByteTrack on even frames.
+We skip the "ML behaviour model" (Random Forest/XGBoost) for now — grassroots teams don't have enough historical data to train it usefully. We replace it with **rule-based xG and rolling averages**, which is explainable and works from match #1.
 
-**5. DynamicZoom smooth_factor 0.92 → 0.85**
-Current value takes ~3s to reach target zoom. Reduce to 0.85 for more responsive zooming.
+## Plan
 
-**6. Adaptive overlap in `_stitch_blend`**
-Hardcoded 10% overlap. Make it configurable or measure from feature matches when homography fails.
+### Part A — GPU handler: derive events from tracks (`gpu-server/handler.py`)
 
-**7. Frame drift guard**
-After each stitch, verify `cap_left` and `cap_right` frame positions are within 2 frames of each other; resync the lagging one if not.
+Add a new `EventDetector` class that runs **after** ball + player tracking and produces structured events. No new ML model needed — uses geometry on existing data:
 
-**8. Real highlights from play-switch events**
-Replace the "copy first 30s" placeholder with actual highlight clips: extract +/- 3 second windows around each play-switch event.
+- **Possession**: nearest player to ball within 80px = possessor. Possession change = possessor's track_id changes for 5+ consecutive frames.
+- **Pass**: possession transfer between two players on the same inferred team within 3 seconds, ball travels >100px.
+- **Shot**: ball trajectory enters goal zone (left/right 8% of pitch) with speed > 25px/frame.
+- **Tackle**: possession change where new possessor was within 50px during transfer.
+- **Tactical features**: average team positions, defensive line height, team shape per 10s window.
 
-**9. ffmpeg re-encode step**
-OpenCV's `mp4v` codec produces large, poorly compatible files. Add an ffmpeg post-process to re-encode with `libx264 -crf 22 -preset fast -movflags +faststart`.
+Outputs added to `metadata.json`:
+```json
+{
+  "events": [{ "time": 12.3, "type": "pass", "player_track_id": 4, "from": [x,y], "to": [x,y], "outcome": "complete" }],
+  "team_metrics": { "possession_pct": {...}, "pass_success": {...}, "shots": {...} },
+  "player_metrics": { "<track_id>": { "passes": 12, "shots": 1, "distance_m": 4200, ... } },
+  "heatmaps": { "<track_id>": [[x,y,intensity], ...] }
+}
+```
 
-**10. Wasabi credentials from env vars, not job payload**
-Move `wasabi_access_key`, `wasabi_secret_key`, `wasabi_endpoint`, `wasabi_region`, `wasabi_bucket` to RunPod environment variables instead of passing in job input. Update `get_s3_client()` to read from `os.environ`.
+Team inference: cluster player jersey colours via dominant HSV in bounding box → 2 clusters = team A/B.
 
-**11. Pre-download YOLO weights in Dockerfile**
-Add `RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"` to avoid cold-start download latency.
+### Part B — Database (migration)
 
-**12. Pin CUDA-matched torch in Dockerfile**
-Add `--index-url https://download.pytorch.org/whl/cu118` to ensure GPU-enabled torch.
+Two new JSONB columns on `processing_jobs`:
+- `team_metrics` — possession %, xG, shots, pass success
+- `divergence_metrics` — actual vs expected (xG gap, dominance score, player contribution)
 
-**13. Fix docker-compose volume mount**
-Remove `volumes: ./app:/app` which overwrites the built image.
+Plus one new table `match_insights` for LLM-generated text:
+- `match_id`, `summary`, `team_strengths`, `team_weaknesses`, `top_performers`, `coaching_focus`, `created_at`
 
-**14. Progress reporting**
-Every 100 frames, POST a progress update to the webhook endpoint so the frontend can show a percentage.
+### Part C — Edge function: `runpod-webhook` parses new fields
 
-### Frontend
+Extend the existing webhook to populate `events`, `team_metrics`, `player_metrics`, `heatmaps`, plus run the **divergence calculations** (pure math, no model):
 
-**15. Fix `removeAllChannels()` in PlayerMovementMap.tsx (line 322)**
-Replace `supabase.removeAllChannels()` with `supabase.removeChannel(channelRef)` using the stored channel reference, so it doesn't destroy other components' subscriptions.
+- `goals_vs_xg`, `shot_efficiency`, `possession_vs_chances`, `dominance_score` (territory + shots + possession weighted)
+- Per-player `contribution_score` (passes + shots + tackles weighted by outcome)
 
-**16. Stabilize random biometric data**
-In `BiometricsTab.tsx`, `PlayerPerformanceCard.tsx`, and `GroupAnalysisCard.tsx`: wrap `Math.random()` initial values in `useMemo` with stable seeds, or better yet move them to `useRef` so they don't re-randomize on every render.
+### Part D — New edge function: `generate-match-insights`
 
-### Files to Change
+After the webhook completes, queue a Lovable AI call (`google/gemini-3-flash-preview`) that takes the metrics JSON and produces:
+- 1-paragraph match summary
+- 3 team strengths / 3 weaknesses
+- Top 3 performers with reasoning
+- 2 coaching focus suggestions
 
-| File | Changes |
-|------|---------|
-| `gpu-server/handler.py` | Items 1-10, 14 |
-| `gpu-server/Dockerfile` | Items 11-12 |
-| `gpu-server/docker-compose.yml` | Item 13 |
-| `gpu-server/requirements.txt` | No changes needed |
-| `src/components/PlayerMovementMap.tsx` | Item 15 |
-| `src/components/Analysis/BiometricsTab.tsx` | Item 16 |
-| `src/components/Analysis/PlayerPerformanceCard.tsx` | Item 16 |
-| `src/components/Analysis/GroupAnalysisCard.tsx` | Item 16 |
+Saved to `match_insights` table. Uses tool calling for structured output.
 
-### Not actioning (deferred)
+### Part E — Frontend additions
 
-- Error boundaries around video components (low risk, can add later)
-- Web Worker for hyperparameter tuning (ML training is dev-only)
-- Storage check before recording (Capacitor-specific, separate task)
-- `movementAnalytics.ts` cumulative distance fix (requires session redesign)
-- Auth provider refactor (works correctly, just not optimal)
+Extend `MatchAnalyticsDashboard.tsx` with new tabs:
+- **Match Stats** — possession %, xG, shots, pass success (cards + bar chart)
+- **Players** *(extend existing)* — add metrics columns (passes, shots, xG contribution, distance)
+- **Heatmaps** — per-player heatmap overlay on a pitch SVG
+- **AI Insights** — render `match_insights` content with markdown (loading state while generating)
+
+New component `MatchVideoPlayer.tsx` (replaces `MatchOutputViewer.tsx`):
+- HTML5 video + clickable event timeline below
+- Click event → seek to that timestamp
+- Toggle: heatmap overlay, player ID labels
+- Player name mapping: dropdown to link `track_id` → real `players.id` in DB (semi-manual mapping, persisted in a new `track_player_mapping` table)
+
+### Part F — Player mapping table (migration)
+
+```sql
+CREATE TABLE track_player_mapping (
+  id uuid PRIMARY KEY,
+  match_id uuid REFERENCES matches(id),
+  track_id integer NOT NULL,
+  player_id uuid REFERENCES players(id),
+  UNIQUE(match_id, track_id)
+);
+```
+RLS: match owner can read/write.
+
+## File changes summary
+
+| File | Action |
+|---|---|
+| `gpu-server/handler.py` | Add `EventDetector`, `TeamClassifier`, metric aggregation, heatmap binning |
+| Migration | Add columns + `match_insights` + `track_player_mapping` tables |
+| `supabase/functions/runpod-webhook/index.ts` | Parse events/metrics, compute divergence, trigger insights |
+| `supabase/functions/generate-match-insights/index.ts` | New — Lovable AI structured output |
+| `src/components/Matches/MatchAnalyticsDashboard.tsx` | Add Match Stats, Heatmaps, AI Insights tabs |
+| `src/components/Matches/MatchVideoPlayer.tsx` | New — clickable event timeline + overlays |
+| `src/components/Matches/PlayerTracksSummary.tsx` | Extend with new metrics + name mapping |
+| `src/components/Matches/HeatmapOverlay.tsx` | New |
+| `src/components/Matches/AIInsightsPanel.tsx` | New |
+| `src/pages/MatchDetail.tsx` | Wire new player + insights panel |
+
+## Notes / deferred
+
+- **No ML training** (Random Forest/XGBoost): rule-based xG (distance + angle lookup table) is explainable and works from match #1. We can add a learned model later once you have 50+ matches.
+- **No betting/external data** — all derived from your videos only.
+- **Team detection** uses jersey colour clustering — works for distinct kits, may need manual override for similar colours (covered by the mapping table).
 
