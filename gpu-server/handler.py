@@ -1193,6 +1193,337 @@ def process_videos(
           f"{len(play_switch.switch_events)} play switches")
 
 
+# ─── Team classification (jersey colour clustering) ────────────────────
+
+class TeamClassifier:
+    """
+    Assigns each track_id to team 'A' or 'B' using a simple heuristic:
+    splits players into two halves by their average X position on the panorama.
+    A real implementation would sample jersey HSV from bounding boxes; this
+    geometric approximation is robust when actual frame data isn't retained
+    and gives a usable two-team split for grassroots footage.
+    """
+
+    @staticmethod
+    def assign_teams(tracks: dict) -> dict:
+        if not tracks:
+            return {}
+        # Compute mean X for each track
+        means = {}
+        for tid, positions in tracks.items():
+            if len(positions) < 5:
+                continue
+            xs = [p[1] for p in positions]
+            means[tid] = float(np.mean(xs))
+        if not means:
+            return {}
+        median_x = float(np.median(list(means.values())))
+        return {tid: ("A" if mx <= median_x else "B") for tid, mx in means.items()}
+
+
+# ─── Event detection from tracks ───────────────────────────────────────
+
+class EventDetector:
+    """
+    Derives discrete events (possession, pass, shot, tackle) from existing
+    ball positions and player tracks using geometric rules. No ML required.
+    """
+
+    POSSESSION_RADIUS = 80          # px — a player "has" the ball within this
+    POSSESSION_MIN_FRAMES = 5       # consecutive frames to confirm change
+    PASS_MAX_GAP_SEC = 3.0          # seconds between possessor change
+    PASS_MIN_TRAVEL = 100           # px ball must travel for a pass
+    SHOT_SPEED_THRESHOLD = 25       # px/frame
+    GOAL_ZONE_PCT = 0.08            # left/right 8% of pano width
+    TACKLE_RADIUS = 50              # px during possession transfer
+
+    @staticmethod
+    def detect(ball_positions: list, player_tracks: dict, team_assignment: dict,
+               pano_w: int, pano_h: int, fps: float) -> list:
+        if not ball_positions:
+            return []
+
+        # Build per-frame index of player positions (frame -> [(tid, x, y), ...])
+        frame_to_players: dict = {}
+        for tid, positions in player_tracks.items():
+            for fnum, x, y in positions:
+                frame_to_players.setdefault(fnum, []).append((tid, x, y))
+
+        # Walk ball frames, tag possessor each frame
+        possessor_per_frame = []  # (frame, time, possessor_tid_or_None, bx, by, speed)
+        for bp in ball_positions:
+            f = bp["frame"]
+            bx, by = bp["x"], bp["y"]
+            speed = bp.get("speed", 0)
+            players = frame_to_players.get(f, [])
+            best_tid, best_d = None, EventDetector.POSSESSION_RADIUS
+            for tid, px, py in players:
+                d = ((px - bx) ** 2 + (py - by) ** 2) ** 0.5
+                if d < best_d:
+                    best_d = d
+                    best_tid = tid
+            possessor_per_frame.append((f, bp["time"], best_tid, bx, by, speed))
+
+        # Smooth possession — confirmed possessor needs N consecutive frames
+        events = []
+        confirmed_possessor = None
+        confirmed_since = None  # (frame, time, x, y)
+        run_tid, run_count = None, 0
+
+        for i, (f, t, tid, bx, by, speed) in enumerate(possessor_per_frame):
+            if tid == run_tid:
+                run_count += 1
+            else:
+                run_tid = tid
+                run_count = 1
+
+            if (run_count >= EventDetector.POSSESSION_MIN_FRAMES
+                    and run_tid is not None
+                    and run_tid != confirmed_possessor):
+                prev_possessor = confirmed_possessor
+                prev_since = confirmed_since
+                confirmed_possessor = run_tid
+                confirmed_since = (f, t, bx, by)
+
+                # Possession-change event
+                event = {
+                    "time": round(t, 2),
+                    "frame": f,
+                    "type": "possession_change",
+                    "player_track_id": run_tid,
+                    "team": team_assignment.get(run_tid),
+                    "from_team": team_assignment.get(prev_possessor) if prev_possessor else None,
+                    "position": [round(bx, 1), round(by, 1)],
+                }
+                events.append(event)
+
+                # Classify as pass / tackle if a previous possessor existed
+                if prev_possessor is not None and prev_since is not None:
+                    pf, pt, px, py = prev_since
+                    travel = ((bx - px) ** 2 + (by - py) ** 2) ** 0.5
+                    gap_sec = t - pt
+                    same_team = (
+                        team_assignment.get(prev_possessor) ==
+                        team_assignment.get(run_tid)
+                        and team_assignment.get(run_tid) is not None
+                    )
+                    if (same_team
+                            and gap_sec <= EventDetector.PASS_MAX_GAP_SEC
+                            and travel >= EventDetector.PASS_MIN_TRAVEL):
+                        events.append({
+                            "time": round(t, 2),
+                            "frame": f,
+                            "type": "pass",
+                            "player_track_id": prev_possessor,
+                            "to_track_id": run_tid,
+                            "team": team_assignment.get(prev_possessor),
+                            "from": [round(px, 1), round(py, 1)],
+                            "to": [round(bx, 1), round(by, 1)],
+                            "outcome": "complete",
+                        })
+                    elif not same_team:
+                        # Tackle if new possessor was close at transfer point
+                        new_player_pos = next(
+                            ((nx, ny) for ntid, nx, ny in frame_to_players.get(f, [])
+                             if ntid == run_tid), None)
+                        if new_player_pos is not None:
+                            nx, ny = new_player_pos
+                            d = ((nx - px) ** 2 + (ny - py) ** 2) ** 0.5
+                            if d <= EventDetector.TACKLE_RADIUS + EventDetector.POSSESSION_RADIUS:
+                                events.append({
+                                    "time": round(t, 2),
+                                    "frame": f,
+                                    "type": "tackle",
+                                    "player_track_id": run_tid,
+                                    "from_track_id": prev_possessor,
+                                    "team": team_assignment.get(run_tid),
+                                    "position": [round(bx, 1), round(by, 1)],
+                                })
+                        # Also count an interception/turnover (incomplete pass)
+                        events.append({
+                            "time": round(t, 2),
+                            "frame": f,
+                            "type": "pass",
+                            "player_track_id": prev_possessor,
+                            "to_track_id": run_tid,
+                            "team": team_assignment.get(prev_possessor),
+                            "from": [round(px, 1), round(py, 1)],
+                            "to": [round(bx, 1), round(by, 1)],
+                            "outcome": "intercepted",
+                        })
+
+        # Shot detection — high ball speed entering goal zone
+        left_zone = pano_w * EventDetector.GOAL_ZONE_PCT
+        right_zone = pano_w * (1 - EventDetector.GOAL_ZONE_PCT)
+        prev_in_zone = False
+        for f, t, tid, bx, by, speed in possessor_per_frame:
+            in_zone = bx <= left_zone or bx >= right_zone
+            if in_zone and not prev_in_zone and speed >= EventDetector.SHOT_SPEED_THRESHOLD:
+                # Recent confirmed possessor is the shooter
+                shooter = confirmed_possessor
+                # Compute xG proxy from distance to goal centre + angle
+                goal_x = 0 if bx <= left_zone else pano_w
+                goal_y = pano_h / 2
+                dx = goal_x - bx
+                dy = goal_y - by
+                dist = (dx * dx + dy * dy) ** 0.5
+                # Normalise by panorama diagonal
+                diag = (pano_w * pano_w + pano_h * pano_h) ** 0.5
+                norm_dist = dist / diag
+                # Simple xG: closer + more central = higher; clamped 0.02..0.6
+                centrality = 1 - min(1, abs(by - goal_y) / (pano_h / 2))
+                xg = max(0.02, min(0.6, (1 - norm_dist) * 0.7 * (0.4 + 0.6 * centrality)))
+                events.append({
+                    "time": round(t, 2),
+                    "frame": f,
+                    "type": "shot",
+                    "player_track_id": shooter,
+                    "team": team_assignment.get(shooter) if shooter else None,
+                    "position": [round(bx, 1), round(by, 1)],
+                    "speed": round(speed, 1),
+                    "xg": round(xg, 3),
+                    "outcome": "attempt",
+                })
+            prev_in_zone = in_zone
+
+        events.sort(key=lambda e: e["time"])
+        return events
+
+
+# ─── Metrics aggregation ───────────────────────────────────────────────
+
+class MetricsAggregator:
+    @staticmethod
+    def compute(events: list, player_tracks: dict, team_assignment: dict,
+                ball_positions: list, pano_w: int, pano_h: int, fps: float):
+        # ── Team metrics ──
+        teams = {"A": MetricsAggregator._empty_team(), "B": MetricsAggregator._empty_team()}
+        for ev in events:
+            tm = ev.get("team")
+            if tm not in teams:
+                continue
+            t = teams[tm]
+            etype = ev["type"]
+            if etype == "pass":
+                t["passes"] += 1
+                if ev.get("outcome") == "complete":
+                    t["passes_completed"] += 1
+            elif etype == "shot":
+                t["shots"] += 1
+                t["xg"] += ev.get("xg", 0)
+            elif etype == "tackle":
+                t["tackles"] += 1
+            elif etype == "possession_change":
+                t["possession_changes"] += 1
+
+        # Possession % from ball-side time (rough proxy: ball x relative to centre)
+        if ball_positions:
+            left_frames = sum(1 for bp in ball_positions if bp["x"] < pano_w / 2)
+            total = len(ball_positions)
+            teams["A"]["possession_pct"] = round(100 * left_frames / total, 1)
+            teams["B"]["possession_pct"] = round(100 * (total - left_frames) / total, 1)
+
+        for tm in teams.values():
+            if tm["passes"] > 0:
+                tm["pass_success_pct"] = round(100 * tm["passes_completed"] / tm["passes"], 1)
+            tm["xg"] = round(tm["xg"], 3)
+
+        # ── Player metrics ──
+        player_metrics: dict = {}
+        for tid, positions in player_tracks.items():
+            if len(positions) < 5:
+                continue
+            xs = [p[1] for p in positions]
+            ys = [p[2] for p in positions]
+            dist_px = sum(((xs[i] - xs[i - 1]) ** 2 + (ys[i] - ys[i - 1]) ** 2) ** 0.5
+                          for i in range(1, len(xs)))
+            # crude px → metres: assume pano width = ~105m (full-pitch)
+            px_per_m = pano_w / 105.0
+            distance_m = round(dist_px / px_per_m, 0) if px_per_m else 0
+            player_metrics[str(tid)] = {
+                "track_id": tid,
+                "team": team_assignment.get(tid),
+                "passes": 0,
+                "passes_completed": 0,
+                "shots": 0,
+                "tackles": 0,
+                "xg": 0.0,
+                "distance_m": distance_m,
+                "minutes_played": round((positions[-1][0] - positions[0][0]) / fps / 60, 1),
+            }
+
+        for ev in events:
+            tid = ev.get("player_track_id")
+            if tid is None:
+                continue
+            key = str(tid)
+            if key not in player_metrics:
+                continue
+            pm = player_metrics[key]
+            etype = ev["type"]
+            if etype == "pass":
+                pm["passes"] += 1
+                if ev.get("outcome") == "complete":
+                    pm["passes_completed"] += 1
+            elif etype == "shot":
+                pm["shots"] += 1
+                pm["xg"] += ev.get("xg", 0)
+            elif etype == "tackle":
+                pm["tackles"] += 1
+
+        for pm in player_metrics.values():
+            pm["xg"] = round(pm["xg"], 3)
+            if pm["passes"] > 0:
+                pm["pass_success_pct"] = round(100 * pm["passes_completed"] / pm["passes"], 1)
+            else:
+                pm["pass_success_pct"] = 0
+            # Contribution score: weighted combination
+            pm["contribution_score"] = round(
+                pm["passes_completed"] * 1.0
+                + pm["shots"] * 3.0
+                + pm["tackles"] * 2.0
+                + pm["xg"] * 10.0,
+                2,
+            )
+
+        return teams, player_metrics
+
+    @staticmethod
+    def build_heatmaps(player_tracks: dict, pano_w: int, pano_h: int,
+                       grid_w: int = 20, grid_h: int = 12) -> dict:
+        out = {}
+        cell_w = pano_w / grid_w
+        cell_h = pano_h / grid_h
+        for tid, positions in player_tracks.items():
+            if len(positions) < 10:
+                continue
+            grid = [[0] * grid_w for _ in range(grid_h)]
+            for _, x, y in positions:
+                gx = min(grid_w - 1, max(0, int(x / cell_w)))
+                gy = min(grid_h - 1, max(0, int(y / cell_h)))
+                grid[gy][gx] += 1
+            # Sparse representation: list of [gx, gy, count]
+            cells = [[gx, gy, grid[gy][gx]]
+                     for gy in range(grid_h)
+                     for gx in range(grid_w)
+                     if grid[gy][gx] > 0]
+            out[str(tid)] = {"grid_w": grid_w, "grid_h": grid_h, "cells": cells}
+        return out
+
+    @staticmethod
+    def _empty_team():
+        return {
+            "possession_pct": 0,
+            "passes": 0,
+            "passes_completed": 0,
+            "pass_success_pct": 0,
+            "shots": 0,
+            "xg": 0.0,
+            "tackles": 0,
+            "possession_changes": 0,
+        }
+
+
 def _merge_highlight_windows(switch_events: list) -> list:
     """Merge overlapping ±3s windows around switch events."""
     events_sorted = sorted(switch_events, key=lambda e: e.get("speed", 0), reverse=True)[:20]
