@@ -227,6 +227,56 @@ export type Database = {
           },
         ]
       }
+      match_insights: {
+        Row: {
+          coaching_focus: Json | null
+          created_at: string
+          error: string | null
+          id: string
+          match_id: string
+          status: string
+          summary: string | null
+          team_strengths: Json | null
+          team_weaknesses: Json | null
+          top_performers: Json | null
+          updated_at: string
+        }
+        Insert: {
+          coaching_focus?: Json | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          match_id: string
+          status?: string
+          summary?: string | null
+          team_strengths?: Json | null
+          team_weaknesses?: Json | null
+          top_performers?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          coaching_focus?: Json | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          match_id?: string
+          status?: string
+          summary?: string | null
+          team_strengths?: Json | null
+          team_weaknesses?: Json | null
+          top_performers?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_insights_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: true
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       match_videos: {
         Row: {
           camera_side: string
@@ -804,52 +854,64 @@ export type Database = {
           ball_tracking_data: Json | null
           completed_at: string | null
           created_at: string
+          divergence_metrics: Json | null
           event_data: Json | null
           gpu_type: string | null
+          heatmaps: Json | null
           id: string
           match_id: string
           output_highlights_path: string | null
           output_metadata_path: string | null
           output_video_path: string | null
+          player_metrics: Json | null
           player_tracking_data: Json | null
           processing_logs: string | null
           runpod_job_id: string | null
           started_at: string | null
           status: string
+          team_metrics: Json | null
         }
         Insert: {
           ball_tracking_data?: Json | null
           completed_at?: string | null
           created_at?: string
+          divergence_metrics?: Json | null
           event_data?: Json | null
           gpu_type?: string | null
+          heatmaps?: Json | null
           id?: string
           match_id: string
           output_highlights_path?: string | null
           output_metadata_path?: string | null
           output_video_path?: string | null
+          player_metrics?: Json | null
           player_tracking_data?: Json | null
           processing_logs?: string | null
           runpod_job_id?: string | null
           started_at?: string | null
           status?: string
+          team_metrics?: Json | null
         }
         Update: {
           ball_tracking_data?: Json | null
           completed_at?: string | null
           created_at?: string
+          divergence_metrics?: Json | null
           event_data?: Json | null
           gpu_type?: string | null
+          heatmaps?: Json | null
           id?: string
           match_id?: string
           output_highlights_path?: string | null
           output_metadata_path?: string | null
           output_video_path?: string | null
+          player_metrics?: Json | null
           player_tracking_data?: Json | null
           processing_logs?: string | null
           runpod_job_id?: string | null
           started_at?: string | null
           status?: string
+          team_metrics?: Json | null
         }
         Relationships: [
           {
@@ -1111,6 +1173,51 @@ export type Database = {
             columns: ["club_id"]
             isOneToOne: false
             referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      track_player_mapping: {
+        Row: {
+          created_at: string
+          id: string
+          match_id: string
+          player_id: string | null
+          team_label: string | null
+          track_id: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          match_id: string
+          player_id?: string | null
+          team_label?: string | null
+          track_id: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          match_id?: string
+          player_id?: string | null
+          team_label?: string | null
+          track_id?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "track_player_mapping_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "track_player_mapping_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
             referencedColumns: ["id"]
           },
         ]
