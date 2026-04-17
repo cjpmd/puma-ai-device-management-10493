@@ -32,7 +32,7 @@ export function AIInsightsPanel({ matchId }: AIInsightsPanelProps) {
       .select('*')
       .eq('match_id', matchId)
       .maybeSingle();
-    setInsights(data as Insights | null);
+    setInsights(data ? (data as unknown as Insights) : null);
     setLoading(false);
   };
 
@@ -125,7 +125,7 @@ export function AIInsightsPanel({ matchId }: AIInsightsPanelProps) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
-              <CardHeader><CardTitle className="text-sm text-emerald-600">Strengths</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm text-primary">Strengths</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-1.5 list-disc pl-4">
                   {insights.team_strengths?.map((s, i) => <li key={i}>{s}</li>)}
@@ -133,7 +133,7 @@ export function AIInsightsPanel({ matchId }: AIInsightsPanelProps) {
               </CardContent>
             </Card>
             <Card>
-              <CardHeader><CardTitle className="text-sm text-amber-600">Weaknesses</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm text-destructive">Weaknesses</CardTitle></CardHeader>
               <CardContent>
                 <ul className="text-sm space-y-1.5 list-disc pl-4">
                   {insights.team_weaknesses?.map((s, i) => <li key={i}>{s}</li>)}

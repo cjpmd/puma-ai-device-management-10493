@@ -64,7 +64,7 @@ async function fetchMetadata(metadataPath: string): Promise<Record<string, any> 
  * Compute divergence metrics from team_metrics + events.
  * Pure math — no model — to score over/under-performance.
  */
-function computeDivergence(teamMetrics: any, events: any[]): any {
+function computeDivergence(teamMetrics: any, _events: any[]): any {
   const teams = ["A", "B"];
   const out: Record<string, any> = {};
 
