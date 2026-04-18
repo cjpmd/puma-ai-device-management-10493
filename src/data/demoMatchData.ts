@@ -169,6 +169,15 @@ export const demoMatch = {
   match_date: new Date().toISOString().slice(0, 10),
   location: 'Hackney Marshes',
   status: 'complete',
+  home_team: 'Lions FC',
+  away_team: 'Eagles United',
+  home_score: 2,
+  away_score: 1,
+  home_color: '#10b981',
+  away_color: '#3b82f6',
+  match_type: 'Friendly',
+  is_home: true,
+  age_group: 'U9',
 };
 
 export const DEMO_VIDEO_URL = SAMPLE_VIDEO_URL;

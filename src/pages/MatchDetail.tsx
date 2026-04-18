@@ -8,9 +8,8 @@ import { VideoUploadCard } from '@/components/Matches/VideoUploadCard';
 import { ProcessingStatus } from '@/components/Matches/ProcessingStatus';
 import { CameraQRSetup } from '@/components/Matches/CameraQRSetup';
 import { MatchOutputViewer } from '@/components/Matches/MatchOutputViewer';
-import { MatchVideoPlayer } from '@/components/Matches/MatchVideoPlayer';
+import { MatchCinemaLayout } from '@/components/Matches/Cinema/MatchCinemaLayout';
 import { RecordingControls } from '@/components/Matches/RecordingControls';
-import { MatchAnalyticsDashboard } from '@/components/Matches/MatchAnalyticsDashboard';
 import ProcessingConfigCard, { type ProcessingConfig } from '@/components/Matches/ProcessingConfigCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
@@ -108,18 +107,13 @@ const MatchDetail = () => {
           </Card>
         )}
 
-        {/* Match Video Player with click-to-jump events */}
+        {/* Cinema-mode video + analytics (Veo-style) */}
         {latestJob?.status === 'complete' && (
-          <MatchVideoPlayer matchId={id!} job={latestJob} />
+          <MatchCinemaLayout matchId={id!} match={match} job={latestJob} />
         )}
 
         {/* Outputs (downloads) */}
         <MatchOutputViewer matchId={id!} job={latestJob} />
-
-        {/* Analytics Dashboard */}
-        {latestJob?.status === 'complete' && (
-          <MatchAnalyticsDashboard matchId={id!} job={latestJob} />
-        )}
 
         {/* Developer Controls */}
         <Card>

@@ -323,11 +323,20 @@ export type Database = {
       }
       matches: {
         Row: {
+          age_group: string | null
+          away_color: string | null
+          away_score: number | null
+          away_team: string | null
           club_id: string | null
           created_at: string
+          home_color: string | null
+          home_score: number | null
+          home_team: string | null
           id: string
+          is_home: boolean | null
           location: string | null
           match_date: string | null
+          match_type: string | null
           status: string
           team_id: string | null
           title: string | null
@@ -335,11 +344,20 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          age_group?: string | null
+          away_color?: string | null
+          away_score?: number | null
+          away_team?: string | null
           club_id?: string | null
           created_at?: string
+          home_color?: string | null
+          home_score?: number | null
+          home_team?: string | null
           id?: string
+          is_home?: boolean | null
           location?: string | null
           match_date?: string | null
+          match_type?: string | null
           status?: string
           team_id?: string | null
           title?: string | null
@@ -347,11 +365,20 @@ export type Database = {
           user_id: string
         }
         Update: {
+          age_group?: string | null
+          away_color?: string | null
+          away_score?: number | null
+          away_team?: string | null
           club_id?: string | null
           created_at?: string
+          home_color?: string | null
+          home_score?: number | null
+          home_team?: string | null
           id?: string
+          is_home?: boolean | null
           location?: string | null
           match_date?: string | null
+          match_type?: string | null
           status?: string
           team_id?: string | null
           title?: string | null
