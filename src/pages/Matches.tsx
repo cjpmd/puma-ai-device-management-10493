@@ -8,21 +8,6 @@ import { CreateMatchDialog } from '@/components/Matches/CreateMatchDialog';
 import { EventCard, type TeamEvent } from '@/components/Matches/EventCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
-        {/* Demo analytics CTA */}
-        <Link to="/matches/demo" className="block mb-6">
-          <div className="rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors p-4 flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <Sparkles className="h-5 w-5 text-primary" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-sm">Preview Match Analytics</h3>
-              <p className="text-xs text-muted-foreground">
-                Explore the full coaching dashboard with sample data — no upload needed.
-              </p>
-            </div>
-            <Button size="sm" variant="outline">View Demo</Button>
-          </div>
-        </Link>
 
 
 const Matches = () => {
