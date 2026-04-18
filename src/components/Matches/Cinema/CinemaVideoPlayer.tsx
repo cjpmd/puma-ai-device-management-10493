@@ -14,10 +14,12 @@ interface CinemaVideoPlayerProps {
   outputVideoPath: string | null;
   demoVideoUrl?: string;
   onUrlReady?: (url: string) => void;
+  onTimeUpdate?: (time: number) => void;
+  onDurationChange?: (duration: number) => void;
 }
 
 export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayerProps>(
-  ({ matchId, outputVideoPath, demoVideoUrl, onUrlReady }, ref) => {
+  ({ matchId, outputVideoPath, demoVideoUrl, onUrlReady, onTimeUpdate, onDurationChange }, ref) => {
     const { toast } = useToast();
     const videoRef = useRef<HTMLVideoElement>(null);
     const [videoUrl, setVideoUrl] = useState<string | null>(demoVideoUrl || null);
@@ -78,6 +80,9 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
         ref={videoRef}
         src={videoUrl}
         controls
+        onTimeUpdate={(e) => onTimeUpdate?.((e.target as HTMLVideoElement).currentTime)}
+        onLoadedMetadata={(e) => onDurationChange?.((e.target as HTMLVideoElement).duration)}
+        onDurationChange={(e) => onDurationChange?.((e.target as HTMLVideoElement).duration)}
         className="absolute inset-0 w-full h-full object-contain bg-black"
       />
     );

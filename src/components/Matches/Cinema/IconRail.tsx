@@ -1,7 +1,7 @@
-import { Film, FileText, BarChart3, Shirt, X } from 'lucide-react';
+import { Film, FileText, BarChart3, Shirt, UserCircle2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type CinemaPanel = 'clips' | 'summary' | 'analytics' | 'team';
+export type CinemaPanel = 'clips' | 'summary' | 'analytics' | 'team' | 'spotlight';
 
 interface IconRailProps {
   active: CinemaPanel | null;
@@ -9,10 +9,11 @@ interface IconRailProps {
 }
 
 const ITEMS: { key: CinemaPanel; icon: typeof Film; label: string }[] = [
-  { key: 'clips',     icon: Film,      label: 'Clips' },
-  { key: 'summary',   icon: FileText,  label: 'Summary' },
-  { key: 'analytics', icon: BarChart3, label: 'Analytics' },
-  { key: 'team',      icon: Shirt,     label: 'Team' },
+  { key: 'clips',     icon: Film,         label: 'Clips' },
+  { key: 'summary',   icon: FileText,     label: 'Summary' },
+  { key: 'analytics', icon: BarChart3,    label: 'Analytics' },
+  { key: 'spotlight', icon: UserCircle2,  label: 'Player Spotlight' },
+  { key: 'team',      icon: Shirt,        label: 'Team' },
 ];
 
 export function IconRail({ active, onSelect }: IconRailProps) {
