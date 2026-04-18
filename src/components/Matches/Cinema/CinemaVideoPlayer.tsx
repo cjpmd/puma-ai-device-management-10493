@@ -3,6 +3,7 @@ import { Loader2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+import { VeoVideoControls, type ControlEvent } from './VeoVideoControls';
 
 export interface CinemaVideoHandle {
   seekTo: (sec: number) => void;
@@ -13,17 +14,21 @@ interface CinemaVideoPlayerProps {
   matchId: string;
   outputVideoPath: string | null;
   demoVideoUrl?: string;
+  events?: ControlEvent[];
   onUrlReady?: (url: string) => void;
   onTimeUpdate?: (time: number) => void;
   onDurationChange?: (duration: number) => void;
 }
 
 export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayerProps>(
-  ({ matchId, outputVideoPath, demoVideoUrl, onUrlReady, onTimeUpdate, onDurationChange }, ref) => {
+  ({ matchId, outputVideoPath, demoVideoUrl, events = [], onUrlReady, onTimeUpdate, onDurationChange }, ref) => {
     const { toast } = useToast();
+    const containerRef = useRef<HTMLDivElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const [videoUrl, setVideoUrl] = useState<string | null>(demoVideoUrl || null);
     const [loading, setLoading] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
 
     useEffect(() => {
       if (demoVideoUrl) {
@@ -76,15 +81,40 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
     }
 
     return (
-      <video
-        ref={videoRef}
-        src={videoUrl}
-        controls
-        onTimeUpdate={(e) => onTimeUpdate?.((e.target as HTMLVideoElement).currentTime)}
-        onLoadedMetadata={(e) => onDurationChange?.((e.target as HTMLVideoElement).duration)}
-        onDurationChange={(e) => onDurationChange?.((e.target as HTMLVideoElement).duration)}
-        className="absolute inset-0 w-full h-full object-contain bg-black"
-      />
+      <div ref={containerRef} className="absolute inset-0 group/player bg-black">
+        <video
+          ref={videoRef}
+          src={videoUrl}
+          onClick={() => {
+            const v = videoRef.current;
+            if (!v) return;
+            if (v.paused) v.play().catch(() => {}); else v.pause();
+          }}
+          onTimeUpdate={(e) => {
+            const t = (e.target as HTMLVideoElement).currentTime;
+            setCurrentTime(t);
+            onTimeUpdate?.(t);
+          }}
+          onLoadedMetadata={(e) => {
+            const d = (e.target as HTMLVideoElement).duration;
+            setDuration(d);
+            onDurationChange?.(d);
+          }}
+          onDurationChange={(e) => {
+            const d = (e.target as HTMLVideoElement).duration;
+            setDuration(d);
+            onDurationChange?.(d);
+          }}
+          className="w-full h-full object-contain bg-black"
+        />
+        <VeoVideoControls
+          videoEl={videoRef.current}
+          containerEl={containerRef.current}
+          events={events}
+          currentTime={currentTime}
+          duration={duration}
+        />
+      </div>
     );
   },
 );

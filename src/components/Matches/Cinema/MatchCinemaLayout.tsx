@@ -42,6 +42,7 @@ export function MatchCinemaLayout({
           matchId={matchId}
           outputVideoPath={job?.output_video_path}
           demoVideoUrl={demoVideoUrl}
+          events={events}
           onUrlReady={setVideoUrl}
           onTimeUpdate={setCurrentTime}
           onDurationChange={setDuration}
