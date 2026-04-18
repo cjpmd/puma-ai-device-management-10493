@@ -8,6 +8,7 @@ import { Capacitor } from '@capacitor/core';
 // Lazy imports — only resolved on native
 let CameraPreview: any = null;
 let DevicePlugin: any = null;
+let Filesystem: any = null;
 
 const isNative = Capacitor.isNativePlatform();
 
@@ -18,6 +19,9 @@ if (isNative) {
   import('@capacitor/device').then((m) => {
     DevicePlugin = m.Device;
   });
+  import('@capacitor/filesystem').then((m) => {
+    Filesystem = m.Filesystem;
+  });
 }
 
 interface CameraRecorderProps {
@@ -27,9 +31,11 @@ interface CameraRecorderProps {
   onStatusChange: (status: 'ready' | 'recording' | 'stopped' | 'error', error?: string) => void;
   onPreviewFrame?: (base64: string) => void;
   onTelemetry?: (battery: number, isCharging: boolean) => void;
+  onStorage?: (freeBytes: number, totalBytes: number) => void;
   onPong?: (sentAt: number, receivedAt: number) => void;
   isConnected: boolean;
   clockOffset: number; // ms offset calculated from ping-pong
+  livePreviewBoost?: boolean; // when true, stream preview frames more frequently
 }
 
 export function CameraRecorder({
@@ -39,15 +45,20 @@ export function CameraRecorder({
   onStatusChange,
   onPreviewFrame,
   onTelemetry,
+  onStorage,
   onPong,
   isConnected,
   clockOffset,
+  livePreviewBoost = false,
 }: CameraRecorderProps) {
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [useNative, setUseNative] = useState(isNative);
+  const [storageFree, setStorageFree] = useState<number | null>(null);
+  const [storageTotal, setStorageTotal] = useState<number | null>(null);
+  const [appliedSettings, setAppliedSettings] = useState<string>('');
 
   // Web fallback refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -56,7 +67,7 @@ export function CameraRecorder({
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previewIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const batteryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeFilePathRef = useRef<string | null>(null);
 
@@ -79,37 +90,74 @@ export function CameraRecorder({
       return;
     }
 
-    if (isNative && CameraPreview && onPreviewFrame) {
+    if (!onPreviewFrame) return;
+    const intervalMs = livePreviewBoost ? 500 : 3000;
+    const quality = livePreviewBoost ? 30 : 15;
+
+    if (isNative && CameraPreview) {
       previewIntervalRef.current = setInterval(async () => {
         try {
-          const result = await CameraPreview.captureSample({ quality: 15 });
+          const result = await CameraPreview.captureSample({ quality });
           if (result?.value) onPreviewFrame(result.value);
         } catch {}
-      }, 2000);
+      }, intervalMs);
+    } else if (videoRef.current && streamRef.current) {
+      // Web fallback: capture frame from video element
+      previewIntervalRef.current = setInterval(() => {
+        try {
+          const v = videoRef.current!;
+          const canvas = document.createElement('canvas');
+          canvas.width = 320;
+          canvas.height = (v.videoHeight / v.videoWidth) * 320 || 180;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+          const data = canvas.toDataURL('image/jpeg', quality / 100);
+          onPreviewFrame(data.replace(/^data:image\/jpeg;base64,/, ''));
+        } catch {}
+      }, intervalMs);
     }
 
     return () => {
       if (previewIntervalRef.current) clearInterval(previewIntervalRef.current);
     };
-  }, [hasPermission, isRecording, onPreviewFrame]);
+  }, [hasPermission, isRecording, onPreviewFrame, livePreviewBoost]);
 
-  // ─── BATTERY TELEMETRY ───
+  // ─── BATTERY + STORAGE TELEMETRY ───
   useEffect(() => {
-    if (!isNative || !DevicePlugin || !onTelemetry) return;
-
-    const sendBattery = async () => {
+    const sendTelemetry = async () => {
+      // Battery
+      if (DevicePlugin && onTelemetry) {
+        try {
+          const info = await DevicePlugin.getBatteryInfo();
+          onTelemetry(info.batteryLevel ?? -1, info.isCharging ?? false);
+        } catch {}
+      } else if (!isNative && onTelemetry && (navigator as any).getBattery) {
+        try {
+          const bat = await (navigator as any).getBattery();
+          onTelemetry(bat.level, bat.charging);
+        } catch {}
+      }
+      // Storage — navigator.storage works on web AND iOS WKWebView
       try {
-        const info = await DevicePlugin.getBatteryInfo();
-        onTelemetry(info.batteryLevel ?? -1, info.isCharging ?? false);
+        if (navigator.storage?.estimate) {
+          const est = await navigator.storage.estimate();
+          if (est.quota) {
+            setStorageTotal(est.quota);
+            const free = est.quota - (est.usage || 0);
+            setStorageFree(free);
+            onStorage?.(free, est.quota);
+          }
+        }
       } catch {}
     };
-    sendBattery();
-    batteryIntervalRef.current = setInterval(sendBattery, 10000);
+    sendTelemetry();
+    telemetryIntervalRef.current = setInterval(sendTelemetry, 10000);
 
     return () => {
-      if (batteryIntervalRef.current) clearInterval(batteryIntervalRef.current);
+      if (telemetryIntervalRef.current) clearInterval(telemetryIntervalRef.current);
     };
-  }, [onTelemetry]);
+  }, [onTelemetry, onStorage]);
 
   // ─── HANDLE REMOTE COMMANDS ───
   useEffect(() => {
@@ -120,7 +168,7 @@ export function CameraRecorder({
     }
   }, [remoteCommand, startAt]);
 
-  // ─── NATIVE CAMERA ───
+  // ─── NATIVE CAMERA (auto-config 4K + ultra-wide) ───
   const initNativeCamera = async () => {
     // Wait for lazy imports
     await new Promise((r) => setTimeout(r, 300));
@@ -139,10 +187,18 @@ export function CameraRecorder({
         enableZoom: true,
         disableAudio: false,
       });
-      // Try ultra-wide (min zoom)
+      // Try ultra-wide (min zoom) — 0.5x on supported iOS devices
       try {
-        await CameraPreview.setZoom({ zoom: 1 }); // 1 = minimum on most devices
-      } catch {}
+        await CameraPreview.setZoom({ zoom: 0.5 });
+        setAppliedSettings('4K • 30fps • 0.5x ultra-wide');
+      } catch {
+        try {
+          await CameraPreview.setZoom({ zoom: 1 });
+          setAppliedSettings('4K • 30fps • 1x');
+        } catch {
+          setAppliedSettings('4K • 30fps');
+        }
+      }
       setHasPermission(true);
       onStatusChange('ready');
     } catch (err: any) {
@@ -160,11 +216,21 @@ export function CameraRecorder({
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 3840 }, height: { ideal: 2160 } },
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 3840 },
+          height: { ideal: 2160 },
+          frameRate: { ideal: 30 },
+        },
         audio: true,
       });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
+      const track = stream.getVideoTracks()[0];
+      const settings = track?.getSettings();
+      setAppliedSettings(
+        settings ? `${settings.width || '?'}×${settings.height || '?'} • ${Math.round(settings.frameRate || 0)}fps` : 'Auto'
+      );
       setHasPermission(true);
       onStatusChange('ready');
     } catch {
@@ -214,7 +280,6 @@ export function CameraRecorder({
           height: 2160,
           quality: 100,
         });
-        // result may come after stopRecordVideo on some implementations
       } catch (err: any) {
         onStatusChange('error', err.message);
         return;
@@ -253,10 +318,8 @@ export function CameraRecorder({
         const result = await CameraPreview.stopRecordVideo();
         if (result?.videoFilePath) {
           nativeFilePathRef.current = result.videoFilePath;
-          // Convert native file to File object for upload
-          // Fetch the native file directly as a blob to avoid OOM from base64 conversion
-          const fileUri = result.videoFilePath.startsWith('file://') 
-            ? result.videoFilePath 
+          const fileUri = result.videoFilePath.startsWith('file://')
+            ? result.videoFilePath
             : `file://${result.videoFilePath}`;
           const response = await fetch(fileUri);
           const blob = await response.blob();
@@ -280,7 +343,7 @@ export function CameraRecorder({
   const cleanup = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     if (previewIntervalRef.current) clearInterval(previewIntervalRef.current);
-    if (batteryIntervalRef.current) clearInterval(batteryIntervalRef.current);
+    if (telemetryIntervalRef.current) clearInterval(telemetryIntervalRef.current);
     if (countdownTimerRef.current) clearTimeout(countdownTimerRef.current);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     if (isNative && CameraPreview) {
@@ -294,9 +357,18 @@ export function CameraRecorder({
     return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
+  const formatBytes = (b: number) => {
+    if (b >= 1024 ** 3) return `${(b / 1024 ** 3).toFixed(1)} GB`;
+    if (b >= 1024 ** 2) return `${(b / 1024 ** 2).toFixed(0)} MB`;
+    return `${(b / 1024).toFixed(0)} KB`;
+  };
+
+  // Approx bytes/sec for 4K@30fps H.264 ≈ 6 MB/s
+  const estMinutesRemaining = storageFree ? Math.floor(storageFree / (6 * 1024 * 1024) / 60) : null;
+  const lowStorage = storageFree !== null && estMinutesRemaining !== null && estMinutesRemaining < 30;
+
   // ─── RENDER ───
 
-  // Waiting for permission
   if (hasPermission === null) {
     return (
       <Card>
@@ -308,7 +380,6 @@ export function CameraRecorder({
     );
   }
 
-  // Permission denied
   if (hasPermission === false) {
     return (
       <Card className="border-destructive/50">
@@ -325,7 +396,31 @@ export function CameraRecorder({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      {/* Auto-applied camera settings + storage info */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        {appliedSettings && (
+          <Badge variant="outline" className="gap-1">
+            <Zap className="h-3 w-3" /> {appliedSettings}
+          </Badge>
+        )}
+        {storageFree !== null && (
+          <Badge
+            variant="outline"
+            className={lowStorage ? 'text-destructive border-destructive/50' : 'text-muted-foreground'}
+          >
+            {formatBytes(storageFree)} free
+            {estMinutesRemaining !== null && ` • ~${estMinutesRemaining}min`}
+          </Badge>
+        )}
+      </div>
+
+      {lowStorage && (
+        <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-2 text-xs text-destructive text-center">
+          ⚠️ Low storage. Free up space before a long recording.
+        </div>
+      )}
+
       {/* Viewfinder */}
       <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
         {isNative ? (
@@ -334,14 +429,12 @@ export function CameraRecorder({
           <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
         )}
 
-        {/* Countdown overlay */}
         {countdown !== null && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10">
             <span className="text-8xl font-bold text-white animate-pulse">{countdown}</span>
           </div>
         )}
 
-        {/* Recording indicator */}
         {isRecording && (
           <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
             <Badge className="bg-red-600 text-white">
@@ -351,7 +444,6 @@ export function CameraRecorder({
           </div>
         )}
 
-        {/* Native badge */}
         {isNative && (
           <div className="absolute top-3 right-3 z-10">
             <Badge variant="outline" className="bg-black/50 text-white border-white/30 text-xs">
@@ -369,7 +461,6 @@ export function CameraRecorder({
         )}
       </div>
 
-      {/* Manual controls (when not connected to control phone) */}
       {!isConnected && (
         <div className="space-y-2">
           {!isRecording ? (
