@@ -86,6 +86,10 @@ const CameraCapture = () => {
             setRemoteCommand('start');
           } else if (payload.command === 'stop') {
             setRemoteCommand('stop');
+          } else if (payload.command === 'live_preview_on') {
+            setLivePreviewBoost(true);
+          } else if (payload.command === 'live_preview_off') {
+            setLivePreviewBoost(false);
           }
         }
         // Respond to pings from control phone
@@ -154,6 +158,9 @@ const CameraCapture = () => {
   );
 
   // Battery telemetry callback
+  const [storageInfo, setStorageInfo] = useState<{ free: number; total: number } | null>(null);
+  const [livePreviewBoost, setLivePreviewBoost] = useState(false);
+
   const handleTelemetry = useCallback(
     (battery: number, isCharging: boolean) => {
       if (!channelRef.current || !tokenInfo) return;
@@ -161,6 +168,20 @@ const CameraCapture = () => {
         type: 'broadcast',
         event: 'recording',
         payload: { type: 'telemetry', camera_side: tokenInfo.camera_side, batteryLevel: battery, isCharging },
+      });
+    },
+    [tokenInfo]
+  );
+
+  // Storage telemetry callback
+  const handleStorage = useCallback(
+    (free: number, total: number) => {
+      setStorageInfo({ free, total });
+      if (!channelRef.current || !tokenInfo) return;
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'recording',
+        payload: { type: 'storage', camera_side: tokenInfo.camera_side, freeBytes: free, totalBytes: total },
       });
     },
     [tokenInfo]
@@ -323,8 +344,10 @@ const CameraCapture = () => {
               onStatusChange={handleRecorderStatusChange}
               onPreviewFrame={handlePreviewFrame}
               onTelemetry={handleTelemetry}
+              onStorage={handleStorage}
               isConnected={isConnected}
               clockOffset={clockOffset}
+              livePreviewBoost={livePreviewBoost}
             />
 
             {/* File input fallback */}

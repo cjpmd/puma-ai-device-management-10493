@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Circle, Square, Radio, Battery, BatteryCharging, ImageOff, Wifi } from 'lucide-react';
+import { Circle, Square, Radio, Battery, BatteryCharging, ImageOff, Wifi, HardDrive, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 type CameraStatus = 'disconnected' | 'ready' | 'recording' | 'stopped' | 'error';
@@ -14,6 +14,9 @@ interface CameraState {
   previewFrame?: string;
   batteryLevel?: number;
   isCharging?: boolean;
+  storageFreeBytes?: number;
+  storageTotalBytes?: number;
+  lastPreviewAt?: number;
 }
 
 interface RecordingControlsProps {
@@ -27,6 +30,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
   const [isRecording, setIsRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [livePreview, setLivePreview] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
@@ -49,11 +53,19 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
         if (payload.type === 'status') {
           update((prev) => ({ ...prev, status: payload.status, error: payload.error }));
         } else if (payload.type === 'preview') {
-          update((prev) => ({ ...prev, previewFrame: `data:image/jpeg;base64,${payload.frame}` }));
+          update((prev) => ({
+            ...prev,
+            previewFrame: `data:image/jpeg;base64,${payload.frame}`,
+            lastPreviewAt: Date.now(),
+          }));
         } else if (payload.type === 'telemetry') {
           update((prev) => ({ ...prev, batteryLevel: payload.batteryLevel, isCharging: payload.isCharging }));
-        } else if (payload.type === 'pong') {
-          // Could use for offset calculation if needed
+        } else if (payload.type === 'storage') {
+          update((prev) => ({
+            ...prev,
+            storageFreeBytes: payload.freeBytes,
+            storageTotalBytes: payload.totalBytes,
+          }));
         }
       })
       .subscribe();
@@ -81,7 +93,6 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
       payload: { type: 'command', command: 'start', startAt },
     });
 
-    // Show countdown on control phone too
     let remaining = 3;
     setCountdown(remaining);
     const interval = setInterval(() => {
@@ -105,10 +116,26 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
     setIsRecording(false);
   }, []);
 
+  const toggleLivePreview = useCallback(() => {
+    const newState = !livePreview;
+    setLivePreview(newState);
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'recording',
+      payload: { type: 'command', command: newState ? 'live_preview_on' : 'live_preview_off' },
+    });
+  }, [livePreview]);
+
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
     return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  const formatBytes = (b: number) => {
+    if (b >= 1024 ** 3) return `${(b / 1024 ** 3).toFixed(1)} GB`;
+    if (b >= 1024 ** 2) return `${(b / 1024 ** 2).toFixed(0)} MB`;
+    return `${(b / 1024).toFixed(0)} KB`;
   };
 
   const bothReady = leftCamera.status === 'ready' && rightCamera.status === 'ready';
@@ -116,7 +143,17 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
 
   // Camera preview panel
   const CameraPanel = ({ label, camera }: { label: string; camera: CameraState }) => {
-    const batteryPercent = camera.batteryLevel != null ? Math.round(camera.batteryLevel * 100) : null;
+    const batteryPercent = camera.batteryLevel != null && camera.batteryLevel >= 0
+      ? Math.round(camera.batteryLevel * 100)
+      : null;
+
+    const storagePercent =
+      camera.storageFreeBytes != null && camera.storageTotalBytes
+        ? Math.round((camera.storageFreeBytes / camera.storageTotalBytes) * 100)
+        : null;
+    const lowStorage = camera.storageFreeBytes != null && camera.storageFreeBytes < 2 * 1024 ** 3; // <2GB
+
+    const previewStale = camera.lastPreviewAt && Date.now() - camera.lastPreviewAt > 8000;
 
     return (
       <div className="flex-1 space-y-2">
@@ -128,7 +165,14 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
         {/* Preview thumbnail */}
         <div className="relative aspect-video rounded-lg overflow-hidden bg-muted border">
           {camera.previewFrame ? (
-            <img src={camera.previewFrame} alt={`${label} preview`} className="w-full h-full object-cover" />
+            <>
+              <img src={camera.previewFrame} alt={`${label} preview`} className="w-full h-full object-cover" />
+              {livePreview && !previewStale && (
+                <Badge className="absolute top-2 right-2 bg-emerald-600 text-white text-xs">
+                  <Circle className="h-2 w-2 fill-current mr-1 animate-pulse" /> LIVE
+                </Badge>
+              )}
+            </>
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               {camera.status === 'disconnected' ? (
@@ -168,6 +212,17 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
           </div>
         )}
 
+        {/* Storage */}
+        {storagePercent !== null && camera.storageFreeBytes != null && (
+          <div className="flex items-center gap-2">
+            <HardDrive className={`h-4 w-4 ${lowStorage ? 'text-red-500' : 'text-muted-foreground'}`} />
+            <Progress value={storagePercent} className="h-2 flex-1" />
+            <span className={`text-xs font-mono ${lowStorage ? 'text-red-500 font-bold' : 'text-muted-foreground'}`}>
+              {formatBytes(camera.storageFreeBytes)}
+            </span>
+          </div>
+        )}
+
         {camera.error && <p className="text-xs text-destructive">{camera.error}</p>}
       </div>
     );
@@ -195,9 +250,21 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
   return (
     <Card className="border-red-200">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Radio className="h-4 w-4" />
-          Recording Control
+        <CardTitle className="text-base flex items-center justify-between">
+          <span className="flex items-center gap-2">
+            <Radio className="h-4 w-4" />
+            Recording Control
+          </span>
+          <Button
+            size="sm"
+            variant={livePreview ? 'default' : 'outline'}
+            onClick={toggleLivePreview}
+            disabled={!anyConnected}
+            className="h-8"
+          >
+            {livePreview ? <Eye className="h-3 w-3 mr-1" /> : <EyeOff className="h-3 w-3 mr-1" />}
+            Live View
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -206,6 +273,13 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
           <CameraPanel label="Left Camera" camera={leftCamera} />
           <CameraPanel label="Right Camera" camera={rightCamera} />
         </div>
+
+        {/* Live preview note */}
+        {livePreview && (
+          <p className="text-xs text-muted-foreground text-center">
+            Live preview ~2 fps. Uses extra battery and bandwidth on the capture phones.
+          </p>
+        )}
 
         {/* Countdown overlay */}
         {countdown !== null && (
