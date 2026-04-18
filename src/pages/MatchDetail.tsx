@@ -93,6 +93,21 @@ const MatchDetail = () => {
         {/* Processing Status */}
         <ProcessingStatus job={latestJob} />
 
+        {/* Empty-state hint when no processed video yet */}
+        {!latestJob && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="flex-1 text-sm">
+                <p className="font-medium">No processed video yet.</p>
+                <p className="text-muted-foreground">See what the analytics dashboard will look like once your match is processed.</p>
+              </div>
+              <Link to="/matches/demo">
+                <Button size="sm" variant="outline">View Demo</Button>
+              </Link>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Match Video Player with click-to-jump events */}
         {latestJob?.status === 'complete' && (
           <MatchVideoPlayer matchId={id!} job={latestJob} />
