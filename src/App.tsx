@@ -13,6 +13,7 @@ import Devices from "./pages/Devices";
 import PitchCalibration from "./pages/PitchCalibration";
 import Matches from "./pages/Matches";
 import MatchDetail from "./pages/MatchDetail";
+import DemoMatch from "./pages/DemoMatch";
 import CameraCapture from "./pages/CameraCapture";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -103,6 +104,14 @@ const App = () => (
             element={
               <PrivateRoute>
                 <Matches />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/matches/demo"
+            element={
+              <PrivateRoute>
+                <DemoMatch />
               </PrivateRoute>
             }
           />
