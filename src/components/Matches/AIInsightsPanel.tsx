@@ -8,6 +8,8 @@ import { useToast } from '@/components/ui/use-toast';
 
 interface AIInsightsPanelProps {
   matchId: string;
+  /** When provided, displays this inline content instead of querying/generating via Supabase (demo mode). */
+  demoInsights?: Insights;
 }
 
 interface Insights {
@@ -20,10 +22,10 @@ interface Insights {
   error?: string | null;
 }
 
-export function AIInsightsPanel({ matchId }: AIInsightsPanelProps) {
+export function AIInsightsPanel({ matchId, demoInsights }: AIInsightsPanelProps) {
   const { toast } = useToast();
-  const [insights, setInsights] = useState<Insights | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [insights, setInsights] = useState<Insights | null>(demoInsights ?? null);
+  const [loading, setLoading] = useState(!demoInsights);
   const [generating, setGenerating] = useState(false);
 
   const fetchInsights = async () => {
@@ -37,6 +39,7 @@ export function AIInsightsPanel({ matchId }: AIInsightsPanelProps) {
   };
 
   useEffect(() => {
+    if (demoInsights) return; // demo mode — skip backend
     fetchInsights();
     // Realtime subscription for status updates
     const ch = supabase
@@ -50,9 +53,13 @@ export function AIInsightsPanel({ matchId }: AIInsightsPanelProps) {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [matchId]);
+  }, [matchId, demoInsights]);
 
   const generate = async () => {
+    if (demoInsights) {
+      toast({ title: 'Demo mode', description: 'Insights are pre-generated for the demo match.' });
+      return;
+    }
     setGenerating(true);
     try {
       const { error } = await supabase.functions.invoke('generate-match-insights', {

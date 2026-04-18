@@ -20,9 +20,11 @@ interface MatchAnalyticsDashboardProps {
     heatmaps?: any;
     divergence_metrics?: any;
   };
+  /** When provided, AIInsightsPanel uses this inline data instead of querying Supabase (demo mode). */
+  demoInsights?: any;
 }
 
-export function MatchAnalyticsDashboard({ matchId, job }: MatchAnalyticsDashboardProps) {
+export function MatchAnalyticsDashboard({ matchId, job, demoInsights }: MatchAnalyticsDashboardProps) {
   const ballTracking = job.ball_tracking_data || null;
   const playerTracks = job.player_tracking_data || null;
   const events = job.event_data || null;
@@ -81,7 +83,7 @@ export function MatchAnalyticsDashboard({ matchId, job }: MatchAnalyticsDashboar
           </TabsContent>
 
           <TabsContent value="insights">
-            <AIInsightsPanel matchId={matchId} />
+            <AIInsightsPanel matchId={matchId} demoInsights={demoInsights} />
           </TabsContent>
 
           <TabsContent value="detection">

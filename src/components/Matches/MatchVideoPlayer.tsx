@@ -21,6 +21,8 @@ interface MatchVideoPlayerProps {
     output_highlights_path: string | null;
     event_data?: { events?: MatchEvent[] } | null;
   } | null;
+  /** When provided, skips the get-output-url call and loads this URL directly (demo mode). */
+  demoVideoUrl?: string;
 }
 
 const EVENT_COLORS: Record<string, string> = {
@@ -30,7 +32,7 @@ const EVENT_COLORS: Record<string, string> = {
   possession_change: 'bg-muted-foreground',
 };
 
-export function MatchVideoPlayer({ matchId, job }: MatchVideoPlayerProps) {
+export function MatchVideoPlayer({ matchId, job, demoVideoUrl }: MatchVideoPlayerProps) {
   const { toast } = useToast();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -52,6 +54,10 @@ export function MatchVideoPlayer({ matchId, job }: MatchVideoPlayerProps) {
   }, [events]);
 
   const loadVideo = async () => {
+    if (demoVideoUrl) {
+      setVideoUrl(demoVideoUrl);
+      return;
+    }
     if (!job?.output_video_path) return;
     setLoading(true);
     try {
@@ -90,7 +96,7 @@ export function MatchVideoPlayer({ matchId, job }: MatchVideoPlayerProps) {
     }
   };
 
-  if (!job?.output_video_path) return null;
+  if (!job?.output_video_path && !demoVideoUrl) return null;
 
   return (
     <Card>
