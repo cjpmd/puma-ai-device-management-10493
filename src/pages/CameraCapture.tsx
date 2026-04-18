@@ -344,8 +344,10 @@ const CameraCapture = () => {
               onStatusChange={handleRecorderStatusChange}
               onPreviewFrame={handlePreviewFrame}
               onTelemetry={handleTelemetry}
+              onStorage={handleStorage}
               isConnected={isConnected}
               clockOffset={clockOffset}
+              livePreviewBoost={livePreviewBoost}
             />
 
             {/* File input fallback */}
