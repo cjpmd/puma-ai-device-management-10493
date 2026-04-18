@@ -6,6 +6,8 @@ import { ClipsPanel } from './ClipsPanel';
 import { SummaryPanel } from './SummaryPanel';
 import { AnalyticsPanel } from './AnalyticsPanel';
 import { TeamPanel } from './TeamPanel';
+import { PlayerSpotlightPanel } from './PlayerSpotlightPanel';
+import { MatchTimelineStrip } from './MatchTimelineStrip';
 
 interface MatchCinemaLayoutProps {
   matchId: string;
@@ -25,8 +27,11 @@ export function MatchCinemaLayout({
   const videoRef = useRef<CinemaVideoHandle>(null);
   const [active, setActive] = useState<CinemaPanel | null>('clips');
   const [videoUrl, setVideoUrl] = useState<string | null>(demoVideoUrl || null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const events = job?.event_data?.events || [];
+  const playerMetrics = job?.player_metrics || null;
   const handleSeek = (t: number) => videoRef.current?.seekTo(t);
 
   return (
@@ -38,9 +43,11 @@ export function MatchCinemaLayout({
           outputVideoPath={job?.output_video_path}
           demoVideoUrl={demoVideoUrl}
           onUrlReady={setVideoUrl}
+          onTimeUpdate={setCurrentTime}
+          onDurationChange={setDuration}
         />
 
-        {/* Right-side icon rail (overlays the video on the right edge) */}
+        {/* Right-side icon rail */}
         <div className="absolute top-4 right-4 z-10 hidden md:block">
           <IconRail active={active} onSelect={setActive} />
         </div>
@@ -51,7 +58,15 @@ export function MatchCinemaLayout({
         <IconRail active={active} onSelect={setActive} />
       </div>
 
-      {/* Slide-out panel — flow below the video on all sizes for simplicity, behaves like a tabbed drawer */}
+      {/* Veo-style customizable timeline strip */}
+      <MatchTimelineStrip
+        events={events}
+        duration={duration}
+        currentTime={currentTime}
+        onSeek={handleSeek}
+      />
+
+      {/* Slide-out panel */}
       <div
         className={cn(
           'overflow-hidden transition-all duration-300 ease-out border-t border-border/40',
@@ -65,6 +80,15 @@ export function MatchCinemaLayout({
           {active === 'summary' && <SummaryPanel match={match} />}
           {active === 'analytics' && (
             <AnalyticsPanel matchId={matchId} job={job} demoInsights={demoInsights} />
+          )}
+          {active === 'spotlight' && (
+            <PlayerSpotlightPanel
+              matchId={matchId}
+              events={events}
+              playerMetrics={playerMetrics}
+              videoUrl={videoUrl}
+              onSeek={handleSeek}
+            />
           )}
           {active === 'team' && <TeamPanel matchId={matchId} job={job} />}
         </div>
