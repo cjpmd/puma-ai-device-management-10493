@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Calendar, MapPin, RefreshCw, XCircle } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ArrowLeft, Calendar, MapPin, RefreshCw, XCircle, ChevronDown } from 'lucide-react';
 import { useMatchPolling } from '@/hooks/useMatchPolling';
 import { VideoUploadCard } from '@/components/Matches/VideoUploadCard';
 import { ProcessingStatus } from '@/components/Matches/ProcessingStatus';
