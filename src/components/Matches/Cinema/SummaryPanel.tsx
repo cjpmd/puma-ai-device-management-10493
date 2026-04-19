@@ -13,6 +13,8 @@ interface SummaryPanelProps {
     away_score?: number | null;
     home_color?: string | null;
     away_color?: string | null;
+    home_logo_url?: string | null;
+    away_logo_url?: string | null;
     match_type?: string | null;
     is_home?: boolean | null;
     age_group?: string | null;
@@ -55,6 +57,8 @@ export function SummaryPanel({ match }: SummaryPanelProps) {
           awayScore={match.away_score ?? null}
           homeColor={match.home_color}
           awayColor={match.away_color}
+          homeLogoUrl={match.home_logo_url}
+          awayLogoUrl={match.away_logo_url}
           matchType={match.match_type}
           isHome={match.is_home}
           ageGroup={match.age_group}
