@@ -24,3 +24,4 @@ GPU credentials MUST be RunPod env vars, never in job payloads.
 - [GPU Analysis Pipeline Logic](mem://architecture/gpu-analysis-pipeline-logic) — YOLOv8, ByteTrack, homography stitching, audio sync on RunPod
 - [Video Processing Configuration](mem://features/video-processing-configuration) — UI parameters for GPU processing (follow mode, zoom, smoothing)
 - [Video Match Analytics UI](mem://features/video-match-analytics) — VideoTimeline and PlayerTracksSummary visualizations
+- [Match Day Mobile Optimisation](mem://ui/match-day-mobile-optimisation) — "Match Analysis" → "Match Day" rename, iOS safe-area utilities, mobile-first match-day setup screens
