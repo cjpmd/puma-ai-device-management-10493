@@ -1,6 +1,9 @@
 // Demo fixture for the Match Analytics dashboard so coaches can preview the UI
 // without needing to upload and process a real match.
 
+import broughtyPumasBadge from '@/assets/demo-broughty-pumas-badge.png';
+import dundeeEastBadge from '@/assets/demo-dundee-east-badge.png';
+
 const SAMPLE_VIDEO_URL =
   'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
 
@@ -165,19 +168,21 @@ export const demoMatchJob = {
 
 export const demoMatch = {
   id: 'demo',
-  title: 'Demo Match · Lions FC vs Eagles United',
+  title: 'Demo Match · Broughty United Pumas 2015s vs Dundee East Girls u16s',
   match_date: new Date().toISOString().slice(0, 10),
   location: 'Hackney Marshes',
   status: 'complete',
-  home_team: 'Lions FC',
-  away_team: 'Eagles United',
+  home_team: 'Broughty United Pumas 2015s',
+  away_team: 'Dundee East Girls u16s',
   home_score: 2,
   away_score: 1,
-  home_color: '#10b981',
-  away_color: '#3b82f6',
+  home_color: '#0f5132',
+  away_color: '#1d4ed8',
+  home_logo_url: broughtyPumasBadge,
+  away_logo_url: dundeeEastBadge,
   match_type: 'Friendly',
   is_home: true,
-  age_group: 'U9',
+  age_group: 'U16',
 };
 
 export const DEMO_VIDEO_URL = SAMPLE_VIDEO_URL;
