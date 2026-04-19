@@ -7,10 +7,33 @@ interface ScorelineCardProps {
   awayScore: number | null;
   homeColor?: string | null;
   awayColor?: string | null;
+  homeLogoUrl?: string | null;
+  awayLogoUrl?: string | null;
   matchType?: string | null;
   isHome?: boolean | null;
   ageGroup?: string | null;
   status?: string | null;
+}
+
+function TeamBadge({ name, color, logoUrl }: { name: string; color?: string | null; logoUrl?: string | null }) {
+  if (logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt={`${name} badge`}
+        className="h-12 w-12 md:h-14 md:w-14 rounded-full object-cover border-2 shrink-0"
+        style={{ borderColor: color || 'hsl(var(--border))' }}
+        loading="lazy"
+      />
+    );
+  }
+  return (
+    <span
+      className="h-12 w-12 md:h-14 md:w-14 rounded-full shrink-0 border-2 border-border/40"
+      style={{ background: color || 'hsl(var(--muted))' }}
+      aria-hidden
+    />
+  );
 }
 
 const abbr = (name: string) =>
@@ -29,6 +52,8 @@ export function ScorelineCard({
   awayScore,
   homeColor = '#10b981',
   awayColor = '#3b82f6',
+  homeLogoUrl,
+  awayLogoUrl,
   matchType,
   isHome,
   ageGroup,
@@ -49,10 +74,10 @@ export function ScorelineCard({
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <div className="flex-1 flex items-center gap-2 min-w-0">
-          <span className="h-3 w-3 rounded-full shrink-0" style={{ background: homeColor || '#10b981' }} />
+        <div className="flex-1 flex items-center gap-3 min-w-0">
+          <TeamBadge name={homeTeam} color={homeColor} logoUrl={homeLogoUrl} />
           <div className="min-w-0">
-            <div className="text-3xl font-bold tracking-tight">{abbr(homeTeam)}</div>
+            <div className="text-2xl md:text-3xl font-bold tracking-tight">{abbr(homeTeam)}</div>
             <div className="text-xs text-muted-foreground truncate">{homeTeam}</div>
           </div>
         </div>
@@ -67,12 +92,12 @@ export function ScorelineCard({
           </span>
         </div>
 
-        <div className="flex-1 flex items-center gap-2 justify-end min-w-0">
+        <div className="flex-1 flex items-center gap-3 justify-end min-w-0">
           <div className="min-w-0 text-right">
-            <div className="text-3xl font-bold tracking-tight">{abbr(awayTeam)}</div>
+            <div className="text-2xl md:text-3xl font-bold tracking-tight">{abbr(awayTeam)}</div>
             <div className="text-xs text-muted-foreground truncate">{awayTeam}</div>
           </div>
-          <span className="h-3 w-3 rounded-full shrink-0" style={{ background: awayColor || '#3b82f6' }} />
+          <TeamBadge name={awayTeam} color={awayColor} logoUrl={awayLogoUrl} />
         </div>
       </div>
 
