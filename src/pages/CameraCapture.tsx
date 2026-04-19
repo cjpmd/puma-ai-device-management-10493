@@ -302,9 +302,9 @@ const CameraCapture = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 flex flex-col">
+    <div className="min-h-screen bg-background p-4 safe-top safe-bottom safe-x flex flex-col overflow-x-hidden">
       {/* Header */}
-      <div className="text-center mb-4 pt-4">
+      <div className="text-center mb-4 pt-2">
         <Badge variant="secondary" className="text-base px-4 py-1 mb-3">
           {tokenInfo?.camera_side === 'left' ? '📷 Left Camera' : '📷 Right Camera'}
         </Badge>

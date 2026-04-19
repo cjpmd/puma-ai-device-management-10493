@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Calendar, MapPin, RefreshCw, XCircle } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ArrowLeft, Calendar, MapPin, RefreshCw, XCircle, ChevronDown } from 'lucide-react';
 import { useMatchPolling } from '@/hooks/useMatchPolling';
 import { VideoUploadCard } from '@/components/Matches/VideoUploadCard';
 import { ProcessingStatus } from '@/components/Matches/ProcessingStatus';
@@ -18,6 +20,7 @@ const MatchDetail = () => {
   const { id } = useParams<{ id: string }>();
   const { match, videos, jobs, loading, refetch } = useMatchPolling(id);
   const { toast } = useToast();
+  const [devOpen, setDevOpen] = useState(false);
   const latestJob = jobs[0] || null;
 
   const leftVideo = videos.find((v) => v.camera_side === 'left');
@@ -46,21 +49,23 @@ const MatchDetail = () => {
   if (!match) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Match not found</div>;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-green-50 p-4 md:p-8">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-green-50 safe-top safe-x px-3 pb-8 md:p-8 overflow-x-hidden">
+      <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-2">
           <Link to="/matches">
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
+            <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0"><ArrowLeft className="h-5 w-5" /></Button>
           </Link>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold text-emerald-700">{match.title || 'Untitled Match'}</h1>
-            <div className="flex gap-3 text-sm text-muted-foreground mt-1">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <h1 className="text-lg md:text-xl font-bold text-emerald-700 truncate">{match.title || 'Untitled Match'}</h1>
+              <Badge className="shrink-0">{match.status}</Badge>
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs md:text-sm text-muted-foreground mt-1">
               {match.match_date && <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{new Date(match.match_date).toLocaleDateString()}</span>}
-              {match.location && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{match.location}</span>}
+              {match.location && <span className="flex items-center gap-1 truncate"><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{match.location}</span></span>}
             </div>
           </div>
-          <Badge>{match.status}</Badge>
         </div>
 
         {/* Camera QR Setup */}
@@ -115,18 +120,27 @@ const MatchDetail = () => {
         {/* Outputs (downloads) */}
         <MatchOutputViewer matchId={id!} job={latestJob} />
 
-        {/* Developer Controls */}
-        <Card>
-          <CardHeader><CardTitle className="text-sm text-muted-foreground">Developer Controls</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => handleTriggerProcessing()} disabled={!bothUploaded}>
-              <RefreshCw className="h-4 w-4 mr-1" /> Re-trigger Processing
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleMarkFailed}>
-              <XCircle className="h-4 w-4 mr-1" /> Mark as Failed
-            </Button>
-          </CardContent>
-        </Card>
+        {/* Developer Controls (collapsible) */}
+        <Collapsible open={devOpen} onOpenChange={setDevOpen}>
+          <Card>
+            <CollapsibleTrigger asChild>
+              <button type="button" className="w-full flex items-center justify-between p-4 text-left">
+                <span className="text-sm text-muted-foreground font-medium">Developer Controls</span>
+                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${devOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="flex flex-wrap gap-2 pt-0">
+                <Button variant="outline" size="sm" className="h-11" onClick={() => handleTriggerProcessing()} disabled={!bothUploaded}>
+                  <RefreshCw className="h-4 w-4 mr-1" /> Re-trigger Processing
+                </Button>
+                <Button variant="outline" size="sm" className="h-11" onClick={handleMarkFailed}>
+                  <XCircle className="h-4 w-4 mr-1" /> Mark as Failed
+                </Button>
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       </div>
     </div>
   );

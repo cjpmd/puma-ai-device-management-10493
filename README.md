@@ -58,7 +58,35 @@ This project is built with .
 - TypeScript
 - React
 - shadcn-ui
-- Tailwind CSS
+- Capacitor (iOS native shell)
+
+## Running on iOS (native app)
+
+Capacitor is fully wired in this project (`capacitor.config.ts`, plugins for camera, device, filesystem, camera-preview). The `/ios` Xcode project is generated locally — it is **not** in the repo.
+
+Requirements: macOS with Xcode installed.
+
+```sh
+# 1. Pull the latest code
+git pull
+
+# 2. Install JS dependencies
+npm install
+
+# 3. Add the iOS platform (only the first time)
+npx cap add ios
+
+# 4. Build the web bundle
+npm run build
+
+# 5. Sync the bundle into the iOS project (run after every git pull / build)
+npx cap sync
+
+# 6. Run on a simulator or attached iPhone
+npx cap run ios
+```
+
+Hot-reload from the Lovable sandbox is already configured in `capacitor.config.ts`, so the native app loads the live preview automatically.
 
 ## How can I deploy this project?
 

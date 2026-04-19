@@ -99,22 +99,23 @@ const Matches = () => {
     .slice(0, 5);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-green-50 p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-green-50 safe-top safe-x pb-8 px-4 md:p-8 overflow-x-hidden">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <div className="flex items-center gap-2 min-w-0">
             <Link to="/">
-              <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
+              <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0"><ArrowLeft className="h-5 w-5" /></Button>
             </Link>
-            <h1 className="text-2xl font-bold text-emerald-700 flex items-center gap-2">
-              <Video className="h-6 w-6" />
-              Match Analysis
+            <h1 className="text-xl sm:text-2xl font-bold text-emerald-700 flex items-center gap-2 truncate">
+              <Video className="h-5 w-5 sm:h-6 sm:w-6 shrink-0" />
+              <span className="truncate">Match Day</span>
             </h1>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleSync} disabled={syncing} size="sm">
-              <RefreshCw className={`h-4 w-4 mr-1 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing...' : 'Sync Events'}
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button variant="outline" onClick={handleSync} disabled={syncing} size="sm" className="h-11 flex-1 sm:flex-none">
+              <RefreshCw className={`h-4 w-4 sm:mr-1 ${syncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{syncing ? 'Syncing...' : 'Sync Events'}</span>
+              <span className="sm:hidden ml-2">{syncing ? 'Syncing' : 'Sync'}</span>
             </Button>
             <CreateMatchDialog onCreated={refetch} />
           </div>
