@@ -10,6 +10,9 @@ interface Match {
   created_at: string;
   club_id: string | null;
   team_id: string | null;
+  is_home?: boolean | null;
+  home_logo_url?: string | null;
+  away_logo_url?: string | null;
 }
 
 interface ProcessingJob {
@@ -57,11 +60,25 @@ export function useMatchPolling(matchId?: string) {
   const fetchMatchDetail = useCallback(async () => {
     if (!matchId) return;
     const [matchRes, videosRes, jobsRes] = await Promise.all([
-      supabase.from('matches').select('*').eq('id', matchId).single(),
+      supabase
+        .from('matches')
+        .select('*, teams(logo_url), clubs(logo_url)')
+        .eq('id', matchId)
+        .single(),
       supabase.from('match_videos').select('*').eq('match_id', matchId),
       supabase.from('processing_jobs').select('*').eq('match_id', matchId).order('created_at', { ascending: false }),
     ]);
-    if (matchRes.data) setMatch(matchRes.data as Match);
+    if (matchRes.data) {
+      const raw: any = matchRes.data;
+      // The team owned by the user gets the team/club badge; opposition stays blank.
+      const ownBadge = raw.teams?.logo_url || raw.clubs?.logo_url || null;
+      const merged: Match = {
+        ...raw,
+        home_logo_url: raw.is_home === false ? null : ownBadge,
+        away_logo_url: raw.is_home === false ? ownBadge : null,
+      };
+      setMatch(merged);
+    }
     if (videosRes.data) setVideos(videosRes.data as MatchVideo[]);
     if (jobsRes.data) setJobs(jobsRes.data as ProcessingJob[]);
     setLoading(false);
