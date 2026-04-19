@@ -67,13 +67,15 @@ export function CameraQRSetup({ matchId, cameraSide, uploadStatus }: CameraQRSet
           </Button>
         ) : (
           <div className="space-y-3">
-            <div className="flex justify-center bg-white p-4 rounded-lg">
-              <QRCodeSVG value={captureUrl!} size={180} />
+            <div className="flex justify-center bg-white p-3 sm:p-4 rounded-lg">
+              <div className="w-full max-w-[180px] aspect-square">
+                <QRCodeSVG value={captureUrl!} size={180} className="w-full h-full" />
+              </div>
             </div>
-            <Button variant="outline" size="sm" className="w-full" onClick={copyLink}>
+            <Button variant="outline" size="sm" className="w-full h-11" onClick={copyLink}>
               <Copy className="h-3 w-3 mr-2" /> Copy Link
             </Button>
-            <Button variant="ghost" size="sm" className="w-full" onClick={generateToken} disabled={generating}>
+            <Button variant="ghost" size="sm" className="w-full h-11" onClick={generateToken} disabled={generating}>
               <RefreshCw className="h-3 w-3 mr-2" /> Regenerate
             </Button>
             {expiresAt && (

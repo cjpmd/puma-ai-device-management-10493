@@ -27,13 +27,13 @@ const Index = () => {
               <CardHeader className="bg-gradient-to-br from-emerald-500 to-green-600 text-white rounded-t-lg">
                 <CardTitle className="flex items-center gap-2">
                   <Video className="h-6 w-6" />
-                  Match Analysis
+                  Match Day
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-6">
                 <p className="text-muted-foreground">
-                  Upload dual-camera match footage, trigger AI processing, 
-                  and view final follow-cam videos and highlights.
+                  Set up dual-camera match-day capture, control recording from your master phone,
+                  and review AI-processed footage and highlights.
                 </p>
               </CardContent>
             </Card>
