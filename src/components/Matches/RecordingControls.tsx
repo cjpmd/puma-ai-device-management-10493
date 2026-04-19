@@ -267,9 +267,9 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
           </Button>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 px-3 sm:px-6">
         {/* Camera preview panels */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
           <CameraPanel label="Left Camera" camera={leftCamera} />
           <CameraPanel label="Right Camera" camera={rightCamera} />
         </div>
@@ -300,9 +300,9 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
           </div>
         )}
 
-        {/* Controls */}
+        {/* Controls — sticky on mobile so always reachable */}
         {countdown === null && (
-          <>
+          <div className="sticky bottom-0 -mx-3 sm:mx-0 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 px-3 sm:px-0 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-2 border-t sm:border-0">
             {!isRecording ? (
               <Button
                 size="lg"
@@ -324,7 +324,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
                 Stop Recording
               </Button>
             )}
-          </>
+          </div>
         )}
 
         {!bothReady && !isRecording && anyConnected && countdown === null && (
