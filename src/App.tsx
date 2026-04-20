@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { IOSApp } from "./pages/ios/IOSApp";
+import { MobileNavShell } from "@/components/ios/MobileNavShell";
 import Index from "./pages/Index";
 import MLTraining from "./pages/MLTraining";
 import Analysis from "./pages/Analysis";
@@ -80,7 +81,7 @@ const App = () => (
             path="/ml-training"
             element={
               <PrivateRoute>
-                <MLTraining />
+                <MobileNavShell><MLTraining /></MobileNavShell>
               </PrivateRoute>
             }
           />
@@ -88,7 +89,7 @@ const App = () => (
             path="/analysis"
             element={
               <PrivateRoute>
-                <Analysis />
+                <MobileNavShell><Analysis /></MobileNavShell>
               </PrivateRoute>
             }
           />
@@ -96,7 +97,7 @@ const App = () => (
             path="/devices"
             element={
               <PrivateRoute>
-                <Devices />
+                <MobileNavShell><Devices /></MobileNavShell>
               </PrivateRoute>
             }
           />
@@ -104,7 +105,7 @@ const App = () => (
             path="/pitch-calibration"
             element={
               <PrivateRoute>
-                <PitchCalibration />
+                <MobileNavShell><PitchCalibration /></MobileNavShell>
               </PrivateRoute>
             }
           />
@@ -112,7 +113,7 @@ const App = () => (
             path="/matches"
             element={
               <PrivateRoute>
-                <Matches />
+                <MobileNavShell><Matches /></MobileNavShell>
               </PrivateRoute>
             }
           />
@@ -120,7 +121,7 @@ const App = () => (
             path="/matches/demo"
             element={
               <PrivateRoute>
-                <DemoMatch />
+                <MobileNavShell><DemoMatch /></MobileNavShell>
               </PrivateRoute>
             }
           />
@@ -128,7 +129,7 @@ const App = () => (
             path="/matches/:id"
             element={
               <PrivateRoute>
-                <MatchDetail />
+                <MobileNavShell><MatchDetail /></MobileNavShell>
               </PrivateRoute>
             }
           />

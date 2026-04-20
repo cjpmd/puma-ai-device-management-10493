@@ -147,7 +147,7 @@ function PlayerDetailScreen({ player, onBack, onTabChange }: { player: Player; o
       <div style={{ height: 'calc(100% - 44px - 12px - 52px - 100px)', overflowY: 'auto', overflowX: 'hidden', paddingBottom: 8 }}>
         {/* Hero */}
         <div style={{ padding: '8px 20px 20px', textAlign: 'center' }}>
-          <Avatar initials={initials} size={100} hue={hue} ring={T.purple[400]} />
+          <Avatar initials={initials} size={100} hue={hue} ring={T.purple[400]} src={player.photo_url || undefined} />
           <div style={{ ...tType('title1'), color: T.fg, marginTop: 12 }}>{player.name}</div>
           <div style={{ ...tType('subhead'), color: T.fg2 }}>
             {player.squad_number != null ? `#${player.squad_number} · ` : ''}{player.position || 'Player'}
@@ -416,7 +416,7 @@ export function SquadScreen({ onTabChange }: SquadScreenProps) {
                       borderBottom: i < list.length - 1 ? `0.5px solid ${T.hairline}` : 'none',
                       gap: 12, cursor: 'pointer',
                     }}>
-                      <Avatar initials={initials} size={40} hue={HUE_FOR_GROUP(grp)} />
+                      <Avatar initials={initials} size={40} hue={HUE_FOR_GROUP(grp)} src={p.photo_url || undefined} />
                       <div style={{ flex: 1 }}>
                         <div style={{ ...tType('headline'), color: T.fg }}>{p.name}</div>
                         <div style={{ ...tType('footnote'), color: T.fg2 }}>

@@ -178,7 +178,7 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
               </div>
             )}
             {teams.map((t, i) => (
-              <div key={t.id} onClick={(e) => { e.stopPropagation(); setActiveTeam(t.id); }} style={{
+              <div key={t.id} onClick={() => setActiveTeam(t.id)} style={{
                 display: 'flex', alignItems: 'center', padding: '12px 16px',
                 borderBottom: i < teams.length - 1 ? `0.5px solid ${T.hairline}` : 'none',
                 gap: 12, cursor: 'pointer',
