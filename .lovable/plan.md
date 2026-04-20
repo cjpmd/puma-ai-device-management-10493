@@ -1,66 +1,59 @@
 
-## iOS / Capacitor status + Match-day mobile optimisation
 
-### Current state
-- **Capacitor packages installed** (`@capacitor/core`, `cli`, `ios`, `device`, `filesystem`, `camera-preview`) and `capacitor.config.ts` is configured with the right appId, hot-reload URL, iOS scheme, CameraPreview audio enabled.
-- **No `/ios` folder yet** — the native Xcode project hasn't been generated. That's a one-time local step (`npx cap add ios`) that has to be done outside Lovable, on a Mac with Xcode.
-- **Viewport meta tag** already present in `index.html`, but missing iOS-specific tags (safe-area, web-app-capable, status bar style).
-- **Match-day screens** (`Matches.tsx` list, `MatchDetail.tsx` setup, `CameraQRSetup.tsx`, `RecordingControls.tsx`, `CameraCapture.tsx` guest page) use `md:` breakpoints but several layouts are not optimised for narrow iPhone widths (390px and below):
-  - `Matches.tsx` header has Sync + Create buttons that wrap awkwardly on mobile.
-  - `MatchDetail.tsx` developer controls and dev cards still showing in production view.
-  - `RecordingControls.tsx` uses `grid-cols-2` for camera previews — fine at 390px but `gap-4` + battery/storage rows can overflow.
-  - Camera QR card QR is fixed `size={180}` — fine, but Copy/Regenerate buttons stack OK.
-  - Buttons in headers don't use a hamburger pattern; horizontal scroll possible if labels are long.
-  - No `safe-area-inset` padding so iPhone notch / home indicator can clip content.
+## Two things to fix
 
----
+### A. Build errors in edge functions
+14 TS errors in 8 edge functions. Two categories, both pre-existing (not caused by rebrand) but blocking the build now:
 
-### Plan
+1. **`error.message` on `unknown`** (8 files) — Deno's stricter TS now requires narrowing `catch (error)`. Fix: cast as `error instanceof Error ? error.message : String(error)`.
+2. **`Uint8Array`/`Buffer` type mismatches in AWS SigV4 signing** (`generate-upload-url`, `get-output-url`, `runpod-webhook`) — caused by ambient Node types leaking in. Fix:
+   - For `crypto.subtle.importKey("raw", key, …)`: cast `key` to `BufferSource` (`key as BufferSource`) or use `key.buffer as ArrayBuffer`.
+   - In `runpod-webhook`, the file uses Node's `createHmac` which returns `Buffer`. Replace that whole helper with the pure-WebCrypto version already used in `generate-upload-url` (the `hmacSha256` + `getSignatureKey` pattern) so we drop the Node crypto import entirely.
 
-**1. Confirm iOS readiness (no code changes — instructions for you)**
-Add a short README section describing the Mac-side steps once and direct the user there:
-```
-git pull → npm install → npx cap add ios → npm run build → npx cap sync → npx cap run ios
-```
-Tell user nothing more to install in Lovable — Capacitor is already wired.
+### B. Apply Origin Sports design scheme to all pages
+The new purple/glass design is only on the iOS shell (`/`). Every other route is still on legacy emerald/green/gray backgrounds. Fix each page root to use the wallpaper + dark surface tokens.
 
-**2. Add iOS-friendly meta + safe-area support**
-- `index.html`: add `viewport-fit=cover`, `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, theme-color, proper title.
-- `src/index.css`: add `env(safe-area-inset-*)` utility classes (`.safe-top`, `.safe-bottom`, `.safe-x`).
+| Page | Current | New |
+|---|---|---|
+| `Matches.tsx` | `bg-gradient-to-b from-emerald-50 to-green-50` | `wallpaper-dawn` + dark text |
+| `MatchDetail.tsx` | same emerald | `wallpaper-twilight` |
+| `Analysis.tsx` | `bg-gray-50` | `wallpaper-aurora` |
+| `MLTraining.tsx` | `bg-gray-50` | `wallpaper-dawn` |
+| `Devices.tsx` | `bg-background` | `wallpaper-twilight` |
+| `PitchCalibration.tsx` | `bg-background` | `wallpaper-twilight` |
+| `Auth.tsx` | emerald gradient + emerald buttons | `wallpaper-dawn`, purple primary buttons, glass card |
+| `CameraCapture.tsx` | `bg-background` | `wallpaper-twilight` (keep mobile layout) |
+| `NotFound.tsx` | `bg-gray-100` | `wallpaper-dawn` |
+| `Index.tsx` (legacy `/legacy` route) | emerald gradient + emerald cards | `wallpaper-dawn` + glass cards, purple icons |
 
-**3. Rename "Match Analysis" → "Match Day"**
-The screens in question are about *setting up* and *running* a match day, not analysing one. Rename:
-- `Matches.tsx` page header: "Match Analysis" → **"Match Day"**
-- Sidebar / `Index.tsx` link label: same rename
-- Keep route `/matches` (no breaking changes)
+Also:
+- Switch any remaining `text-emerald-*` / `text-green-*` / hard-coded `text-gray-*` headings on those pages to `text-white` / `text-white/70`.
+- Card backgrounds on dark wallpapers: replace `bg-white` with `glass` utility (already defined in `index.css`) or `bg-card` (which is dark-purple via the existing tokens).
+- Auth page: replace `bg-emerald-600` button colors with the default Button (which uses purple primary).
 
-**4. Mobile-optimise the match-day setup screens**
+### Files to edit
+**Edge functions (build fix):**
+- `supabase/functions/confirm-guest-upload/index.ts`
+- `supabase/functions/generate-camera-token/index.ts`
+- `supabase/functions/generate-upload-url/index.ts`
+- `supabase/functions/get-output-url/index.ts`
+- `supabase/functions/runpod-webhook/index.ts` (bigger rewrite of signing helper)
+- `supabase/functions/trigger-processing/index.ts`
+- `supabase/functions/validate-camera-token/index.ts`
 
-| Screen | Fix |
-|---|---|
-| `Matches.tsx` | Stack header vertically on `<sm` (title row, then action buttons full-width). Make "Sync Events" / "Create Match" icons-only on mobile with sr-only labels. Add `safe-top` to the page. |
-| `MatchDetail.tsx` | Stack header (back + title on row 1, status badge + actions on row 2). Reduce horizontal padding on mobile (`p-3 md:p-8`). Hide Developer Controls behind a collapsible. Add safe-area padding. |
-| `CameraQRSetup.tsx` | Already mostly fine — shrink QR to `min(180, calc(100vw - 96px))` so it never overflows; tighten card padding on mobile. |
-| `RecordingControls.tsx` | Switch camera preview grid to `grid-cols-1 sm:grid-cols-2` on very narrow screens, OR keep 2 cols but reduce gap/padding so battery+storage rows fit. Make Start/Stop button sticky-bottom on mobile so it's always reachable while previews scroll. |
-| `CameraCapture.tsx` | Already mobile-first (uses `max-w-sm`). Add safe-area padding top/bottom and keep Upload button visible above home-indicator. |
+**Pages (rebrand backgrounds):**
+- `src/pages/Matches.tsx`
+- `src/pages/MatchDetail.tsx`
+- `src/pages/Analysis.tsx`
+- `src/pages/MLTraining.tsx`
+- `src/pages/Devices.tsx`
+- `src/pages/PitchCalibration.tsx`
+- `src/pages/Auth.tsx`
+- `src/pages/CameraCapture.tsx`
+- `src/pages/NotFound.tsx`
+- `src/pages/Index.tsx`
 
-**5. Tap-target & no-horizontal-scroll guarantees**
-- Audit every `Button` in those screens to ensure `min-h-11` (44px Apple tap target).
-- Add `overflow-x-hidden` on page roots; replace any fixed-width inner content with `w-full max-w-*` patterns.
-- Use `truncate` on long match titles and team names.
+### Out of scope (call out next)
+- Restyling individual cards/buttons inside MLTraining tabs, Analysis charts, Device manager — these have many legacy emerald accents in deeply nested components. Worth a follow-up pass once the page shells are correct.
+- Updating chart colors (recharts) to purple palette.
 
----
-
-### Files to change
-- `index.html` — iOS meta tags
-- `src/index.css` — safe-area utilities
-- `src/pages/Matches.tsx` — rename + mobile header
-- `src/pages/MatchDetail.tsx` — mobile header, padding, collapse dev controls
-- `src/pages/CameraCapture.tsx` — safe-area padding
-- `src/pages/Index.tsx` — sidebar label rename (verify)
-- `src/components/Matches/RecordingControls.tsx` — sticky bottom button, tighter mobile layout
-- `src/components/Matches/CameraQRSetup.tsx` — responsive QR sizing
-
-### Out of scope (can do next)
-- Splash screen + app icons (`@capacitor/splash-screen`, `@capacitor/status-bar`) — recommend after first `npx cap add ios`.
-- Full PWA fallback (vite-plugin-pwa) if you want non-native install on Android.
