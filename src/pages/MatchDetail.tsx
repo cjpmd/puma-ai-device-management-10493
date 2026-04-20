@@ -49,16 +49,16 @@ const MatchDetail = () => {
   if (!match) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Match not found</div>;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-green-50 safe-top safe-x px-3 pb-8 md:p-8 overflow-x-hidden">
+    <div className="min-h-screen wallpaper-twilight safe-top safe-x px-3 pb-8 md:p-8 overflow-x-hidden">
       <div className="max-w-4xl mx-auto space-y-4 md:space-y-6">
         {/* Header */}
         <div className="flex items-start gap-2">
           <Link to="/matches">
-            <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0"><ArrowLeft className="h-5 w-5" /></Button>
+            <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 text-white hover:bg-white/10"><ArrowLeft className="h-5 w-5" /></Button>
           </Link>
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
-              <h1 className="text-lg md:text-xl font-bold text-emerald-700 truncate">{match.title || 'Untitled Match'}</h1>
+              <h1 className="text-lg md:text-xl font-bold text-white truncate">{match.title || 'Untitled Match'}</h1>
               <Badge className="shrink-0">{match.status}</Badge>
             </div>
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs md:text-sm text-muted-foreground mt-1">
