@@ -3,19 +3,18 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Video, RefreshCw, Sparkles } from 'lucide-react';
 import { useMatchPolling } from '@/hooks/useMatchPolling';
+import { useAutoSync } from '@/hooks/useAutoSync';
 import { MatchCard } from '@/components/Matches/MatchCard';
 import { CreateMatchDialog } from '@/components/Matches/CreateMatchDialog';
 import { EventCard, type TeamEvent } from '@/components/Matches/EventCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
-import { syncEvents } from '@/hooks/useUserTeams';
 
 
 const Matches = () => {
   const { matches, loading, refetch } = useMatchPolling();
   const [events, setEvents] = useState<TeamEvent[]>([]);
   const [teams, setTeams] = useState<Record<string, string>>({});
-  const [syncing, setSyncing] = useState(false);
   const [eventsLoading, setEventsLoading] = useState(true);
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -43,26 +42,23 @@ const Matches = () => {
     fetchTeams();
   }, [fetchEvents, fetchTeams]);
 
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const res = await syncEvents();
-      if (!res.success) throw new Error(res.error);
-      toast({ title: 'Events synced', description: `${res.data?.results?.events?.updated || 0} events updated` });
-      fetchEvents();
-    } catch (err: any) {
-      toast({ title: 'Sync failed', description: err.message, variant: 'destructive' });
-    } finally {
-      setSyncing(false);
-    }
-  };
+  // Realtime: re-fetch events whenever the local team_events table changes (post-sync writes)
+  useEffect(() => {
+    const channel = supabase
+      .channel('team-events-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_events' }, fetchEvents)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchEvents]);
+
+  // Auto-sync: full sync on mount, event-only poll every 5 min, debounced
+  const { syncing, runSync } = useAutoSync(fetchEvents);
 
   const handleSetupRecording = async (event: TeamEvent) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      // Create a match linked to this event
       const { data, error } = await supabase.from('matches').insert({
         user_id: user.id,
         title: event.title,
@@ -74,7 +70,6 @@ const Matches = () => {
 
       if (error) throw error;
 
-      // Link event to match
       await supabase.from('team_events').update({ match_id: data.id }).eq('id', event.id);
 
       toast({ title: 'Recording setup created' });
@@ -86,7 +81,6 @@ const Matches = () => {
     }
   };
 
-  // Split events: upcoming (future, no match linked) and recent (past, sorted newest first)
   const today = new Date().toISOString().split('T')[0];
   const upcomingEvents = events
     .filter(e => e.date >= today)
@@ -110,11 +104,16 @@ const Matches = () => {
               <span className="truncate">Match Day</span>
             </h1>
           </div>
-          <div className="flex gap-2 w-full sm:w-auto">
-            <Button variant="outline" onClick={handleSync} disabled={syncing} size="sm" className="h-11 flex-1 sm:flex-none">
-              <RefreshCw className={`h-4 w-4 sm:mr-1 ${syncing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{syncing ? 'Syncing...' : 'Sync Events'}</span>
-              <span className="sm:hidden ml-2">{syncing ? 'Syncing' : 'Sync'}</span>
+          <div className="flex gap-2 w-full sm:w-auto items-center">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => runSync(false)}
+              disabled={syncing}
+              title="Refresh events"
+              className="h-9 w-9 text-white hover:bg-white/10 shrink-0"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
             </Button>
             <CreateMatchDialog onCreated={refetch} />
           </div>
@@ -139,7 +138,6 @@ const Matches = () => {
         {/* Upcoming & Recent Events Banner */}
         {!eventsLoading && (upcomingEvents.length > 0 || recentEvents.length > 0) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            {/* Upcoming */}
             <div className="space-y-2">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Upcoming</h2>
               {upcomingEvents.length === 0 ? (
@@ -155,7 +153,6 @@ const Matches = () => {
                 ))
               )}
             </div>
-            {/* Recent */}
             <div className="space-y-2">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Recent</h2>
               {recentEvents.length === 0 ? (
