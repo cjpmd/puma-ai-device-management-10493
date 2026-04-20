@@ -8,8 +8,17 @@ import { SectionHeader } from '@/components/ios/SectionHeader';
 import { T, tType, Wallpapers } from '@/lib/ios-tokens';
 import { useActiveTeam } from '@/hooks/useActiveTeam';
 import { supabase } from '@/integrations/supabase/client';
-import { syncUserAccess } from '@/hooks/useUserTeams';
+import { syncAll } from '@/hooks/useUserTeams';
 import { useToast } from '@/hooks/use-toast';
+
+const LAST_SYNC_KEY = 'origin.lastSyncedAt';
+const fmtAgo = (iso: string) => {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.round(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.round(diff / 3600)} h ago`;
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
 
 interface ProfileScreenProps {
   onTabChange?: (tab: number) => void;
@@ -24,6 +33,9 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
   const [matchCount, setMatchCount] = useState(0);
   const [playerCount, setPlayerCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(() => {
+    try { return localStorage.getItem(LAST_SYNC_KEY); } catch { return null; }
+  });
 
   useEffect(() => {
     (async () => {
@@ -53,14 +65,28 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
   const initials = email ? email.slice(0, 2).toUpperCase() : 'OS';
 
   const handleSync = async () => {
+    if (syncing) return;
     setSyncing(true);
-    const result = await syncUserAccess();
+    toast({ title: 'Syncing…', description: 'Pulling teams, players, photos & attributes' });
+    const result = await syncAll();
     setSyncing(false);
     if (result?.success) {
-      toast({ title: 'Synced', description: 'Team access updated from Origin Sports' });
+      const now = new Date().toISOString();
+      setLastSynced(now);
+      try { localStorage.setItem(LAST_SYNC_KEY, now); } catch {}
+      const counts = (result.data && (result.data as any).results) || {};
+      const summary = Object.entries(counts)
+        .map(([k, v]: [string, any]) => typeof v === 'number' ? `${k}: ${v}` : null)
+        .filter(Boolean)
+        .join(' · ');
+      toast({ title: 'Synced from Origin Sports', description: summary || 'All entities updated' });
       refresh();
     } else {
-      toast({ title: 'Sync failed', description: 'Could not reach Origin Sports', variant: 'destructive' });
+      toast({
+        title: 'Sync failed',
+        description: result?.error || 'Could not reach Origin Sports',
+        variant: 'destructive',
+      });
     }
   };
 
