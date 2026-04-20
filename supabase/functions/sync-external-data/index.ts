@@ -121,19 +121,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ---- Players ----
-    if (entity === 'players' || entity === 'all') {
-      const { data: externalPlayers, error: playersError } = await externalSupabase.from('players').select('*');
-      if (playersError) {
-        results.players.errors++;
-      } else if (externalPlayers) {
-        for (const player of externalPlayers) {
-          const { data: localTeam } = await localSupabase
-            .from('teams')
-            .select('id, club_id')
-            .eq('external_id', player.team_id)
-            .single();
-
     // ---- Players (and their attributes) ----
     if (entity === 'players' || entity === 'attributes' || entity === 'all') {
       const { data: externalPlayers, error: playersError } = await externalSupabase.from('players').select('*');
