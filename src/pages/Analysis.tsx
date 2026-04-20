@@ -6,30 +6,36 @@ import MetricCard from "@/components/MetricCard";
 import PerformanceChart from "@/components/PerformanceChart";
 import PlayerMovementMap from "@/components/PlayerMovementMap";
 import DeviceManager from "@/components/DeviceManager";
-import VideoAnalysisTab from "@/components/VideoAnalysis/VideoAnalysisTab";
+import VideoAnalysisTab from "@/components/VideoAnalysisTab";
 import IndividualPlayerTab from "@/components/Analysis/IndividualPlayerTab";
 import GroupSelectionTab from "@/components/Analysis/GroupSelectionTab";
 import BiometricsTab from "@/components/Analysis/BiometricsTab";
 import SyncStatusIndicator from "@/components/Analysis/SyncStatusIndicator";
 import ClubSelector from "@/components/Analysis/ClubSelector";
 import TeamSelector from "@/components/Analysis/TeamSelector";
-import { Activity, Footprints, Target, Repeat, Users, User, ChartBar, Video, Settings, Bluetooth, Share2, HeartPulse } from "lucide-react";
+import { Activity, Footprints, Target, Repeat, Users, User, ChartBar, Video, Settings, Bluetooth, Share2, HeartPulse, MoreHorizontal, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { processRealTimeData } from "@/utils/sensorDataUtils";
 import { Badge } from "@/components/ui/badge";
+import { useActiveTeam } from "@/hooks/useActiveTeam";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -37,15 +43,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
 
 // Define an adapter type to bridge the gap between Supabase data and our application types
 interface SensorRecordingFromDB {
