@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+import { createClient } from 'npm:@supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
       user_access: { inserted: 0, updated: 0, errors: 0 },
     };
 
-    // Known FM-style attribute IDs from Origin Sports STANDARD_PLAYER_ATTRIBUTES.
+    // Known FM-style attribute keys (matches columns on player_attributes table)
     const ATTR_KEYS = new Set([
       // Technical
       'corners','crossing','dribbling','finishing','first_touch','free_kicks','heading',
@@ -68,6 +68,22 @@ Deno.serve(async (req) => {
       'eccentricity','footwork','handling','kicking','one_on_one','punching','reflexes',
       'rushing_out','shot_stopping','throwing',
     ]);
+
+    // Aliases for non-standard names some teams use
+    const ATTR_ALIASES: Record<string, string> = {
+      shooting: 'finishing',
+      shotstopping: 'shot_stopping',
+    };
+
+    const normaliseAttrKey = (raw: string): string | null => {
+      const s = raw.toLowerCase().trim()
+        .replace(/['']/g, '')
+        .replace(/[-\s]+/g, '_')
+        .replace(/[^a-z0-9_]/g, '');
+      if (ATTR_KEYS.has(s)) return s;
+      if (ATTR_ALIASES[s]) return ATTR_ALIASES[s];
+      return null;
+    };
 
     // ---- Clubs ----
     if (entity === 'clubs' || entity === 'all') {
@@ -180,20 +196,21 @@ Deno.serve(async (req) => {
           for (const a of rawAttrs) {
             if (!a || typeof a !== 'object') continue;
             // Origin Sports stores: { id, name, group, value, enabled }
-            // id may be 'aerial_reach' or sometimes the human name. Normalise both.
-            const rawId = String(a.id || a.name || '').toLowerCase().trim().replace(/\s+/g, '_');
+            // id can be ad-hoc (e.g. "tech-0"); name is human-readable ("First Touch")
+            // Try both — name first since id may be positional
             const val = Number(a.value);
             if (!Number.isFinite(val)) continue;
-            // Scale 1-10 (Origin Sports) -> store as-is (column allows 1-20 too)
-            const clamped = Math.max(1, Math.min(20, Math.round(val)));
-            if (ATTR_KEYS.has(rawId)) {
-              flat[rawId] = clamped;
-            }
+            const enabled = a.enabled !== false;
+            if (!enabled) continue;
+
+            const key = normaliseAttrKey(String(a.name || '')) || normaliseAttrKey(String(a.id || ''));
+            if (!key) continue;
+            flat[key] = Math.max(1, Math.min(20, Math.round(val)));
           }
 
           if (Object.keys(flat).length === 0) {
             if (results.attributes.errors === 0) {
-              console.log(`[attrs] No attrs matched ATTR_KEYS for ${player.name}. First attr id was:`, rawAttrs[0]?.id, 'name:', rawAttrs[0]?.name);
+              console.log(`[attrs] No attrs matched for ${player.name}. Sample:`, JSON.stringify(rawAttrs.slice(0, 3)));
             }
             results.attributes.errors++;
             continue;
