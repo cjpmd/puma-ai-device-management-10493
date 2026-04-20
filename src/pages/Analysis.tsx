@@ -13,23 +13,29 @@ import BiometricsTab from "@/components/Analysis/BiometricsTab";
 import SyncStatusIndicator from "@/components/Analysis/SyncStatusIndicator";
 import ClubSelector from "@/components/Analysis/ClubSelector";
 import TeamSelector from "@/components/Analysis/TeamSelector";
-import { Activity, Footprints, Target, Repeat, Users, User, ChartBar, Video, Settings, Bluetooth, Share2, HeartPulse } from "lucide-react";
+import { Activity, Footprints, Target, Repeat, Users, User, ChartBar, Video, Settings, Bluetooth, Share2, HeartPulse, MoreHorizontal, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { processRealTimeData } from "@/utils/sensorDataUtils";
 import { Badge } from "@/components/ui/badge";
+import { useActiveTeam } from "@/hooks/useActiveTeam";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -37,15 +43,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
 
 // Define an adapter type to bridge the gap between Supabase data and our application types
 interface SensorRecordingFromDB {
@@ -89,9 +86,19 @@ const Analysis = () => {
   const [bluetoothStatus, setBluetoothStatus] = useState<"connected" | "disconnected" | "searching">("disconnected");
   const [selectedClubId, setSelectedClubId] = useState<string | undefined>();
   const [selectedTeamId, setSelectedTeamId] = useState<string | undefined>();
+  const [showTeamPicker, setShowTeamPicker] = useState(false);
+  const { activeTeam } = useActiveTeam();
   const { toast } = useToast();
   const location = useLocation();
-  
+
+  // Auto-select team from Home/Profile choice
+  useEffect(() => {
+    if (activeTeam && !selectedTeamId) {
+      setSelectedTeamId(activeTeam.id);
+      if (activeTeam.club_id) setSelectedClubId(activeTeam.club_id);
+    }
+  }, [activeTeam, selectedTeamId]);
+
   // Extract session ID from URL query parameters if present
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -401,228 +408,167 @@ const Analysis = () => {
   };
 
   return (
-    <div className="min-h-screen wallpaper-aurora p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-white">Performance Analysis</h1>
-            {activeSessionId && (
-              <Badge variant="outline" className="text-xs">
-                Session ID: {activeSessionId}
-              </Badge>
-            )}
-          </div>
-          <div className="flex gap-4">
-            <div className="flex items-center gap-2">
-              <Select
-                value={isLiveMode ? "live" : "historical"}
-                onValueChange={(v) => toggleLiveMode(v === "live")}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Session Mode" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="live">Live Session</SelectItem>
-                  <SelectItem value="historical">Historical Data</SelectItem>
-                </SelectContent>
-              </Select>
-              
-              {!isLiveMode && (
-                <Select
-                  value={activeSessionId || ""}
-                  onValueChange={handleSessionSelect}
-                  disabled={availableSessions.length === 0}
-                >
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Select Session" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableSessions.map((session) => (
-                      <SelectItem key={session.id} value={session.id}>
-                        {session.date} - {session.type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+    <div className="min-h-screen wallpaper-aurora">
+      <div className="max-w-7xl mx-auto px-6 py-6 text-white">
+        {/* Consolidated header */}
+        <div className="flex items-start justify-between gap-4 mb-5 flex-wrap">
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold text-white leading-tight">Ultra Analysis</h1>
+            <div className="text-sm text-white/70 mt-1 flex items-center gap-2 flex-wrap">
+              <span>{activeTeam?.name || 'No team selected'}</span>
+              <span className="opacity-50">·</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className={`inline-flex h-2 w-2 rounded-full ${
+                  syncStatus === 'synced' ? 'bg-emerald-400'
+                    : syncStatus === 'syncing' ? 'bg-amber-400 animate-pulse'
+                    : 'bg-rose-400'
+                }`} />
+                {syncStatus === 'synced' ? 'In sync' : syncStatus === 'syncing' ? 'Syncing…' : 'Sync error'}
+              </span>
+              {activeSessionId && (
+                <>
+                  <span className="opacity-50">·</span>
+                  <span className="text-xs text-white/60">Session {activeSessionId.slice(0, 6)}</span>
+                </>
               )}
             </div>
-            
-            <div className="flex items-center gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button 
-                      variant="outline" 
-                      onClick={triggerManualSync}
-                      disabled={syncStatus === 'syncing'}
-                    >
-                      <Bluetooth className="mr-1 h-4 w-4" />
-                      {syncStatus === 'syncing' ? 'Syncing...' : 'Sync with Mobile'}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Manually sync data with database</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              
-              <SyncStatusIndicator entity="all" showDetails={false} />
-              
-              <Dialog open={isBluetoothDialogOpen} onOpenChange={setIsBluetoothDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <Bluetooth className="mr-1 h-4 w-4" />
-                    Bluetooth Settings
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Bluetooth Configuration</DialogTitle>
-                    <DialogDescription>
-                      Configure Bluetooth settings for enhanced range and multi-player tracking
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="py-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="font-medium">Bluetooth Range Booster</h3>
-                        <p className="text-sm text-muted-foreground">Connect a range booster for multi-player tracking</p>
-                      </div>
-                      <Badge 
-                        variant={bluetoothStatus === "connected" ? "default" : "outline"}
-                        className={bluetoothStatus === "searching" ? "animate-pulse" : ""}
-                      >
-                        {bluetoothStatus === "connected" ? "Connected" : 
-                         bluetoothStatus === "searching" ? "Searching..." : "Disconnected"}
-                      </Badge>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-medium">Requirements</h4>
-                      <ul className="text-sm space-y-1 list-disc pl-5">
-                        <li>Use a compatible Bluetooth 5.0 repeater</li>
-                        <li>Position booster centrally in playing area</li>
-                        <li>Maximum range: 50-100m depending on conditions</li>
-                        <li>Supports up to 20 simultaneous device connections</li>
-                      </ul>
-                    </div>
-                    
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded text-sm">
-                      <p className="text-amber-800">
-                        For optimal performance with multiple players, a Bluetooth range booster
-                        is strongly recommended. Without a booster, you may experience data loss
-                        from players at the edges of the playing area.
-                      </p>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    {bluetoothStatus !== "connected" ? (
-                      <Button onClick={handleBluetoothConnect}>
-                        Connect Bluetooth Booster
-                      </Button>
-                    ) : (
-                      <Button variant="outline" onClick={() => setBluetoothStatus("disconnected")}>
-                        Disconnect
-                      </Button>
-                    )}
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
+          </div>
 
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline">
-                  <Share2 className="mr-1 h-4 w-4" />
-                  Share
+          {/* Primary control + overflow */}
+          <div className="flex items-center gap-2">
+            <Select value={isLiveMode ? "live" : "historical"} onValueChange={(v) => toggleLiveMode(v === "live")}>
+              <SelectTrigger className="w-[160px] bg-white/10 border-white/20 text-white">
+                <SelectValue placeholder="Session Mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="live">Live Session</SelectItem>
+                <SelectItem value="historical">Historical Data</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {!isLiveMode && (
+              <Select value={activeSessionId || ""} onValueChange={handleSessionSelect} disabled={availableSessions.length === 0}>
+                <SelectTrigger className="w-[180px] bg-white/10 border-white/20 text-white">
+                  <SelectValue placeholder="Select Session" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableSessions.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.date} – {s.type}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="bg-white/10 border-white/20 text-white hover:bg-white/20">
+                  <MoreHorizontal className="h-5 w-5" />
                 </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <div className="space-y-4">
-                  <h4 className="font-medium">Share this analysis</h4>
-                  <p className="text-sm text-muted-foreground">
-                    Anyone with this link can view this specific session analysis.
-                  </p>
-                  <div className="flex space-x-2">
-                    <input
-                      className="flex-1 px-3 py-2 text-sm border rounded-md"
-                      value={getShareableLink()}
-                      readOnly
-                    />
-                    <Button size="sm" onClick={copyShareableLink}>Copy</Button>
-                  </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuItem onClick={triggerManualSync} disabled={syncStatus === 'syncing'}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {syncStatus === 'syncing' ? 'Syncing…' : 'Sync now'}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsBluetoothDialogOpen(true)}>
+                  <Bluetooth className="mr-2 h-4 w-4" /> Bluetooth settings
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={copyShareableLink}>
+                  <Share2 className="mr-2 h-4 w-4" /> Copy share link
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/devices"><Settings className="mr-2 h-4 w-4" /> Manage devices</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/ml-training"><ChartBar className="mr-2 h-4 w-4" /> ML Training</Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {!isSessionActive ? (
+                  <DropdownMenuItem onClick={() => { /* DeviceManager handles its own UI; opens below */ }}>
+                    Start session…
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={endSession} className="text-rose-600">
+                    End session
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
+        {/* Optional team override */}
+        {(!activeTeam || showTeamPicker) && (
+          <div className="mb-5 flex items-end gap-3 flex-wrap glass rounded-xl p-3 border border-white/10">
+            <div className="w-48">
+              <label className="text-xs font-medium text-white/60 mb-1 block">Club</label>
+              <ClubSelector
+                selectedClubId={selectedClubId}
+                onClubSelect={(club) => { setSelectedClubId(club?.id); setSelectedTeamId(undefined); }}
+              />
+            </div>
+            <div className="w-48">
+              <label className="text-xs font-medium text-white/60 mb-1 block">Team</label>
+              <TeamSelector
+                selectedTeamId={selectedTeamId}
+                clubId={selectedClubId}
+                onTeamSelect={(team) => setSelectedTeamId(team?.id)}
+              />
+            </div>
+            {activeTeam && (
+              <Button variant="ghost" size="sm" className="text-white/70" onClick={() => setShowTeamPicker(false)}>Done</Button>
+            )}
+          </div>
+        )}
+        {activeTeam && !showTeamPicker && (
+          <div className="mb-5">
+            <button onClick={() => setShowTeamPicker(true)} className="text-xs text-white/60 hover:text-white underline underline-offset-2">
+              Change team
+            </button>
+          </div>
+        )}
+
+        {/* Bluetooth dialog (kept, not in header) */}
+        <Dialog open={isBluetoothDialogOpen} onOpenChange={setIsBluetoothDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Bluetooth Configuration</DialogTitle>
+              <DialogDescription>Configure Bluetooth settings for enhanced range and multi-player tracking</DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-medium">Bluetooth Range Booster</h3>
+                  <p className="text-sm text-muted-foreground">Connect a range booster for multi-player tracking</p>
                 </div>
-              </PopoverContent>
-            </Popover>
+                <Badge
+                  variant={bluetoothStatus === "connected" ? "default" : "outline"}
+                  className={bluetoothStatus === "searching" ? "animate-pulse" : ""}
+                >
+                  {bluetoothStatus === "connected" ? "Connected" : bluetoothStatus === "searching" ? "Searching…" : "Disconnected"}
+                </Badge>
+              </div>
+            </div>
+            <DialogFooter>
+              {bluetoothStatus !== "connected" ? (
+                <Button onClick={handleBluetoothConnect}>Connect Bluetooth Booster</Button>
+              ) : (
+                <Button variant="outline" onClick={() => setBluetoothStatus("disconnected")}>Disconnect</Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-            <Link to="/ml-training" className="text-primary hover:underline">
-              Go to ML Training
-            </Link>
-            <Link to="/devices" className="flex items-center text-primary hover:underline">
-              <Settings className="mr-1 h-4 w-4" />
-              Manage Devices
-            </Link>
-            {!isSessionActive ? (
-              <DeviceManager onStartSession={startSession} />
-            ) : (
-              <Button 
-                variant="destructive"
-                onClick={endSession}
-              >
-                End Session
-              </Button>
-            )}
+        {/* Inline DeviceManager trigger */}
+        {!isSessionActive && (
+          <div className="mb-4">
+            <DeviceManager onStartSession={startSession} />
           </div>
-        </div>
+        )}
 
-        <div className="mb-4">
-          <div className="flex items-center gap-3">
-            <span className={`inline-flex h-2 w-2 rounded-full ${
-              syncStatus === 'synced' 
-                ? 'bg-green-500' 
-                : syncStatus === 'syncing' 
-                  ? 'bg-yellow-500 animate-pulse' 
-                  : 'bg-red-500'
-            }`}></span>
-            <span className="text-sm text-muted-foreground">
-              {syncStatus === 'synced' 
-                ? 'Data in sync with database' 
-                : syncStatus === 'syncing' 
-                  ? 'Synchronizing data...' 
-                  : 'Sync error'}
-            </span>
-            
-            {bluetoothStatus === "connected" && (
-              <Badge variant="outline" className="ml-2 bg-green-50 text-green-700 border-green-200">
-                <Bluetooth className="h-3 w-3 mr-1" />
-                Bluetooth Booster Active
-              </Badge>
-            )}
-          </div>
-        </div>
-
-        <div className="mb-4 flex items-end gap-4">
-          <div className="w-48">
-            <label className="text-sm font-medium text-muted-foreground mb-1 block">Club</label>
-            <ClubSelector
-              selectedClubId={selectedClubId}
-              onClubSelect={(club) => {
-                setSelectedClubId(club?.id);
-                setSelectedTeamId(undefined); // Reset team when club changes
-              }}
-            />
-          </div>
-          <div className="w-48">
-            <label className="text-sm font-medium text-muted-foreground mb-1 block">Team</label>
-            <TeamSelector
-              selectedTeamId={selectedTeamId}
-              clubId={selectedClubId}
-              onTeamSelect={(team) => {
-                setSelectedTeamId(team?.id);
-              }}
-            />
-          </div>
-        </div>
+        <SyncStatusIndicator entity="all" showDetails={false} />
 
         <Tabs defaultValue="overall" className="w-full">
           <TabsList className="grid w-full grid-cols-5">

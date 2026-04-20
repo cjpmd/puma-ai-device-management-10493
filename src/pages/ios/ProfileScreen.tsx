@@ -8,8 +8,17 @@ import { SectionHeader } from '@/components/ios/SectionHeader';
 import { T, tType, Wallpapers } from '@/lib/ios-tokens';
 import { useActiveTeam } from '@/hooks/useActiveTeam';
 import { supabase } from '@/integrations/supabase/client';
-import { syncUserAccess } from '@/hooks/useUserTeams';
+import { syncAll } from '@/hooks/useUserTeams';
 import { useToast } from '@/hooks/use-toast';
+
+const LAST_SYNC_KEY = 'origin.lastSyncedAt';
+const fmtAgo = (iso: string) => {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.round(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.round(diff / 3600)} h ago`;
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
 
 interface ProfileScreenProps {
   onTabChange?: (tab: number) => void;
@@ -24,6 +33,9 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
   const [matchCount, setMatchCount] = useState(0);
   const [playerCount, setPlayerCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(() => {
+    try { return localStorage.getItem(LAST_SYNC_KEY); } catch { return null; }
+  });
 
   useEffect(() => {
     (async () => {
@@ -53,14 +65,28 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
   const initials = email ? email.slice(0, 2).toUpperCase() : 'OS';
 
   const handleSync = async () => {
+    if (syncing) return;
     setSyncing(true);
-    const result = await syncUserAccess();
+    toast({ title: 'Syncing…', description: 'Pulling teams, players, photos & attributes' });
+    const result = await syncAll();
     setSyncing(false);
     if (result?.success) {
-      toast({ title: 'Synced', description: 'Team access updated from Origin Sports' });
+      const now = new Date().toISOString();
+      setLastSynced(now);
+      try { localStorage.setItem(LAST_SYNC_KEY, now); } catch {}
+      const counts = (result.data && (result.data as any).results) || {};
+      const summary = Object.entries(counts)
+        .map(([k, v]: [string, any]) => typeof v === 'number' ? `${k}: ${v}` : null)
+        .filter(Boolean)
+        .join(' · ');
+      toast({ title: 'Synced from Origin Sports', description: summary || 'All entities updated' });
       refresh();
     } else {
-      toast({ title: 'Sync failed', description: 'Could not reach Origin Sports', variant: 'destructive' });
+      toast({
+        title: 'Sync failed',
+        description: result?.error || 'Could not reach Origin Sports',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -109,9 +135,42 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
           </Glass>
         </div>
 
+        {/* Sync from Origin Sports */}
+        <div style={{ padding: '0 16px 16px' }}>
+          <Glass r={18} tint={syncing ? 'neutral' : 'purple'} onClick={!syncing ? handleSync : undefined}>
+            <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: `linear-gradient(135deg, ${T.purple[400]}, ${T.magenta})`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d={syncing
+                    ? 'M12 4v4m0 8v4m8-8h-4M8 12H4'
+                    : 'M21 12a9 9 0 11-3-6.7L21 8m0-4v4h-4'}
+                    stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ ...tType('headline'), color: T.fg }}>
+                  {syncing ? 'Syncing from Origin Sports…' : 'Sync from Origin Sports'}
+                </div>
+                <div style={{ ...tType('caption1'), color: T.fg2, marginTop: 2 }}>
+                  {syncing
+                    ? 'Pulling teams · players · photos · attributes'
+                    : lastSynced ? `Last synced ${fmtAgo(lastSynced)}` : 'Tap to pull latest squad & photos'}
+                </div>
+              </div>
+              {!syncing && (
+                <svg width="10" height="16" viewBox="0 0 8 14"><path d="M1 1l6 6-6 6" stroke={T.fg} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              )}
+            </div>
+          </Glass>
+        </div>
+
         {/* Team switcher */}
-        <SectionHeader title="My Teams" action={syncing ? 'Syncing…' : 'Sync'} />
-        <div style={{ padding: '0 16px 20px' }} onClick={!syncing ? handleSync : undefined}>
+        <SectionHeader title="My Teams" />
+        <div style={{ padding: '0 16px 20px' }}>
           <Glass r={20}>
             {teams.length === 0 && (
               <div style={{ padding: 18, ...tType('subhead'), color: T.fg2, textAlign: 'center' }}>
@@ -119,7 +178,7 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
               </div>
             )}
             {teams.map((t, i) => (
-              <div key={t.id} onClick={(e) => { e.stopPropagation(); setActiveTeam(t.id); }} style={{
+              <div key={t.id} onClick={() => setActiveTeam(t.id)} style={{
                 display: 'flex', alignItems: 'center', padding: '12px 16px',
                 borderBottom: i < teams.length - 1 ? `0.5px solid ${T.hairline}` : 'none',
                 gap: 12, cursor: 'pointer',
