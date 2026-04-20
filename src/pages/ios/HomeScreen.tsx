@@ -105,23 +105,26 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
         .eq('team_id', activeTeam.id);
       setPlayers(playersData || []);
 
-      // Past fixtures
+      // Past fixtures — read scores directly from team_events
       const { data: pastEvents } = await supabase
         .from('team_events')
-        .select('id, date, opponent, is_home, event_type, match_id')
+        .select('id, date, opponent, is_home, event_type, match_id, home_score, away_score')
         .eq('team_id', activeTeam.id)
         .lt('date', today)
         .in('event_type', ['match', 'friendly', 'fixture', 'Match', 'Friendly', 'Fixture'])
         .order('date', { ascending: false })
         .limit(5);
 
-      const matchIds = (pastEvents || []).map(e => e.match_id).filter(Boolean) as string[];
-      let scoreMap: Record<string, { home: number | null; away: number | null }> = {};
-      if (matchIds.length) {
+      // Fallback: hydrate from matches table for any rows still missing scores
+      const missingMatchIds = (pastEvents || [])
+        .filter(e => (e.home_score == null || e.away_score == null) && e.match_id)
+        .map(e => e.match_id) as string[];
+      const scoreMap: Record<string, { home: number | null; away: number | null }> = {};
+      if (missingMatchIds.length) {
         const { data: matches } = await supabase
           .from('matches')
           .select('id, home_score, away_score')
-          .in('id', matchIds);
+          .in('id', missingMatchIds);
         (matches || []).forEach(m => {
           scoreMap[m.id] = { home: m.home_score, away: m.away_score };
         });
@@ -134,8 +137,8 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
         is_home: e.is_home,
         event_type: e.event_type,
         match_id: e.match_id,
-        home_score: e.match_id ? scoreMap[e.match_id]?.home ?? null : null,
-        away_score: e.match_id ? scoreMap[e.match_id]?.away ?? null : null,
+        home_score: e.home_score ?? (e.match_id ? scoreMap[e.match_id]?.home ?? null : null),
+        away_score: e.away_score ?? (e.match_id ? scoreMap[e.match_id]?.away ?? null : null),
       })));
     })();
   }, [activeTeam]);
@@ -152,15 +155,15 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
   const availableCount = players.filter(p => p.availability === 'green').length;
   const injuredPlayers = players.filter(p => p.availability === 'red' || p.availability === 'amber');
 
-  const fixtureResult = (f: PastFixture): { label: string; bg: string; outcome: 'W' | 'D' | 'L' | '—' } => {
+  const fixtureResult = (f: PastFixture): { score: string | null; outcome: 'W' | 'D' | 'L' | null; chipBg: string } => {
     if (f.home_score == null || f.away_score == null) {
-      return { label: '—', bg: 'rgba(255,255,255,0.10)', outcome: '—' };
+      return { score: null, outcome: null, chipBg: 'rgba(255,255,255,0.10)' };
     }
     const ourScore = f.is_home ? f.home_score : f.away_score;
     const theirScore = f.is_home ? f.away_score : f.home_score;
     const outcome: 'W' | 'D' | 'L' = ourScore > theirScore ? 'W' : ourScore === theirScore ? 'D' : 'L';
-    const bg = outcome === 'W' ? T.purple[500] : outcome === 'D' ? 'rgba(255,255,255,0.16)' : `${T.red}99`;
-    return { label: `${ourScore}–${theirScore} ${outcome}`, bg, outcome };
+    const chipBg = outcome === 'W' ? T.purple[500] : outcome === 'D' ? 'rgba(255,255,255,0.16)' : `${T.red}99`;
+    return { score: `${ourScore}-${theirScore}`, outcome, chipBg };
   };
 
   return (
@@ -363,18 +366,35 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
                         {f.is_home ? 'Home' : 'Away'} · {f.event_type}
                       </div>
                     </div>
-                    <div style={{
-                      ...tType('caption1'),
-                      color: T.fg,
-                      fontWeight: 700,
-                      padding: '5px 10px',
-                      borderRadius: 8,
-                      background: r.bg,
-                      minWidth: 56,
-                      textAlign: 'center',
-                    }}>
-                      {r.label}
-                    </div>
+                    {r.score ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 700, minWidth: 36, textAlign: 'right' }}>
+                          {r.score}
+                        </div>
+                        <div style={{
+                          ...tType('caption2'),
+                          color: T.fg,
+                          fontWeight: 800,
+                          padding: '3px 7px',
+                          borderRadius: 6,
+                          background: r.chipBg,
+                          minWidth: 22,
+                          textAlign: 'center',
+                        }}>
+                          {r.outcome}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{
+                        ...tType('caption2'),
+                        color: T.fg2,
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        background: 'rgba(255,255,255,0.06)',
+                      }}>
+                        Result pending
+                      </div>
+                    )}
                   </div>
                 );
               })}
