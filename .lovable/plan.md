@@ -1,76 +1,41 @@
 
 
-## Plan — Origin Sports integration + iOS shell upgrade
+## Plan — Home screen upgrades
 
-### Important caveat on "Single sign-on (shared Supabase)"
-Origin Sports lives in a **different Supabase project** (`pdarngodvrzehnpvdrii`) than this app (`zibxzgrjjfdwcxgmptjb`). Truly sharing auth means pointing this whole app at the Origin Sports backend, which would **detach every existing match, device, sensor recording, and processing job** in this project (they're all keyed to the current `auth.users`) and would force RLS rewrites on ~20 tables. Big-bang risky.
+### 1. Team switcher on Home
+Replace the static "today" header with a tappable team chip (Glass pill showing active team name + chevron). Tap opens a bottom-sheet style Glass dropdown listing all teams from `useActiveTeam`. Selecting one calls `setActiveTeam(id)`. If only one team, render as a non-interactive label.
 
-I recommend a pragmatic equivalent that gives you the **same UX as SSO** without the migration hit:
+### 2. Top-right avatar → Profile
+Wrap the Avatar in `HomeScreen` in a click handler that calls `onTabChange?.(4)`.
 
-> **Email-linked SSO**: keep this app's auth, but on every sign-in we look up the user's Origin Sports profile by email and cache `external_user_id` + their `user_teams` / `user_clubs` rows locally. Result: log in here, and the home/squad/matches tabs immediately show only the Origin Sports teams you're a member of, with the same role.
+### 3. Squad summary card (new section under hero)
+New Glass card titled "Squad" showing:
+- **Total** (count of players for active team)
+- **Available** (count where `availability = 'green'`)
+- **Injured** (count where `availability IN ('red','amber')`)
+- Below, a compact list of injured players: avatar initials + name + `availability` badge (Amber/Red) + expected return date if present (e.g. "Back ~12 May")
+- Tap card → jumps to Squad tab (`onTabChange(1)`)
 
-I'll proceed with that. If you want true SSO later, we can do the cutover separately.
+Data: single query `players.select('id,name,availability,expected_return_date').eq('team_id', activeTeam.id)`.
 
----
+### 4. Schema: add `expected_return_date`
+`players` table has no return-date column. Add nullable `date` column `expected_return_date`. Extend `sync-external-data` to pull it from Origin Sports if their `players` row exposes it (optional — null-safe). RLS unchanged.
 
-### What gets built
+### 5. Previous Fixtures section (replaces "Team Form" sparkline)
+Show the last 5 fixtures (matches + friendlies) for the active team:
+- Pull from `team_events` where `date < today` AND `event_type IN ('match','friendly','fixture')` AND `team_id = activeTeam.id`, ordered desc.
+- Join (or fallback lookup) to `matches` via `match_id` to get `home_score`/`away_score` when known.
+- Each row = Glass row: date · opponent · venue (H/A) · score badge (e.g. `2–1 W`) or "—" if no result.
+- Win = purple, Draw = neutral grey, Loss = red badge background.
 
-**1. Schema (migrations)**
-- `user_team_access` (user_id, team_id, role, external_user_id, synced_at) — local cache of who can see what
-- `user_club_access` (same shape for clubs)
-- Extend `sync-external-data` edge function with a new `entity = 'user_access'` path that, given the signed-in user's email, fetches their `user_teams` / `user_clubs` rows from Origin Sports and upserts here
-- Add RLS so each user only sees their own rows
+Replace the existing "Team Form" card; keep the activity rings card untouched.
 
-**2. Auth flow**
-- After sign-in, call `sync-external-data?entity=user_access` once to populate access
-- New `useUserTeams()` hook returning the active user's teams + active team selection (persisted in localStorage)
+### Files to edit / create
+- `src/pages/ios/HomeScreen.tsx` — team switcher, avatar→profile, squad summary, previous fixtures
+- New migration: `ALTER TABLE players ADD COLUMN expected_return_date date`
+- `supabase/functions/sync-external-data/index.ts` — include `expected_return_date` in player upsert mapping (null-safe)
 
-**3. iOS shell — wire to real data, keep design system**
-- **HomeScreen**: replace dummy "Origin U15" with selected team name + badge; "Next match" pulls the next `team_events` row for that team; activity rings stay (mock for now); team form uses recent `matches` results
-- **SquadScreen**: list `players` filtered by `team_id IN user_team_access`; tapping a player opens a detail screen that pulls `player_physical_data` + recent `biometric_readings` + recent `sensor_recordings` (Ultra/analysis data) — same Glass cards, real numbers
-- **MatchesScreen**: list real `matches` + `team_events`; each card gets a **"Match Day Setup"** Glass button → routes to `/matches/:id`; a top **"Open Match Day"** banner → routes to `/matches`
-- **TrainingScreen → UltraScreen**: rename tab + icon to "Ultra" (lightning bolt stays). New iOS-native screen with Glass cards summarising the live session (session status, last sprint, top speed, distance, heart rate avg) and a prominent **"Open full Ultra analysis"** Glass button → routes to `/analysis`
-- **ProfileScreen**: shows real user, real team list (switcher), wearable count from `devices`, sign-out
-
-**4. Tab bar** — change label "Training" → "Ultra"
-
-**5. Design pass — fix remaining background/contrast issues**
-Audit pages for legacy light backgrounds and white cards on dark wallpaper:
-- `Analysis.tsx`: header is white on aurora ✓ but inner Tabs/Cards still use light defaults — wrap content in `glass` + override card defaults
-- `MLTraining.tsx`, `Devices.tsx`, `MatchDetail.tsx`, `PitchCalibration.tsx`: same issue — tabs / Cards inside still render `bg-card` light. Standardise: page root `wallpaper-*`, all top-level cards use `.glass`, text `text-white` / `text-white/70`
-- Toasts (`sonner`, `toaster`): theme tokens currently use light `--popover`. Confirm they render dark — they do because `--popover` is set to `270 40% 8%` already, but verify
-- Buttons: replace any remaining `variant="outline"` with explicit `border-white/20 text-white hover:bg-white/10` where they sit on glass
-
-**6. Match Day entry on the iOS Matches tab** (per your "Both" answer)
-- Top Glass banner: "Match Day Setup" → `/matches`
-- Each match Glass card gets a small chevron-action: "Setup recording" → `/matches/:id`
-
-### Files
-
-**Migrations (new)**
-- `user_team_access`, `user_club_access` tables + RLS
-
-**Edge function**
-- `supabase/functions/sync-external-data/index.ts` — add `user_access` entity
-
-**New code**
-- `src/hooks/useUserTeams.ts`
-- `src/hooks/useActiveTeam.ts`
-- `src/pages/ios/UltraScreen.tsx`
-- `src/pages/ios/PlayerDetailScreen.tsx` (real-data version, replacing in-file mock)
-
-**Edits**
-- `src/pages/ios/IOSApp.tsx` — swap Training for Ultra
-- `src/pages/ios/HomeScreen.tsx` — real team + next match + form
-- `src/pages/ios/SquadScreen.tsx` — real squad from `players`
-- `src/pages/ios/MatchesScreen.tsx` — real matches + Match Day buttons
-- `src/pages/ios/ProfileScreen.tsx` — real user + team switcher + sign-out
-- `src/components/ios/TabBar.tsx` — Training → Ultra label
-- `src/pages/Auth.tsx` — trigger `user_access` sync on successful sign-in
-- `src/pages/Analysis.tsx`, `MLTraining.tsx`, `Devices.tsx`, `MatchDetail.tsx`, `PitchCalibration.tsx` — apply glass cards on dark wallpaper, fix contrast
-
-### Out of scope (next)
-- True shared-auth cutover (only do if you accept losing existing data linkage)
-- Live activity rings on Home (need real session data wired up)
-- Realtime subscription on user_team_access (one-shot sync on login is enough for now)
+### Out of scope
+- Editing return dates from inside this app (read-only sync from Origin Sports)
+- Friendly-vs-league filtering toggle (just show all past fixtures)
 
