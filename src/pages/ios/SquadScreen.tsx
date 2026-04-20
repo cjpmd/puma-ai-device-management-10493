@@ -7,9 +7,68 @@ import { Sparkline } from '@/components/ios/Sparkline';
 import { Segmented } from '@/components/ios/Segmented';
 import { SectionHeader } from '@/components/ios/SectionHeader';
 import { IOSStatusBar } from '@/components/ios/StatusBar';
+import { AttributeBar } from '@/components/ios/AttributeBar';
+import { Radar } from '@/components/ios/Radar';
 import { T, tType, Wallpapers } from '@/lib/ios-tokens';
 import { useActiveTeam } from '@/hooks/useActiveTeam';
 import { supabase } from '@/integrations/supabase/client';
+
+const ATTR_GROUPS: { key: 'technical' | 'mental' | 'physical' | 'goalkeeping'; label: string; fields: { col: string; label: string }[] }[] = [
+  {
+    key: 'technical', label: 'Technical',
+    fields: [
+      { col: 'corners', label: 'Corners' }, { col: 'crossing', label: 'Crossing' },
+      { col: 'dribbling', label: 'Dribbling' }, { col: 'finishing', label: 'Finishing' },
+      { col: 'first_touch', label: 'First Touch' }, { col: 'free_kicks', label: 'Free Kicks' },
+      { col: 'heading', label: 'Heading' }, { col: 'long_shots', label: 'Long Shots' },
+      { col: 'long_throws', label: 'Long Throws' }, { col: 'marking', label: 'Marking' },
+      { col: 'passing', label: 'Passing' }, { col: 'penalties', label: 'Penalties' },
+      { col: 'tackling', label: 'Tackling' }, { col: 'technique', label: 'Technique' },
+    ],
+  },
+  {
+    key: 'mental', label: 'Mental',
+    fields: [
+      { col: 'aggression', label: 'Aggression' }, { col: 'anticipation', label: 'Anticipation' },
+      { col: 'bravery', label: 'Bravery' }, { col: 'composure', label: 'Composure' },
+      { col: 'concentration', label: 'Concentration' }, { col: 'decisions', label: 'Decisions' },
+      { col: 'determination', label: 'Determination' }, { col: 'flair', label: 'Flair' },
+      { col: 'leadership', label: 'Leadership' }, { col: 'off_the_ball', label: 'Off the Ball' },
+      { col: 'positioning', label: 'Positioning' }, { col: 'teamwork', label: 'Teamwork' },
+      { col: 'vision', label: 'Vision' }, { col: 'work_rate', label: 'Work Rate' },
+    ],
+  },
+  {
+    key: 'physical', label: 'Physical',
+    fields: [
+      { col: 'acceleration', label: 'Acceleration' }, { col: 'agility', label: 'Agility' },
+      { col: 'balance', label: 'Balance' }, { col: 'jumping', label: 'Jumping' },
+      { col: 'natural_fitness', label: 'Natural Fitness' }, { col: 'pace', label: 'Pace' },
+      { col: 'stamina', label: 'Stamina' }, { col: 'strength', label: 'Strength' },
+    ],
+  },
+  {
+    key: 'goalkeeping', label: 'Goalkeeping',
+    fields: [
+      { col: 'aerial_reach', label: 'Aerial Reach' }, { col: 'command_of_area', label: 'Command of Area' },
+      { col: 'communication', label: 'Communication' }, { col: 'cross_handling', label: 'Cross Handling' },
+      { col: 'distribution', label: 'Distribution' }, { col: 'eccentricity', label: 'Eccentricity' },
+      { col: 'footwork', label: 'Footwork' }, { col: 'handling', label: 'Handling' },
+      { col: 'kicking', label: 'Kicking' }, { col: 'one_on_one', label: 'One-on-One' },
+      { col: 'punching', label: 'Punching' }, { col: 'reflexes', label: 'Reflexes' },
+      { col: 'rushing_out', label: 'Rushing Out' }, { col: 'shot_stopping', label: 'Shot Stopping' },
+      { col: 'throwing', label: 'Throwing' },
+    ],
+  },
+];
+
+function groupAvg(attrs: Record<string, number | null> | null, fields: { col: string }[]): number | null {
+  if (!attrs) return null;
+  const vals = fields.map(f => attrs[f.col]).filter((v): v is number => typeof v === 'number');
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
 
 interface Player {
   id: string;
