@@ -135,9 +135,42 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
           </Glass>
         </div>
 
+        {/* Sync from Origin Sports */}
+        <div style={{ padding: '0 16px 16px' }}>
+          <Glass r={18} tint={syncing ? 'neutral' : 'purple'} onClick={!syncing ? handleSync : undefined}>
+            <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: `linear-gradient(135deg, ${T.purple[400]}, ${T.magenta})`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d={syncing
+                    ? 'M12 4v4m0 8v4m8-8h-4M8 12H4'
+                    : 'M21 12a9 9 0 11-3-6.7L21 8m0-4v4h-4'}
+                    stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ ...tType('headline'), color: T.fg }}>
+                  {syncing ? 'Syncing from Origin Sports…' : 'Sync from Origin Sports'}
+                </div>
+                <div style={{ ...tType('caption1'), color: T.fg2, marginTop: 2 }}>
+                  {syncing
+                    ? 'Pulling teams · players · photos · attributes'
+                    : lastSynced ? `Last synced ${fmtAgo(lastSynced)}` : 'Tap to pull latest squad & photos'}
+                </div>
+              </div>
+              {!syncing && (
+                <svg width="10" height="16" viewBox="0 0 8 14"><path d="M1 1l6 6-6 6" stroke={T.fg} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              )}
+            </div>
+          </Glass>
+        </div>
+
         {/* Team switcher */}
-        <SectionHeader title="My Teams" action={syncing ? 'Syncing…' : 'Sync'} />
-        <div style={{ padding: '0 16px 20px' }} onClick={!syncing ? handleSync : undefined}>
+        <SectionHeader title="My Teams" />
+        <div style={{ padding: '0 16px 20px' }}>
           <Glass r={20}>
             {teams.length === 0 && (
               <div style={{ padding: 18, ...tType('subhead'), color: T.fg2, textAlign: 'center' }}>
