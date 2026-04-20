@@ -36,10 +36,10 @@ const MLTraining = () => {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen wallpaper-dawn p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-secondary">Machine Learning Training</h1>
+          <h1 className="text-3xl font-bold text-white">Machine Learning Training</h1>
           <Link to="/analysis" className="text-primary hover:underline">
             Go to Analysis Dashboard
           </Link>
