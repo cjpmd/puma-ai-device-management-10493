@@ -571,24 +571,24 @@ const Analysis = () => {
         <SyncStatusIndicator entity="all" showDetails={false} />
 
         <Tabs defaultValue="overall" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="overall" className="flex items-center gap-2">
+          <TabsList className="grid w-full grid-cols-5 bg-white/5 border border-white/10 text-white/70 h-auto p-1 backdrop-blur-md">
+            <TabsTrigger value="overall" className="flex items-center gap-2 data-[state=active]:bg-white/15 data-[state=active]:text-white text-white/70">
               <ChartBar className="h-4 w-4" />
               Overall Session
             </TabsTrigger>
-            <TabsTrigger value="individual" className="flex items-center gap-2">
+            <TabsTrigger value="individual" className="flex items-center gap-2 data-[state=active]:bg-white/15 data-[state=active]:text-white text-white/70">
               <User className="h-4 w-4" />
               Individual Players
             </TabsTrigger>
-            <TabsTrigger value="group" className="flex items-center gap-2">
+            <TabsTrigger value="group" className="flex items-center gap-2 data-[state=active]:bg-white/15 data-[state=active]:text-white text-white/70">
               <Users className="h-4 w-4" />
               Group Selection
             </TabsTrigger>
-            <TabsTrigger value="biometrics" className="flex items-center gap-2">
+            <TabsTrigger value="biometrics" className="flex items-center gap-2 data-[state=active]:bg-white/15 data-[state=active]:text-white text-white/70">
               <HeartPulse className="h-4 w-4" />
               Biometrics
             </TabsTrigger>
-            <TabsTrigger value="video" className="flex items-center gap-2">
+            <TabsTrigger value="video" className="flex items-center gap-2 data-[state=active]:bg-white/15 data-[state=active]:text-white text-white/70">
               <Video className="h-4 w-4" />
               Video Analysis
             </TabsTrigger>
@@ -639,7 +639,7 @@ const Analysis = () => {
               />
             </div>
 
-            <div className="mt-8">
+            <div className="mt-8 rounded-lg border border-white/10 bg-white/5 backdrop-blur-md p-4">
               <PlayerMovementMap />
             </div>
           </TabsContent>

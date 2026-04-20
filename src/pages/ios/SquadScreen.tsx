@@ -361,8 +361,9 @@ export function SquadScreen({ onTabChange }: SquadScreenProps) {
   }
 
   const filtered = players.filter(p => {
-    if (filter === 1) return (p.availability || 'available').toLowerCase() === 'available';
-    if (filter === 2) return ['injured', 'unavailable'].includes((p.availability || '').toLowerCase());
+    const a = (p.availability || '').toLowerCase();
+    if (filter === 1) return a === '' || a === 'green' || a === 'available';
+    if (filter === 2) return ['red', 'amber', 'injured', 'unavailable'].includes(a);
     return true;
   });
 
@@ -410,6 +411,10 @@ export function SquadScreen({ onTabChange }: SquadScreenProps) {
               <Glass r={20}>
                 {list.map((p, i) => {
                   const initials = p.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+                  const a = (p.availability || '').toLowerCase();
+                  const isInjured = ['red', 'amber', 'injured', 'unavailable'].includes(a);
+                  const pillBg = a === 'red' || a === 'injured' || a === 'unavailable' ? `${T.red}99` : 'rgba(251,191,36,0.4)';
+                  const pillLabel = a === 'red' ? 'RED' : a === 'amber' ? 'AMBER' : a.toUpperCase();
                   return (
                     <div key={p.id} onClick={() => setSelected(p)} style={{
                       display: 'flex', alignItems: 'center', padding: '10px 14px',
@@ -417,12 +422,24 @@ export function SquadScreen({ onTabChange }: SquadScreenProps) {
                       gap: 12, cursor: 'pointer',
                     }}>
                       <Avatar initials={initials} size={40} hue={HUE_FOR_GROUP(grp)} src={p.photo_url || undefined} />
-                      <div style={{ flex: 1 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ ...tType('headline'), color: T.fg }}>{p.name}</div>
                         <div style={{ ...tType('footnote'), color: T.fg2 }}>
                           {p.squad_number != null ? `#${p.squad_number} · ` : ''}{p.position || '—'}
                         </div>
                       </div>
+                      {isInjured && (
+                        <div style={{
+                          ...tType('caption2'),
+                          color: T.fg,
+                          fontWeight: 700,
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          background: pillBg,
+                        }}>
+                          {pillLabel}
+                        </div>
+                      )}
                       <svg width="8" height="14" viewBox="0 0 8 14"><path d="M1 1l6 6-6 6" stroke={T.fg3} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
                   );
