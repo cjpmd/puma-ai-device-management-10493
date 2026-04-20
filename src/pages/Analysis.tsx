@@ -401,11 +401,11 @@ const Analysis = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen wallpaper-aurora p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-secondary">Performance Analysis</h1>
+            <h1 className="text-3xl font-bold text-white">Performance Analysis</h1>
             {activeSessionId && (
               <Badge variant="outline" className="text-xs">
                 Session ID: {activeSessionId}
