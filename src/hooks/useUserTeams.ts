@@ -47,18 +47,44 @@ export function useUserTeams() {
   return { teams, loading, error, refresh: load };
 }
 
+async function invokeExternalSync(functionName: string, body?: Record<string, unknown>) {
+  const { data, error } = await supabase.functions.invoke(functionName, body ? { body } : undefined);
+  if (error) throw error;
+  return data;
+}
+
 export async function syncUserAccess() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return null;
   try {
-    const { data, error } = await supabase.functions.invoke('sync-external-data', {
-      body: { entity: 'user_access' },
-    });
-    if (error) throw error;
-    return data;
+    return await invokeExternalSync('sync-external-user-access');
   } catch (e) {
     console.error('syncUserAccess failed:', e);
     return null;
+  }
+}
+
+export async function syncEvents() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { success: false, error: 'Not signed in' as const };
+  try {
+    const data = await invokeExternalSync('sync-external-events');
+    return { success: true, data };
+  } catch (e: any) {
+    console.error('syncEvents failed:', e);
+    return { success: false, error: e?.message || 'Sync failed' };
+  }
+}
+
+export async function syncCore(entity: 'all' | 'clubs' | 'teams' | 'players' | 'attributes' = 'all') {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { success: false, error: 'Not signed in' as const };
+  try {
+    const data = await invokeExternalSync('sync-external-core', { entity });
+    return { success: true, data };
+  } catch (e: any) {
+    console.error('syncCore failed:', e);
+    return { success: false, error: e?.message || 'Sync failed' };
   }
 }
 
@@ -69,11 +95,22 @@ export async function syncAll() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return { success: false, error: 'Not signed in' as const };
   try {
-    const { data, error } = await supabase.functions.invoke('sync-external-data', {
-      body: { entity: 'all' },
-    });
-    if (error) throw error;
-    return { success: true, data };
+    const [core, events, access] = await Promise.all([
+      invokeExternalSync('sync-external-core', { entity: 'all' }),
+      invokeExternalSync('sync-external-events'),
+      invokeExternalSync('sync-external-user-access'),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        results: {
+          ...(core?.results || {}),
+          ...(events?.results || {}),
+          ...(access?.results || {}),
+        },
+      },
+    };
   } catch (e: any) {
     console.error('syncAll failed:', e);
     return { success: false, error: e?.message || 'Sync failed' };

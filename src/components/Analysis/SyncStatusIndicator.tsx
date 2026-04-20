@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { syncAll, syncCore } from '@/hooks/useUserTeams';
 
 interface SyncStatusIndicatorProps {
   entity?: 'clubs' | 'teams' | 'players' | 'all';
@@ -30,11 +30,8 @@ const SyncStatusIndicator = ({ entity = 'all', showDetails = false }: SyncStatus
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke('sync-external-data', {
-        body: { entity },
-      });
-
-      if (error) throw error;
+      const result = entity === 'all' ? await syncAll() : await syncCore(entity);
+      if (!result.success) throw new Error(result.error);
 
       setLastSync(new Date());
       
