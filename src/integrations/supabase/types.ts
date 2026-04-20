@@ -722,6 +722,194 @@ export type Database = {
         }
         Relationships: []
       }
+      player_attributes: {
+        Row: {
+          acceleration: number | null
+          aerial_reach: number | null
+          aggression: number | null
+          agility: number | null
+          anticipation: number | null
+          balance: number | null
+          bravery: number | null
+          command_of_area: number | null
+          communication: number | null
+          composure: number | null
+          concentration: number | null
+          corners: number | null
+          created_at: string
+          cross_handling: number | null
+          crossing: number | null
+          decisions: number | null
+          determination: number | null
+          distribution: number | null
+          dribbling: number | null
+          eccentricity: number | null
+          external_id: string | null
+          finishing: number | null
+          first_touch: number | null
+          flair: number | null
+          footwork: number | null
+          free_kicks: number | null
+          handling: number | null
+          heading: number | null
+          id: string
+          jumping: number | null
+          kicking: number | null
+          leadership: number | null
+          long_shots: number | null
+          long_throws: number | null
+          marking: number | null
+          natural_fitness: number | null
+          off_the_ball: number | null
+          one_on_one: number | null
+          pace: number | null
+          passing: number | null
+          penalties: number | null
+          player_id: string
+          positioning: number | null
+          punching: number | null
+          reflexes: number | null
+          rushing_out: number | null
+          shot_stopping: number | null
+          stamina: number | null
+          strength: number | null
+          synced_at: string | null
+          tackling: number | null
+          teamwork: number | null
+          technique: number | null
+          throwing: number | null
+          updated_at: string
+          vision: number | null
+          work_rate: number | null
+        }
+        Insert: {
+          acceleration?: number | null
+          aerial_reach?: number | null
+          aggression?: number | null
+          agility?: number | null
+          anticipation?: number | null
+          balance?: number | null
+          bravery?: number | null
+          command_of_area?: number | null
+          communication?: number | null
+          composure?: number | null
+          concentration?: number | null
+          corners?: number | null
+          created_at?: string
+          cross_handling?: number | null
+          crossing?: number | null
+          decisions?: number | null
+          determination?: number | null
+          distribution?: number | null
+          dribbling?: number | null
+          eccentricity?: number | null
+          external_id?: string | null
+          finishing?: number | null
+          first_touch?: number | null
+          flair?: number | null
+          footwork?: number | null
+          free_kicks?: number | null
+          handling?: number | null
+          heading?: number | null
+          id?: string
+          jumping?: number | null
+          kicking?: number | null
+          leadership?: number | null
+          long_shots?: number | null
+          long_throws?: number | null
+          marking?: number | null
+          natural_fitness?: number | null
+          off_the_ball?: number | null
+          one_on_one?: number | null
+          pace?: number | null
+          passing?: number | null
+          penalties?: number | null
+          player_id: string
+          positioning?: number | null
+          punching?: number | null
+          reflexes?: number | null
+          rushing_out?: number | null
+          shot_stopping?: number | null
+          stamina?: number | null
+          strength?: number | null
+          synced_at?: string | null
+          tackling?: number | null
+          teamwork?: number | null
+          technique?: number | null
+          throwing?: number | null
+          updated_at?: string
+          vision?: number | null
+          work_rate?: number | null
+        }
+        Update: {
+          acceleration?: number | null
+          aerial_reach?: number | null
+          aggression?: number | null
+          agility?: number | null
+          anticipation?: number | null
+          balance?: number | null
+          bravery?: number | null
+          command_of_area?: number | null
+          communication?: number | null
+          composure?: number | null
+          concentration?: number | null
+          corners?: number | null
+          created_at?: string
+          cross_handling?: number | null
+          crossing?: number | null
+          decisions?: number | null
+          determination?: number | null
+          distribution?: number | null
+          dribbling?: number | null
+          eccentricity?: number | null
+          external_id?: string | null
+          finishing?: number | null
+          first_touch?: number | null
+          flair?: number | null
+          footwork?: number | null
+          free_kicks?: number | null
+          handling?: number | null
+          heading?: number | null
+          id?: string
+          jumping?: number | null
+          kicking?: number | null
+          leadership?: number | null
+          long_shots?: number | null
+          long_throws?: number | null
+          marking?: number | null
+          natural_fitness?: number | null
+          off_the_ball?: number | null
+          one_on_one?: number | null
+          pace?: number | null
+          passing?: number | null
+          penalties?: number | null
+          player_id?: string
+          positioning?: number | null
+          punching?: number | null
+          reflexes?: number | null
+          rushing_out?: number | null
+          shot_stopping?: number | null
+          stamina?: number | null
+          strength?: number | null
+          synced_at?: string | null
+          tackling?: number | null
+          teamwork?: number | null
+          technique?: number | null
+          throwing?: number | null
+          updated_at?: string
+          vision?: number | null
+          work_rate?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_attributes_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: true
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       player_physical_data: {
         Row: {
           body_fat_percentage: number | null
