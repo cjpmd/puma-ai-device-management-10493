@@ -61,3 +61,21 @@ export async function syncUserAccess() {
     return null;
   }
 }
+
+/**
+ * Full sync: clubs → teams → players (with photos) → attributes → events → user_access.
+ */
+export async function syncAll() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return { success: false, error: 'Not signed in' as const };
+  try {
+    const { data, error } = await supabase.functions.invoke('sync-external-data', {
+      body: { entity: 'all' },
+    });
+    if (error) throw error;
+    return { success: true, data };
+  } catch (e: any) {
+    console.error('syncAll failed:', e);
+    return { success: false, error: e?.message || 'Sync failed' };
+  }
+}
