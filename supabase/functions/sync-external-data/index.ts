@@ -129,6 +129,7 @@ Deno.serve(async (req) => {
               squad_number: player.squad_number,
               date_of_birth: player.date_of_birth || null,
               availability: player.availability || null,
+              expected_return_date: player.expected_return_date || player.return_date || null,
               photo_url: player.photo_url || null,
               synced_at: new Date().toISOString(),
             }, { onConflict: 'external_id' });

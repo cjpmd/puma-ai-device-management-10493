@@ -816,6 +816,7 @@ export type Database = {
           club_id: string | null
           created_at: string | null
           date_of_birth: string | null
+          expected_return_date: string | null
           external_id: string | null
           id: string
           name: string
@@ -832,6 +833,7 @@ export type Database = {
           club_id?: string | null
           created_at?: string | null
           date_of_birth?: string | null
+          expected_return_date?: string | null
           external_id?: string | null
           id?: string
           name: string
@@ -848,6 +850,7 @@ export type Database = {
           club_id?: string | null
           created_at?: string | null
           date_of_birth?: string | null
+          expected_return_date?: string | null
           external_id?: string | null
           id?: string
           name?: string
