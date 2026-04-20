@@ -134,7 +134,20 @@ Deno.serve(async (req) => {
             .eq('external_id', player.team_id)
             .single();
 
-          const { error } = await localSupabase
+    // ---- Players (and their attributes) ----
+    if (entity === 'players' || entity === 'attributes' || entity === 'all') {
+      const { data: externalPlayers, error: playersError } = await externalSupabase.from('players').select('*');
+      if (playersError) {
+        results.players.errors++;
+      } else if (externalPlayers) {
+        for (const player of externalPlayers) {
+          const { data: localTeam } = await localSupabase
+            .from('teams')
+            .select('id, club_id')
+            .eq('external_id', player.team_id)
+            .single();
+
+          const { data: upsertedPlayer, error } = await localSupabase
             .from('players')
             .upsert({
               external_id: player.id,
@@ -149,9 +162,40 @@ Deno.serve(async (req) => {
               expected_return_date: player.expected_return_date || player.return_date || null,
               photo_url: player.photo_url || null,
               synced_at: new Date().toISOString(),
-            }, { onConflict: 'external_id' });
-          if (error) results.players.errors++;
-          else results.players.updated++;
+            }, { onConflict: 'external_id' })
+            .select('id')
+            .single();
+
+          if (error) {
+            results.players.errors++;
+            continue;
+          }
+          results.players.updated++;
+
+          // Sync attributes (JSONB array on Origin Sports players.attributes)
+          const rawAttrs = player.attributes;
+          if (upsertedPlayer && Array.isArray(rawAttrs) && rawAttrs.length > 0) {
+            const flat: Record<string, number> = {};
+            for (const a of rawAttrs) {
+              if (!a || typeof a !== 'object') continue;
+              const id = String(a.id || '').toLowerCase();
+              const val = Number(a.value);
+              if (!ATTR_KEYS.has(id) || !Number.isFinite(val)) continue;
+              flat[id] = Math.max(1, Math.min(20, Math.round(val)));
+            }
+            if (Object.keys(flat).length > 0) {
+              const { error: attrErr } = await localSupabase
+                .from('player_attributes')
+                .upsert({
+                  player_id: upsertedPlayer.id,
+                  external_id: player.id,
+                  ...flat,
+                  synced_at: new Date().toISOString(),
+                }, { onConflict: 'player_id' });
+              if (attrErr) results.attributes.errors++;
+              else results.attributes.updated++;
+            }
+          }
         }
       }
     }
