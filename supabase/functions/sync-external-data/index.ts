@@ -48,9 +48,26 @@ Deno.serve(async (req) => {
       clubs: { inserted: 0, updated: 0, errors: 0 },
       teams: { inserted: 0, updated: 0, errors: 0 },
       players: { inserted: 0, updated: 0, errors: 0 },
+      attributes: { inserted: 0, updated: 0, errors: 0 },
       events: { inserted: 0, updated: 0, errors: 0 },
       user_access: { inserted: 0, updated: 0, errors: 0 },
     };
+
+    // Known FM-style attribute IDs from Origin Sports STANDARD_PLAYER_ATTRIBUTES.
+    const ATTR_KEYS = new Set([
+      // Technical
+      'corners','crossing','dribbling','finishing','first_touch','free_kicks','heading',
+      'long_shots','long_throws','marking','passing','penalties','tackling','technique',
+      // Mental
+      'aggression','anticipation','bravery','composure','concentration','decisions',
+      'determination','flair','leadership','off_the_ball','positioning','teamwork','vision','work_rate',
+      // Physical
+      'acceleration','agility','balance','jumping','natural_fitness','pace','stamina','strength',
+      // Goalkeeping
+      'aerial_reach','command_of_area','communication','cross_handling','distribution',
+      'eccentricity','footwork','handling','kicking','one_on_one','punching','reflexes',
+      'rushing_out','shot_stopping','throwing',
+    ]);
 
     // ---- Clubs ----
     if (entity === 'clubs' || entity === 'all') {
