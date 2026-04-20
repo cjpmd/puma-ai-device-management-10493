@@ -8,6 +8,7 @@ import { CreateMatchDialog } from '@/components/Matches/CreateMatchDialog';
 import { EventCard, type TeamEvent } from '@/components/Matches/EventCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+import { syncEvents } from '@/hooks/useUserTeams';
 
 
 const Matches = () => {
@@ -45,10 +46,8 @@ const Matches = () => {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const res = await supabase.functions.invoke('sync-external-data', {
-        body: { entity: 'events' },
-      });
-      if (res.error) throw new Error(res.error.message);
+      const res = await syncEvents();
+      if (!res.success) throw new Error(res.error);
       toast({ title: 'Events synced', description: `${res.data?.results?.events?.updated || 0} events updated` });
       fetchEvents();
     } catch (err: any) {

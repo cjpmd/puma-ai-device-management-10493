@@ -2,9 +2,8 @@ import { useState } from 'react';
 import { RefreshCw, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { syncAll, syncCore } from '@/hooks/useUserTeams';
 
 interface SyncStatusIndicatorProps {
   entity?: 'clubs' | 'teams' | 'players' | 'all';
@@ -19,22 +18,9 @@ const SyncStatusIndicator = ({ entity = 'all', showDetails = false }: SyncStatus
   const handleSync = async () => {
     try {
       setSyncing(true);
-      
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast({
-          title: "Authentication required",
-          description: "Please log in to sync data",
-          variant: "destructive",
-        });
-        return;
-      }
 
-      const { data, error } = await supabase.functions.invoke('sync-external-data', {
-        body: { entity },
-      });
-
-      if (error) throw error;
+      const result = entity === 'all' ? await syncAll() : await syncCore(entity);
+      if (!result.success) throw new Error(result.error);
 
       setLastSync(new Date());
       
