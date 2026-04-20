@@ -86,9 +86,19 @@ const Analysis = () => {
   const [bluetoothStatus, setBluetoothStatus] = useState<"connected" | "disconnected" | "searching">("disconnected");
   const [selectedClubId, setSelectedClubId] = useState<string | undefined>();
   const [selectedTeamId, setSelectedTeamId] = useState<string | undefined>();
+  const [showTeamPicker, setShowTeamPicker] = useState(false);
+  const { activeTeam } = useActiveTeam();
   const { toast } = useToast();
   const location = useLocation();
-  
+
+  // Auto-select team from Home/Profile choice
+  useEffect(() => {
+    if (activeTeam && !selectedTeamId) {
+      setSelectedTeamId(activeTeam.id);
+      if (activeTeam.club_id) setSelectedClubId(activeTeam.club_id);
+    }
+  }, [activeTeam, selectedTeamId]);
+
   // Extract session ID from URL query parameters if present
   useEffect(() => {
     const params = new URLSearchParams(location.search);
