@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
       user_access: { inserted: 0, updated: 0, errors: 0 },
     };
 
-    // Known FM-style attribute IDs from Origin Sports STANDARD_PLAYER_ATTRIBUTES.
+    // Known FM-style attribute keys (matches columns on player_attributes table)
     const ATTR_KEYS = new Set([
       // Technical
       'corners','crossing','dribbling','finishing','first_touch','free_kicks','heading',
@@ -68,6 +68,22 @@ Deno.serve(async (req) => {
       'eccentricity','footwork','handling','kicking','one_on_one','punching','reflexes',
       'rushing_out','shot_stopping','throwing',
     ]);
+
+    // Aliases for non-standard names some teams use
+    const ATTR_ALIASES: Record<string, string> = {
+      shooting: 'finishing',
+      shotstopping: 'shot_stopping',
+    };
+
+    const normaliseAttrKey = (raw: string): string | null => {
+      const s = raw.toLowerCase().trim()
+        .replace(/['']/g, '')
+        .replace(/[-\s]+/g, '_')
+        .replace(/[^a-z0-9_]/g, '');
+      if (ATTR_KEYS.has(s)) return s;
+      if (ATTR_ALIASES[s]) return ATTR_ALIASES[s];
+      return null;
+    };
 
     // ---- Clubs ----
     if (entity === 'clubs' || entity === 'all') {
