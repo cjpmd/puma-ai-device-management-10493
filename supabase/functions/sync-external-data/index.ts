@@ -27,39 +27,34 @@ Deno.serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    // Connect to external Football Central using service role key to bypass RLS
     const externalSupabase = createClient(
       Deno.env.get('EXTERNAL_SUPABASE_URL')!,
       Deno.env.get('EXTERNAL_SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // Read entity from query params OR request body
     const url = new URL(req.url);
     let entity = url.searchParams.get('entity') || 'all';
-    
+
     try {
       const body = await req.json();
       if (body?.entity) entity = body.entity;
     } catch {
-      // No body or invalid JSON, use query param
+      // no body
     }
 
-    console.log(`Starting sync for entity: ${entity}`);
+    console.log(`Starting sync for entity: ${entity} (user: ${user.email})`);
 
-    const results = {
+    const results: Record<string, { inserted: number; updated: number; errors: number }> = {
       clubs: { inserted: 0, updated: 0, errors: 0 },
       teams: { inserted: 0, updated: 0, errors: 0 },
       players: { inserted: 0, updated: 0, errors: 0 },
       events: { inserted: 0, updated: 0, errors: 0 },
+      user_access: { inserted: 0, updated: 0, errors: 0 },
     };
 
-    // Sync clubs
+    // ---- Clubs ----
     if (entity === 'clubs' || entity === 'all') {
-      console.log('Syncing clubs...');
-      const { data: externalClubs, error: clubsError } = await externalSupabase
-        .from('clubs')
-        .select('*');
-
+      const { data: externalClubs, error: clubsError } = await externalSupabase.from('clubs').select('*');
       if (clubsError) {
         console.error('Error fetching clubs:', clubsError);
         results.clubs.errors++;
@@ -73,31 +68,19 @@ Deno.serve(async (req) => {
               logo_url: club.logo_url || null,
               synced_at: new Date().toISOString(),
             }, { onConflict: 'external_id' });
-
-          if (error) {
-            console.error(`Error upserting club ${club.id}:`, error);
-            results.clubs.errors++;
-          } else {
-            results.clubs.updated++;
-          }
+          if (error) results.clubs.errors++;
+          else results.clubs.updated++;
         }
       }
-      console.log(`Clubs synced: ${results.clubs.updated} updated, ${results.clubs.errors} errors`);
     }
 
-    // Sync teams
+    // ---- Teams ----
     if (entity === 'teams' || entity === 'all') {
-      console.log('Syncing teams...');
-      const { data: externalTeams, error: teamsError } = await externalSupabase
-        .from('teams')
-        .select('*');
-
+      const { data: externalTeams, error: teamsError } = await externalSupabase.from('teams').select('*');
       if (teamsError) {
-        console.error('Error fetching teams:', teamsError);
         results.teams.errors++;
       } else if (externalTeams) {
         for (const team of externalTeams) {
-          // Look up local club by external_id matching the team's club_id
           const { data: localClub } = await localSupabase
             .from('clubs')
             .select('id')
@@ -115,27 +98,16 @@ Deno.serve(async (req) => {
               logo_url: team.logo_url || null,
               synced_at: new Date().toISOString(),
             }, { onConflict: 'external_id' });
-
-          if (error) {
-            console.error(`Error upserting team ${team.id}:`, error);
-            results.teams.errors++;
-          } else {
-            results.teams.updated++;
-          }
+          if (error) results.teams.errors++;
+          else results.teams.updated++;
         }
       }
-      console.log(`Teams synced: ${results.teams.updated} updated, ${results.teams.errors} errors`);
     }
 
-    // Sync players
+    // ---- Players ----
     if (entity === 'players' || entity === 'all') {
-      console.log('Syncing players...');
-      const { data: externalPlayers, error: playersError } = await externalSupabase
-        .from('players')
-        .select('*');
-
+      const { data: externalPlayers, error: playersError } = await externalSupabase.from('players').select('*');
       if (playersError) {
-        console.error('Error fetching players:', playersError);
         results.players.errors++;
       } else if (externalPlayers) {
         for (const player of externalPlayers) {
@@ -160,31 +132,19 @@ Deno.serve(async (req) => {
               photo_url: player.photo_url || null,
               synced_at: new Date().toISOString(),
             }, { onConflict: 'external_id' });
-
-          if (error) {
-            console.error(`Error upserting player ${player.id}:`, error);
-            results.players.errors++;
-          } else {
-            results.players.updated++;
-          }
+          if (error) results.players.errors++;
+          else results.players.updated++;
         }
       }
-      console.log(`Players synced: ${results.players.updated} updated, ${results.players.errors} errors`);
     }
 
-    // Sync events
+    // ---- Events ----
     if (entity === 'events' || entity === 'all') {
-      console.log('Syncing events...');
-      const { data: externalEvents, error: eventsError } = await externalSupabase
-        .from('events')
-        .select('*');
-
+      const { data: externalEvents, error: eventsError } = await externalSupabase.from('events').select('*');
       if (eventsError) {
-        console.error('Error fetching events:', eventsError);
         results.events.errors++;
       } else if (externalEvents) {
         for (const event of externalEvents) {
-          // Look up local team by external_id
           const { data: localTeam } = await localSupabase
             .from('teams')
             .select('id')
@@ -210,16 +170,136 @@ Deno.serve(async (req) => {
               notes: event.notes || null,
               synced_at: new Date().toISOString(),
             }, { onConflict: 'external_id' });
+          if (error) results.events.errors++;
+          else results.events.updated++;
+        }
+      }
+    }
 
-          if (error) {
-            console.error(`Error upserting event ${event.id}:`, error);
-            results.events.errors++;
-          } else {
-            results.events.updated++;
+    // ---- User access (team & club memberships for the signed-in user) ----
+    if (entity === 'user_access' || entity === 'all') {
+      const userEmail = user.email;
+      if (!userEmail) {
+        results.user_access.errors++;
+      } else {
+        // Find external user by email. Try common locations: profiles or auth.users via admin.
+        let externalUserId: string | null = null;
+
+        // Try a `profiles` table with email column
+        const { data: extProfile } = await externalSupabase
+          .from('profiles')
+          .select('id, user_id, email')
+          .eq('email', userEmail)
+          .maybeSingle();
+
+        if (extProfile) {
+          externalUserId = (extProfile.user_id as string) || (extProfile.id as string);
+        }
+
+        // Fallback: external auth admin lookup
+        if (!externalUserId) {
+          try {
+            const { data: usersList } = await externalSupabase.auth.admin.listUsers();
+            const match = usersList?.users?.find((u: { email?: string }) => u.email === userEmail);
+            if (match) externalUserId = match.id;
+          } catch (e) {
+            console.warn('External admin.listUsers not available:', e instanceof Error ? e.message : e);
+          }
+        }
+
+        if (!externalUserId) {
+          console.log(`No external user found for ${userEmail}`);
+        } else {
+          // Try common membership table names. We attempt a few patterns.
+          const tryFetch = async (table: string, userCol: string, idCol: string) => {
+            const { data, error } = await externalSupabase
+              .from(table)
+              .select('*')
+              .eq(userCol, externalUserId);
+            if (error) return null;
+            return data;
+          };
+
+          // user_teams
+          let teamMemberships =
+            (await tryFetch('user_teams', 'user_id', 'team_id')) ||
+            (await tryFetch('team_members', 'user_id', 'team_id')) ||
+            [];
+
+          for (const m of teamMemberships) {
+            const externalTeamId = m.team_id;
+            const role = m.role || 'member';
+            const { data: localTeam } = await localSupabase
+              .from('teams')
+              .select('id')
+              .eq('external_id', externalTeamId)
+              .maybeSingle();
+            if (!localTeam) continue;
+
+            const { error } = await localSupabase
+              .from('user_team_access')
+              .upsert({
+                user_id: user.id,
+                team_id: localTeam.id,
+                role,
+                external_user_id: externalUserId,
+                external_team_id: externalTeamId,
+                synced_at: new Date().toISOString(),
+              }, { onConflict: 'user_id,team_id' });
+            if (error) results.user_access.errors++;
+            else results.user_access.updated++;
+          }
+
+          // user_clubs
+          let clubMemberships =
+            (await tryFetch('user_clubs', 'user_id', 'club_id')) ||
+            (await tryFetch('club_members', 'user_id', 'club_id')) ||
+            [];
+
+          for (const m of clubMemberships) {
+            const externalClubId = m.club_id;
+            const role = m.role || 'member';
+            const { data: localClub } = await localSupabase
+              .from('clubs')
+              .select('id')
+              .eq('external_id', externalClubId)
+              .maybeSingle();
+            if (!localClub) continue;
+
+            const { error } = await localSupabase
+              .from('user_club_access')
+              .upsert({
+                user_id: user.id,
+                club_id: localClub.id,
+                role,
+                external_user_id: externalUserId,
+                external_club_id: externalClubId,
+                synced_at: new Date().toISOString(),
+              }, { onConflict: 'user_id,club_id' });
+            if (error) results.user_access.errors++;
+            else results.user_access.updated++;
+          }
+
+          // Fallback: if no explicit memberships, give the user access to every synced team.
+          // (Useful while membership tables aren't yet wired.)
+          if (results.user_access.updated === 0) {
+            const { data: allTeams } = await localSupabase.from('teams').select('id');
+            for (const t of allTeams || []) {
+              const { error } = await localSupabase
+                .from('user_team_access')
+                .upsert({
+                  user_id: user.id,
+                  team_id: t.id,
+                  role: 'member',
+                  external_user_id: externalUserId,
+                  synced_at: new Date().toISOString(),
+                }, { onConflict: 'user_id,team_id' });
+              if (error) results.user_access.errors++;
+              else results.user_access.updated++;
+            }
           }
         }
       }
-      console.log(`Events synced: ${results.events.updated} updated, ${results.events.errors} errors`);
     }
 
     return new Response(

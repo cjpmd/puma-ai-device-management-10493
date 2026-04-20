@@ -55,6 +55,14 @@ const Auth = () => {
 
       if (error) throw error;
 
+      // Trigger Origin Sports user-access sync (non-blocking)
+      try {
+        const { syncUserAccess } = await import('@/hooks/useUserTeams');
+        syncUserAccess();
+      } catch (e) {
+        console.warn('user_access sync failed:', e);
+      }
+
       navigate('/');
     } catch (error: any) {
       console.error('Login error:', error);

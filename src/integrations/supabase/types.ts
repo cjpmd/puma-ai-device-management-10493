@@ -1287,6 +1287,94 @@ export type Database = {
           },
         ]
       }
+      user_club_access: {
+        Row: {
+          club_id: string
+          created_at: string
+          external_club_id: string | null
+          external_user_id: string | null
+          id: string
+          role: string
+          synced_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          club_id: string
+          created_at?: string
+          external_club_id?: string | null
+          external_user_id?: string | null
+          id?: string
+          role?: string
+          synced_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          club_id?: string
+          created_at?: string
+          external_club_id?: string | null
+          external_user_id?: string | null
+          id?: string
+          role?: string
+          synced_at?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_club_access_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_team_access: {
+        Row: {
+          created_at: string
+          external_team_id: string | null
+          external_user_id: string | null
+          id: string
+          role: string
+          synced_at: string
+          team_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          external_team_id?: string | null
+          external_user_id?: string | null
+          id?: string
+          role?: string
+          synced_at?: string
+          team_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          external_team_id?: string | null
+          external_user_id?: string | null
+          id?: string
+          role?: string
+          synced_at?: string
+          team_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_team_access_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
