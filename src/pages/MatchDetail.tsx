@@ -69,7 +69,7 @@ const MatchDetail = () => {
         </div>
 
         {/* Camera QR Setup */}
-        <Card className="border-emerald-200">
+        <Card className="glass border-white/10">
           <CardHeader><CardTitle className="text-base">📱 Camera Setup</CardTitle></CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">Generate QR codes for camera phones to scan. No login required.</p>
