@@ -196,20 +196,21 @@ Deno.serve(async (req) => {
           for (const a of rawAttrs) {
             if (!a || typeof a !== 'object') continue;
             // Origin Sports stores: { id, name, group, value, enabled }
-            // id may be 'aerial_reach' or sometimes the human name. Normalise both.
-            const rawId = String(a.id || a.name || '').toLowerCase().trim().replace(/\s+/g, '_');
+            // id can be ad-hoc (e.g. "tech-0"); name is human-readable ("First Touch")
+            // Try both — name first since id may be positional
             const val = Number(a.value);
             if (!Number.isFinite(val)) continue;
-            // Scale 1-10 (Origin Sports) -> store as-is (column allows 1-20 too)
-            const clamped = Math.max(1, Math.min(20, Math.round(val)));
-            if (ATTR_KEYS.has(rawId)) {
-              flat[rawId] = clamped;
-            }
+            const enabled = a.enabled !== false;
+            if (!enabled) continue;
+
+            const key = normaliseAttrKey(String(a.name || '')) || normaliseAttrKey(String(a.id || ''));
+            if (!key) continue;
+            flat[key] = Math.max(1, Math.min(20, Math.round(val)));
           }
 
           if (Object.keys(flat).length === 0) {
             if (results.attributes.errors === 0) {
-              console.log(`[attrs] No attrs matched ATTR_KEYS for ${player.name}. First attr id was:`, rawAttrs[0]?.id, 'name:', rawAttrs[0]?.name);
+              console.log(`[attrs] No attrs matched for ${player.name}. Sample:`, JSON.stringify(rawAttrs.slice(0, 3)));
             }
             results.attributes.errors++;
             continue;
