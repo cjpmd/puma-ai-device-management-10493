@@ -1,59 +1,51 @@
 
 
-## Plan — Sync, navbar, status bar, Ultra fixes
+## Plan — fixtures, injured filter, Ultra cards
 
-### 1. Make "Sync" actually work + sync photos
-**Problem:** the "Sync" label in Profile is just text — only the surrounding Glass div has an onClick, and it only syncs `user_access` (teams/clubs), not players/photos/attributes/events.
-
-**Fix:**
-- Turn the Sync action into a real tappable Glass button with clear states (`Syncing…`, success toast with counts, error toast).
-- Run a **full sync** (`entity=all`) so we pull clubs → teams → players (with `photo_url`) → attributes → events → user_access in one go.
-- Render `photo_url` in player avatars on Squad list + Squad detail (currently we only show initials). Fall back to initials when null.
-- Add a tiny "Last synced 2 min ago" line under the Sync button so it's obvious it ran.
-
-The sync function already maps `photo_url` from external `players.photo_url`, so no edge-function changes needed for images themselves — we just trigger the right entity and use the field in the UI.
-
-### 2. Persistent bottom nav across all screens
-The TabBar is already on every iOS shell screen, but legacy pages (`/analysis`, `/matches`, `/devices`, `/ml-training`, `/pitch-calibration`, `/match/:id`) have **no TabBar at all** — when the user taps "Open full Ultra analysis" they lose the nav.
+### 1. Past fixtures: pull scores from Origin Sports
+**Diagnosis:** team_events rows exist (12+ past matches for the active team), but every `matches.home_score` / `matches.away_score` is `NULL`, and most events have `match_id = NULL`. So the Home screen renders "—" instead of "1‑0 W".
 
 **Fix:**
-- Create `<MobileNavShell>` wrapper that renders any legacy page content above a fixed-position TabBar that routes back to the iOS shell tabs (Home → `/`, Squad → `/`, Matches → `/matches`, Ultra → `/analysis`, Profile → `/`).
-- Wrap each legacy route in `App.tsx` with the shell so the bottom nav is always present.
-- Add bottom padding (`paddingBottom: 100px`) to legacy page roots so content doesn't hide behind the TabBar.
+- **`sync-external-events`** — extend the events sync to:
+  - Read `home_score` / `away_score` (and any `result` / `our_score` / `opponent_score` aliases) from the external Origin Sports `events` / `matches` tables.
+  - For past events with scores, upsert a `matches` row (or update the linked one) with `home_score`, `away_score`, `kickoff_at`, then set `team_events.match_id` to that row.
+  - Also write the scores directly onto a new lightweight pair of columns on `team_events` (`home_score int, away_score int`) so we don't need a join — simpler and faster on the Home screen.
+- **Migration** — add nullable `home_score`, `away_score` to `team_events`.
+- **HomeScreen** — read scores directly from `team_events` (drop the `matches` join). If still null → show "Result pending" pill instead of "—".
+- **Display** — when result exists, render it like the Origin Sports screenshot: small score `1-0` then a tiny coloured `W`/`D`/`L` chip on the right (currently we cram them together).
 
-### 3. Remove the iOS time/signal/wifi/battery row
-**Fix:** delete the `<IOSStatusBar>` from all 6 iOS screens (HomeScreen, SquadScreen × 2, MatchesScreen, ProfileScreen, UltraScreen, FormationScreen) and add a small top spacer (`paddingTop: env(safe-area-inset-top)` so the notch is respected on the real device but no fake icons render). Keep the `StatusBar.tsx` file but stop using it.
+### 2. Injured filter on Squad screen — show real injured players
+**Diagnosis:** real data is correct (Luca Stott / Fergus Cooper = `amber`, Rory Beattie = `red`). The Home count is right. The Squad Injured tab is empty because its filter looks for the strings `'injured'` / `'unavailable'`, never `red` / `amber`.
 
-### 4. Ultra Analysis (`/analysis`) page — three fixes
-**a. Background:** page uses `wallpaper-aurora` ✓ but the Tabs/Cards inside still render with light `bg-card` defaults, so big white panels appear over the dark wallpaper (your screenshot 1). Fix by:
-- Wrapping all top-level cards in `.glass` (semi-transparent dark glass on aurora)
-- Setting Tabs list background to `bg-white/5 border border-white/10`
-- Override MetricCard to dark variant when on aurora (text white, bg `bg-white/5`)
+**Fix (one-line in `SquadScreen.tsx`):**
+- Change the Injured filter to: `['red','amber','injured','unavailable'].includes(...)`.
+- Change the Available filter to match by `green` or empty/`available`.
+- Show a small coloured pill (`AMBER` / `RED`) next to each player row in Injured view, mirroring the Home screen style.
 
-**b. Team auto-selection:** Analysis page has its own `ClubSelector` + `TeamSelector` requiring re-selection (your screenshot 2). Fix:
-- Read `useActiveTeam()` on mount and pre-fill `selectedClubId` + `selectedTeamId` with the active team's `club_id` / `id`
-- Hide the selectors behind a small "Change team" link if already set; show full selectors only if no active team
+### 3. Ultra Analysis — Overall Session cards rendering as white blocks
+**Diagnosis:** `MetricCard` and `PerformanceChart` hardcode `bg-white shadow-lg`, so they punch white panels through the aurora wallpaper.
 
-**c. Header tidy-up:** currently shows two stacked headers ("Performance Analysis" + "Data in sync with database" + Club/Team labels + 6 buttons in a row that wrap awkwardly). Consolidate into:
-- Single page header: `Ultra Analysis` (h1) + small subtext `{teamName} · Live` (or session badge)
-- Move Sync / Bluetooth / Share / Manage Devices / ML Training into a single overflow `…` Glass menu (icon-only on mobile, dropdown on tap)
-- Keep the Live/Historical session selector visible (primary control)
+**Fix:**
+- **`MetricCard.tsx`** — replace `bg-white shadow-lg` with `glass border border-white/10 text-white`, muted text → `text-white/60`.
+- **`PerformanceChart.tsx`** — same glass treatment + recharts grid stroke `rgba(255,255,255,0.08)`, axis tick fill `rgba(255,255,255,0.55)`, tooltip dark.
+- **`Tabs` list** — switch to `bg-white/5 border border-white/10`; active trigger `bg-white/15 text-white`.
+- **`PlayerMovementMap`** wrapper — wrap in same glass card.
 
-### 5. Files
+These components are also used elsewhere; the new glass styling is theme-agnostic (works on light pages too because translucent), so no regressions expected, but I'll spot-check Index/MLTraining when wired.
 
+### Files
 **Edit**
-- `src/pages/ios/ProfileScreen.tsx` — full sync + last-synced label + remove status bar
-- `src/pages/ios/HomeScreen.tsx`, `SquadScreen.tsx`, `MatchesScreen.tsx`, `UltraScreen.tsx`, `FormationScreen.tsx` — remove `<IOSStatusBar />`, add safe-area top spacer
-- `src/pages/ios/SquadScreen.tsx` — render `photo_url` in player avatars (list + detail hero)
-- `src/pages/Analysis.tsx` — auto-select active team, glass cards on dark wallpaper, consolidate header into overflow menu, fix card backgrounds
-- `src/App.tsx` — wrap legacy routes in `MobileNavShell`
+- `src/pages/ios/HomeScreen.tsx` — read scores from `team_events`, restyle result chip
+- `src/pages/ios/SquadScreen.tsx` — fix Available/Injured filters, add availability pill
+- `src/pages/Analysis.tsx` — Tabs list dark styling
+- `src/components/MetricCard.tsx` — glass dark variant
+- `src/components/PerformanceChart.tsx` — glass dark variant + recharts theming
+- `supabase/functions/sync-external-events/index.ts` — pull `home_score`, `away_score`, write to `team_events` (and `matches` if a row exists)
 
 **New**
-- `src/components/ios/MobileNavShell.tsx` — fixed bottom TabBar that maps tabs to legacy routes & back to `/` for shell tabs
+- Migration: `ALTER TABLE team_events ADD COLUMN home_score int, ADD COLUMN away_score int;`
 
-**No backend / migration changes needed** — `photo_url` already exists and is already mapped by `sync-external-data`.
-
-### Out of scope (next pass)
-- Restyling individual MLTraining / Devices / MatchDetail cards on dark wallpaper (header + nav fixed first; deeper card audit follow-up)
-- Pulling photo binaries into Supabase Storage (currently we use the external URL; only matters if Origin Sports hides them later)
+### Out of scope
+- Backfilling historic match-result reasoning (red cards, scorers) — only score + outcome for now
+- Recolouring MLTraining / Devices cards to glass (separate pass)
 
