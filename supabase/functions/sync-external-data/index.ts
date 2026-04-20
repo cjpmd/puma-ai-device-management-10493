@@ -161,27 +161,57 @@ Deno.serve(async (req) => {
 
           // Sync attributes (JSONB array on Origin Sports players.attributes)
           const rawAttrs = player.attributes;
-          if (upsertedPlayer && Array.isArray(rawAttrs) && rawAttrs.length > 0) {
-            const flat: Record<string, number> = {};
-            for (const a of rawAttrs) {
-              if (!a || typeof a !== 'object') continue;
-              const id = String(a.id || '').toLowerCase();
-              const val = Number(a.value);
-              if (!ATTR_KEYS.has(id) || !Number.isFinite(val)) continue;
-              flat[id] = Math.max(1, Math.min(20, Math.round(val)));
+          if (!upsertedPlayer) continue;
+
+          if (!Array.isArray(rawAttrs) || rawAttrs.length === 0) {
+            // Log first time we see no attrs so we can debug
+            if (results.attributes.updated === 0 && results.attributes.errors === 0) {
+              console.log(`[attrs] Player ${player.name} has no attributes (raw=${JSON.stringify(rawAttrs)?.slice(0,200)})`);
             }
-            if (Object.keys(flat).length > 0) {
-              const { error: attrErr } = await localSupabase
-                .from('player_attributes')
-                .upsert({
-                  player_id: upsertedPlayer.id,
-                  external_id: player.id,
-                  ...flat,
-                  synced_at: new Date().toISOString(),
-                }, { onConflict: 'player_id' });
-              if (attrErr) results.attributes.errors++;
-              else results.attributes.updated++;
+            continue;
+          }
+
+          // Log first player's raw attrs once
+          if (results.attributes.updated === 0 && results.attributes.errors === 0) {
+            console.log(`[attrs] Sample raw attrs for ${player.name}:`, JSON.stringify(rawAttrs).slice(0, 500));
+          }
+
+          const flat: Record<string, number> = {};
+          for (const a of rawAttrs) {
+            if (!a || typeof a !== 'object') continue;
+            // Origin Sports stores: { id, name, group, value, enabled }
+            // id may be 'aerial_reach' or sometimes the human name. Normalise both.
+            const rawId = String(a.id || a.name || '').toLowerCase().trim().replace(/\s+/g, '_');
+            const val = Number(a.value);
+            if (!Number.isFinite(val)) continue;
+            // Scale 1-10 (Origin Sports) -> store as-is (column allows 1-20 too)
+            const clamped = Math.max(1, Math.min(20, Math.round(val)));
+            if (ATTR_KEYS.has(rawId)) {
+              flat[rawId] = clamped;
             }
+          }
+
+          if (Object.keys(flat).length === 0) {
+            if (results.attributes.errors === 0) {
+              console.log(`[attrs] No attrs matched ATTR_KEYS for ${player.name}. First attr id was:`, rawAttrs[0]?.id, 'name:', rawAttrs[0]?.name);
+            }
+            results.attributes.errors++;
+            continue;
+          }
+
+          const { error: attrErr } = await localSupabase
+            .from('player_attributes')
+            .upsert({
+              player_id: upsertedPlayer.id,
+              external_id: player.id,
+              ...flat,
+              synced_at: new Date().toISOString(),
+            }, { onConflict: 'player_id' });
+          if (attrErr) {
+            console.error(`[attrs] Upsert error for ${player.name}:`, attrErr.message);
+            results.attributes.errors++;
+          } else {
+            results.attributes.updated++;
           }
         }
       }
