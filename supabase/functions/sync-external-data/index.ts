@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2?target=deno";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,10 +46,7 @@ Deno.serve(async (req) => {
 
     console.log(`Starting sync for entity: ${entity} (user: ${user.email})`);
 
-    const results: Record<
-      string,
-      { inserted: number; updated: number; errors: number }
-    > = {
+    const results = {
       clubs: { inserted: 0, updated: 0, errors: 0 },
       teams: { inserted: 0, updated: 0, errors: 0 },
       players: { inserted: 0, updated: 0, errors: 0 },
@@ -118,12 +115,12 @@ Deno.serve(async (req) => {
     ]);
 
     // Aliases for non-standard names some teams use
-    const ATTR_ALIASES: Record<string, string> = {
+    const ATTR_ALIASES = {
       shooting: "finishing",
       shotstopping: "shot_stopping",
     };
 
-    const normaliseAttrKey = (raw: string): string | null => {
+    const normaliseAttrKey = (raw) => {
       const s = raw.toLowerCase().trim()
         .replace(/['']/g, "")
         .replace(/[-\s]+/g, "_")
