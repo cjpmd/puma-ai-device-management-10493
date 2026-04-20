@@ -5,6 +5,23 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function hmacSha256(key: Uint8Array, message: string): Promise<ArrayBuffer> {
+  return crypto.subtle.importKey("raw", key as BufferSource, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+    .then((k) => crypto.subtle.sign("HMAC", k, new TextEncoder().encode(message)));
+}
+
+async function getSignatureKey(key: string, dateStamp: string, region: string, service: string) {
+  const kDate = await hmacSha256(new TextEncoder().encode("AWS4" + key), dateStamp);
+  const kRegion = await hmacSha256(new Uint8Array(kDate), region);
+  const kService = await hmacSha256(new Uint8Array(kRegion), service);
+  const kSigning = await hmacSha256(new Uint8Array(kService), "aws4_request");
+  return new Uint8Array(kSigning);
+}
+
+function toHex(buffer: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function fetchMetadata(metadataPath: string): Promise<Record<string, any> | null> {
   try {
     const endpoint = Deno.env.get("WASABI_ENDPOINT")!;
@@ -17,7 +34,6 @@ async function fetchMetadata(metadataPath: string): Promise<Record<string, any> 
     const now = new Date();
     const dateStamp = now.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
     const shortDate = dateStamp.substring(0, 8);
-    const { createHmac } = await import("https://deno.land/std@0.177.0/node/crypto.ts");
 
     const method = "GET";
     const host = `${bucket}.${endpoint.replace("https://", "")}`;
@@ -34,11 +50,8 @@ async function fetchMetadata(metadataPath: string): Promise<Record<string, any> 
     ).map(b => b.toString(16).padStart(2, "0")).join("");
     const stringToSign = `${algorithm}\n${dateStamp}\n${credentialScope}\n${canonicalRequestHash}`;
 
-    const kDate = createHmac("sha256", encoder.encode(`AWS4${secretKey}`)).update(shortDate).digest();
-    const kRegion = createHmac("sha256", kDate).update(region).digest();
-    const kService = createHmac("sha256", kRegion).update("s3").digest();
-    const kSigning = createHmac("sha256", kService).update("aws4_request").digest();
-    const signature = createHmac("sha256", kSigning).update(stringToSign).digest("hex");
+    const signingKey = await getSignatureKey(secretKey, shortDate, region, "s3");
+    const signature = toHex(await hmacSha256(signingKey, stringToSign));
     const authHeader = `${algorithm} Credential=${accessKey}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
     const res = await fetch(url, {
@@ -178,6 +191,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ received: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+    const msg = error instanceof Error ? error.message : String(error);
+    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: corsHeaders });
   }
 });

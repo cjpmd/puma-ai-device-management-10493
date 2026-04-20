@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 function hmacSha256(key: Uint8Array, message: string): Promise<ArrayBuffer> {
-  return crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+  return crypto.subtle.importKey("raw", key as BufferSource, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
     .then((k) => crypto.subtle.sign("HMAC", k, new TextEncoder().encode(message)));
 }
 
@@ -151,6 +151,7 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
+    const msg = error instanceof Error ? error.message : String(error);
+    return new Response(JSON.stringify({ error: msg }), { status: 500, headers: corsHeaders });
   }
 });

@@ -5,10 +5,10 @@ import { Settings, MapPin } from 'lucide-react';
 
 const Devices = () => {
   return (
-    <div className="min-h-screen bg-background p-8">
+    <div className="min-h-screen wallpaper-twilight p-8">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Device Management</h1>
+          <h1 className="text-3xl font-bold text-white">Device Management</h1>
           <div className="flex gap-4">
             <Link to="/pitch-calibration">
               <Button variant="outline">

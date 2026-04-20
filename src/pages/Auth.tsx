@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +18,7 @@ const Auth = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -49,14 +48,13 @@ const Auth = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
 
-      // If sign in successful, navigate to home
       navigate('/');
     } catch (error: any) {
       console.error('Login error:', error);
@@ -71,25 +69,20 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-emerald-50 to-green-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex flex-col items-center justify-center wallpaper-dawn py-12 px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md text-center mb-8">
-        <img 
-          src="/lovable-uploads/bf92a61b-cacd-463a-a597-0deee3ade844.png" 
-          alt="Puma-AI Logo" 
-          className="mx-auto h-24 mb-4"
-        />
-        <h1 className="text-4xl font-bold text-emerald-700 mb-2">Puma-AI</h1>
-        <h2 className="text-2xl font-medium text-emerald-600">Performance Management</h2>
+        <h1 className="text-4xl font-bold text-white mb-2">Origin Sports Performance</h1>
+        <h2 className="text-lg font-medium text-white/70">Performance Management Platform</h2>
       </div>
-      
-      <Card className="w-full max-w-md border-emerald-100 shadow-lg">
-        <CardHeader className="bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-t-lg">
-          <CardTitle className="text-center">Welcome</CardTitle>
-          <CardDescription className="text-emerald-50">
+
+      <Card className="w-full max-w-md glass border-white/10 shadow-2xl">
+        <CardHeader>
+          <CardTitle className="text-center text-white">Welcome</CardTitle>
+          <CardDescription className="text-center text-white/70">
             Sign in to your account or create a new one
           </CardDescription>
         </CardHeader>
-        <CardContent className="pt-6">
+        <CardContent className="pt-2">
           <Tabs defaultValue="signin" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Sign In</TabsTrigger>
@@ -97,29 +90,23 @@ const Auth = () => {
             </TabsList>
             <TabsContent value="signin">
               <form onSubmit={handleSignIn} className="space-y-4 mt-4">
-                <div>
-                  <Input
-                    type="email"
-                    placeholder="Email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="border-emerald-200 focus:border-emerald-400"
-                  />
-                </div>
-                <div>
-                  <Input
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="border-emerald-200 focus:border-emerald-400"
-                  />
-                </div>
-                <Button 
-                  type="submit" 
-                  className="w-full bg-emerald-600 hover:bg-emerald-700" 
+                <Input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <Button
+                  type="submit"
+                  className="w-full"
                   disabled={loading}
                 >
                   {loading ? 'Loading...' : 'Sign In'}
@@ -128,29 +115,23 @@ const Auth = () => {
             </TabsContent>
             <TabsContent value="signup">
               <form onSubmit={handleSignUp} className="space-y-4 mt-4">
-                <div>
-                  <Input
-                    type="email"
-                    placeholder="Email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="border-emerald-200 focus:border-emerald-400"
-                  />
-                </div>
-                <div>
-                  <Input
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="border-emerald-200 focus:border-emerald-400"
-                  />
-                </div>
-                <Button 
-                  type="submit" 
-                  className="w-full bg-emerald-600 hover:bg-emerald-700" 
+                <Input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <Button
+                  type="submit"
+                  className="w-full"
                   disabled={loading}
                 >
                   {loading ? 'Loading...' : 'Sign Up'}
@@ -159,7 +140,7 @@ const Auth = () => {
             </TabsContent>
           </Tabs>
         </CardContent>
-        <CardFooter className="text-center text-sm text-muted-foreground">
+        <CardFooter className="text-center text-xs text-white/50 justify-center">
           Powered by advanced analytics and machine learning
         </CardFooter>
       </Card>

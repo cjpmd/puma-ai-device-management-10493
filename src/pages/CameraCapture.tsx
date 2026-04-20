@@ -302,7 +302,7 @@ const CameraCapture = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4 safe-top safe-bottom safe-x flex flex-col overflow-x-hidden">
+    <div className="min-h-screen wallpaper-twilight p-4 safe-top safe-bottom safe-x flex flex-col overflow-x-hidden text-white">
       {/* Header */}
       <div className="text-center mb-4 pt-2">
         <Badge variant="secondary" className="text-base px-4 py-1 mb-3">
