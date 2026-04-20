@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { RefreshCw, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { syncAll, syncCore } from '@/hooks/useUserTeams';
 
@@ -19,16 +18,6 @@ const SyncStatusIndicator = ({ entity = 'all', showDetails = false }: SyncStatus
   const handleSync = async () => {
     try {
       setSyncing(true);
-      
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast({
-          title: "Authentication required",
-          description: "Please log in to sync data",
-          variant: "destructive",
-        });
-        return;
-      }
 
       const result = entity === 'all' ? await syncAll() : await syncCore(entity);
       if (!result.success) throw new Error(result.error);

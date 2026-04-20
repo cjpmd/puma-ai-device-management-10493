@@ -105,9 +105,9 @@ export async function syncAll() {
       success: true,
       data: {
         results: {
-          ...(core?.results || {}),
-          ...(events?.results || {}),
-          ...(access?.results || {}),
+          ...core?.results,
+          ...events?.results,
+          ...access?.results,
         },
       },
     };
