@@ -6,7 +6,7 @@ import MetricCard from "@/components/MetricCard";
 import PerformanceChart from "@/components/PerformanceChart";
 import PlayerMovementMap from "@/components/PlayerMovementMap";
 import DeviceManager from "@/components/DeviceManager";
-import VideoAnalysisTab from "@/components/VideoAnalysisTab";
+import VideoAnalysisTab from "@/components/VideoAnalysis/VideoAnalysisTab";
 import IndividualPlayerTab from "@/components/Analysis/IndividualPlayerTab";
 import GroupSelectionTab from "@/components/Analysis/GroupSelectionTab";
 import BiometricsTab from "@/components/Analysis/BiometricsTab";
