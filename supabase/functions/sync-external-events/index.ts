@@ -49,6 +49,19 @@ Deno.serve(async (req) => {
     } else {
       for (const event of externalEvents || []) {
         const { data: localTeam } = await localSupabase.from("teams").select("id").eq("external_id", event.team_id).single();
+
+        // Pull scores from any of the common alias columns Origin Sports may use
+        const homeScore =
+          event.home_score ??
+          (event.is_home ? event.our_score : event.opponent_score) ??
+          (event.is_home ? event.team_score : event.opponent_score) ??
+          null;
+        const awayScore =
+          event.away_score ??
+          (event.is_home ? event.opponent_score : event.our_score) ??
+          (event.is_home ? event.opponent_score : event.team_score) ??
+          null;
+
         const { error: upsertError } = await localSupabase.from("team_events").upsert({
           external_id: event.id,
           team_id: localTeam?.id || null,
@@ -64,6 +77,8 @@ Deno.serve(async (req) => {
           game_format: event.game_format || null,
           game_duration: event.game_duration || null,
           notes: event.notes || null,
+          home_score: typeof homeScore === "number" ? homeScore : null,
+          away_score: typeof awayScore === "number" ? awayScore : null,
           synced_at: new Date().toISOString(),
         }, { onConflict: "external_id" });
         if (upsertError) results.events.errors++;
