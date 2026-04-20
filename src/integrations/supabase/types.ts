@@ -737,22 +737,23 @@ export type Database = {
           concentration: number | null
           corners: number | null
           created_at: string
+          cross_handling: number | null
           crossing: number | null
           decisions: number | null
           determination: number | null
+          distribution: number | null
           dribbling: number | null
           eccentricity: number | null
           external_id: string | null
           finishing: number | null
           first_touch: number | null
           flair: number | null
+          footwork: number | null
           free_kicks: number | null
-          gk_first_touch: number | null
-          gk_passing: number | null
           handling: number | null
           heading: number | null
           id: string
-          jumping_reach: number | null
+          jumping: number | null
           kicking: number | null
           leadership: number | null
           long_shots: number | null
@@ -760,7 +761,7 @@ export type Database = {
           marking: number | null
           natural_fitness: number | null
           off_the_ball: number | null
-          one_on_ones: number | null
+          one_on_one: number | null
           pace: number | null
           passing: number | null
           penalties: number | null
@@ -769,6 +770,7 @@ export type Database = {
           punching: number | null
           reflexes: number | null
           rushing_out: number | null
+          shot_stopping: number | null
           stamina: number | null
           strength: number | null
           synced_at: string | null
@@ -794,22 +796,23 @@ export type Database = {
           concentration?: number | null
           corners?: number | null
           created_at?: string
+          cross_handling?: number | null
           crossing?: number | null
           decisions?: number | null
           determination?: number | null
+          distribution?: number | null
           dribbling?: number | null
           eccentricity?: number | null
           external_id?: string | null
           finishing?: number | null
           first_touch?: number | null
           flair?: number | null
+          footwork?: number | null
           free_kicks?: number | null
-          gk_first_touch?: number | null
-          gk_passing?: number | null
           handling?: number | null
           heading?: number | null
           id?: string
-          jumping_reach?: number | null
+          jumping?: number | null
           kicking?: number | null
           leadership?: number | null
           long_shots?: number | null
@@ -817,7 +820,7 @@ export type Database = {
           marking?: number | null
           natural_fitness?: number | null
           off_the_ball?: number | null
-          one_on_ones?: number | null
+          one_on_one?: number | null
           pace?: number | null
           passing?: number | null
           penalties?: number | null
@@ -826,6 +829,7 @@ export type Database = {
           punching?: number | null
           reflexes?: number | null
           rushing_out?: number | null
+          shot_stopping?: number | null
           stamina?: number | null
           strength?: number | null
           synced_at?: string | null
@@ -851,22 +855,23 @@ export type Database = {
           concentration?: number | null
           corners?: number | null
           created_at?: string
+          cross_handling?: number | null
           crossing?: number | null
           decisions?: number | null
           determination?: number | null
+          distribution?: number | null
           dribbling?: number | null
           eccentricity?: number | null
           external_id?: string | null
           finishing?: number | null
           first_touch?: number | null
           flair?: number | null
+          footwork?: number | null
           free_kicks?: number | null
-          gk_first_touch?: number | null
-          gk_passing?: number | null
           handling?: number | null
           heading?: number | null
           id?: string
-          jumping_reach?: number | null
+          jumping?: number | null
           kicking?: number | null
           leadership?: number | null
           long_shots?: number | null
@@ -874,7 +879,7 @@ export type Database = {
           marking?: number | null
           natural_fitness?: number | null
           off_the_ball?: number | null
-          one_on_ones?: number | null
+          one_on_one?: number | null
           pace?: number | null
           passing?: number | null
           penalties?: number | null
@@ -883,6 +888,7 @@ export type Database = {
           punching?: number | null
           reflexes?: number | null
           rushing_out?: number | null
+          shot_stopping?: number | null
           stamina?: number | null
           strength?: number | null
           synced_at?: string | null
