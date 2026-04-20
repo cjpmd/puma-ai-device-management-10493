@@ -1,5 +1,5 @@
-import React from 'react';
-import { Glass, GlassIconBtn } from '@/components/ios/Glass';
+import React, { useEffect, useState } from 'react';
+import { Glass } from '@/components/ios/Glass';
 import { TabBar } from '@/components/ios/TabBar';
 import { Avatar } from '@/components/ios/Avatar';
 import { Rings } from '@/components/ios/Rings';
@@ -7,6 +7,8 @@ import { Sparkline } from '@/components/ios/Sparkline';
 import { SectionHeader } from '@/components/ios/SectionHeader';
 import { IOSStatusBar } from '@/components/ios/StatusBar';
 import { T, tType, Wallpapers } from '@/lib/ios-tokens';
+import { useActiveTeam } from '@/hooks/useActiveTeam';
+import { supabase } from '@/integrations/supabase/client';
 
 function RingStat({ color, label, value, unit }: { color: string; label: string; value: string; unit: string }) {
   return (
@@ -26,23 +28,66 @@ interface HomeScreenProps {
   onTabChange?: (tab: number) => void;
 }
 
+interface NextEvent {
+  title: string;
+  date: string;
+  start_time: string | null;
+  is_home: boolean | null;
+  opponent: string | null;
+  event_type: string;
+}
+
 export function HomeScreen({ onTabChange }: HomeScreenProps) {
+  const { activeTeam, teams, loading } = useActiveTeam();
+  const [nextEvent, setNextEvent] = useState<NextEvent | null>(null);
+  const [userInitials, setUserInitials] = useState('OS');
+
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.email) {
+        const parts = user.email.split('@')[0];
+        setUserInitials(parts.slice(0, 2).toUpperCase());
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!activeTeam) return;
+    (async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const { data } = await supabase
+        .from('team_events')
+        .select('title, date, start_time, is_home, opponent, event_type')
+        .eq('team_id', activeTeam.id)
+        .gte('date', today)
+        .order('date', { ascending: true })
+        .limit(1);
+      setNextEvent(data?.[0] || null);
+    })();
+  }, [activeTeam]);
+
+  const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+  const teamName = activeTeam?.name || (loading ? '…' : 'No team linked');
+  const teamInitials = (activeTeam?.name || 'OS').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const daysUntil = nextEvent ? Math.max(0, Math.ceil((new Date(nextEvent.date).getTime() - Date.now()) / 86400000)) : null;
+  const opponentInitials = nextEvent?.opponent
+    ? nextEvent.opponent.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+    : '?';
+
   return (
     <div style={{ position: 'absolute', inset: 0, background: Wallpapers.dawn, overflow: 'hidden', fontFamily: T.font }}>
       <IOSStatusBar />
-      {/* Dynamic Island spacer */}
       <div style={{ height: 4 }} />
 
-      {/* Header */}
       <div style={{ padding: '8px 20px 10px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>Sunday, 19 April</div>
+          <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>{today}</div>
           <div style={{ ...tType('largeTitle'), color: T.fg }}>Home</div>
         </div>
-        <Avatar initials="CJ" size={38} hue={310} />
+        <Avatar initials={userInitials} size={38} hue={310} />
       </div>
 
-      {/* Scrollable content */}
       <div style={{ height: 'calc(100% - 44px - 12px - 72px - 100px)', overflowY: 'auto', overflowX: 'hidden', paddingBottom: 8 }}>
         {/* Hero: next match */}
         <div style={{ padding: '8px 16px 20px' }}>
@@ -50,34 +95,50 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
             <div style={{ padding: 18, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <div style={{ ...tType('caption1'), color: T.purple[200], letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Next Match · Saturday</div>
-                  <div style={{ ...tType('title2'), color: T.fg }}>League Cup · Semi</div>
+                  <div style={{ ...tType('caption1'), color: T.purple[200], letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                    {nextEvent ? `Next ${nextEvent.event_type}` : 'No upcoming events'}
+                  </div>
+                  <div style={{ ...tType('title2'), color: T.fg }}>
+                    {nextEvent?.title || teamName}
+                  </div>
                 </div>
-                <Glass r={10} style={{ padding: '4px 10px' }}>
-                  <div style={{ ...tType('caption1'), color: T.fg, fontWeight: 600 }}>3 DAYS</div>
-                </Glass>
+                {daysUntil != null && (
+                  <Glass r={10} style={{ padding: '4px 10px' }}>
+                    <div style={{ ...tType('caption1'), color: T.fg, fontWeight: 600 }}>
+                      {daysUntil === 0 ? 'TODAY' : `${daysUntil} DAY${daysUntil > 1 ? 'S' : ''}`}
+                    </div>
+                  </Glass>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <div style={{ flex: 1, textAlign: 'center' }}>
-                  <Avatar initials="OR" size={52} hue={295} />
-                  <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 600, marginTop: 8 }}>Origin U15</div>
-                  <div style={{ ...tType('caption1'), color: T.fg2 }}>Home · 6W 1D</div>
+                  <Avatar initials={teamInitials} size={52} hue={295} />
+                  <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 600, marginTop: 8 }}>{teamName}</div>
+                  <div style={{ ...tType('caption1'), color: T.fg2 }}>
+                    {nextEvent?.is_home ? 'Home' : 'Away'}
+                  </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ ...tType('title1'), color: T.fg, fontWeight: 300 }}>vs</div>
-                  <div style={{ ...tType('caption1'), color: T.fg2, fontWeight: 600 }}>14:00</div>
+                  <div style={{ ...tType('caption1'), color: T.fg2, fontWeight: 600 }}>
+                    {nextEvent?.start_time?.slice(0, 5) || '—'}
+                  </div>
                 </div>
                 <div style={{ flex: 1, textAlign: 'center' }}>
-                  <Avatar initials="NR" size={52} hue={25} />
-                  <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 600, marginTop: 8 }}>Northrow FC</div>
-                  <div style={{ ...tType('caption1'), color: T.fg2 }}>Away · 5W 2D</div>
+                  <Avatar initials={opponentInitials} size={52} hue={25} />
+                  <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 600, marginTop: 8 }}>
+                    {nextEvent?.opponent || 'TBC'}
+                  </div>
+                  <div style={{ ...tType('caption1'), color: T.fg2 }}>
+                    {nextEvent?.is_home ? 'Away' : 'Home'}
+                  </div>
                 </div>
               </div>
             </div>
           </Glass>
         </div>
 
-        {/* Activity rings */}
+        {/* Activity rings (mock) */}
         <SectionHeader title="Today" action="Details" />
         <div style={{ padding: '4px 16px 20px' }}>
           <Glass r={26}>
@@ -97,7 +158,7 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
         </div>
 
         {/* Team form */}
-        <SectionHeader title="Team Form" action="Season" />
+        <SectionHeader title="Team Form" action={teams.length > 1 ? `${teams.length} teams` : 'Season'} />
         <div style={{ padding: '4px 16px 20px' }}>
           <Glass r={22}>
             <div style={{ padding: 16 }}>
@@ -130,12 +191,12 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
         <SectionHeader title="Quick Actions" />
         <div style={{ padding: '4px 16px 40px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {[
-            { t: 'Log training', s: 'Minutes + drills', hue: 295 },
-            { t: 'Availability', s: '2 pending', hue: 340 },
-            { t: 'Squad plan', s: 'Sat · vs NR', hue: 270 },
-            { t: 'Messages', s: '3 new', hue: 220 },
+            { t: 'Match Day', s: 'Setup recording', hue: 295, action: () => onTabChange?.(2) },
+            { t: 'Squad', s: 'View players', hue: 340, action: () => onTabChange?.(1) },
+            { t: 'Ultra', s: 'Live metrics', hue: 270, action: () => onTabChange?.(3) },
+            { t: 'Profile', s: 'Teams & devices', hue: 220, action: () => onTabChange?.(4) },
           ].map((a, i) => (
-            <Glass key={i} r={20}>
+            <Glass key={i} r={20} onClick={a.action}>
               <div style={{ padding: 14 }}>
                 <div style={{
                   width: 36, height: 36, borderRadius: 10, marginBottom: 14,
