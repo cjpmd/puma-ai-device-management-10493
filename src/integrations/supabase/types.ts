@@ -1269,6 +1269,7 @@ export type Database = {
       }
       team_events: {
         Row: {
+          away_score: number | null
           created_at: string
           date: string
           end_time: string | null
@@ -1276,6 +1277,7 @@ export type Database = {
           external_id: string
           game_duration: number | null
           game_format: string | null
+          home_score: number | null
           id: string
           is_home: boolean | null
           location: string | null
@@ -1290,6 +1292,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          away_score?: number | null
           created_at?: string
           date: string
           end_time?: string | null
@@ -1297,6 +1300,7 @@ export type Database = {
           external_id: string
           game_duration?: number | null
           game_format?: string | null
+          home_score?: number | null
           id?: string
           is_home?: boolean | null
           location?: string | null
@@ -1311,6 +1315,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          away_score?: number | null
           created_at?: string
           date?: string
           end_time?: string | null
@@ -1318,6 +1323,7 @@ export type Database = {
           external_id?: string
           game_duration?: number | null
           game_format?: string | null
+          home_score?: number | null
           id?: string
           is_home?: boolean | null
           location?: string | null
