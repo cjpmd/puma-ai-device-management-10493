@@ -99,17 +99,21 @@ function PlayerDetailScreen({ player, onBack, onTabChange }: { player: Player; o
   const [physical, setPhysical] = useState<any>(null);
   const [bio, setBio] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState<any>(null);
+  const [attrs, setAttrs] = useState<Record<string, number | null> | null>(null);
+  const [openGroup, setOpenGroup] = useState<string | null>('technical');
 
   useEffect(() => {
     (async () => {
-      const [{ data: phys }, { data: bioData }, { data: mov }] = await Promise.all([
+      const [{ data: phys }, { data: bioData }, { data: mov }, { data: a }] = await Promise.all([
         supabase.from('player_physical_data').select('*').eq('player_id', player.id).maybeSingle(),
         supabase.from('biometric_readings').select('*').eq('player_id', player.id).order('timestamp', { ascending: false }).limit(20),
         supabase.from('movement_analytics').select('*').eq('player_id', player.id).order('timestamp', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('player_attributes').select('*').eq('player_id', player.id).maybeSingle(),
       ]);
       setPhysical(phys);
       setBio(bioData || []);
       setAnalytics(mov);
+      setAttrs(a as any);
     })();
   }, [player.id]);
 
@@ -215,7 +219,7 @@ function PlayerDetailScreen({ player, onBack, onTabChange }: { player: Player; o
         </div>
 
         {/* HR sparkline */}
-        <div style={{ padding: '0 16px 40px' }}>
+        <div style={{ padding: '0 16px 16px' }}>
           <Glass r={22}>
             <div style={{ padding: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -235,6 +239,92 @@ function PlayerDetailScreen({ player, onBack, onTabChange }: { player: Player; o
             </div>
           </Glass>
         </div>
+
+        {/* Player Attributes (Origin Sports) */}
+        {(() => {
+          const isGK = group === 'GK';
+          const groupsToShow = ATTR_GROUPS.filter(g => {
+            if (g.key !== 'goalkeeping') return true;
+            if (isGK) return true;
+            // include GK only if any GK value exists
+            return g.fields.some(f => attrs && typeof attrs[f.col] === 'number');
+          });
+          const hasAny = attrs && groupsToShow.some(g => g.fields.some(f => typeof attrs[f.col] === 'number'));
+
+          return (
+            <>
+              <SectionHeader title="Player Attributes" action="Origin Sports" />
+              {!hasAny && (
+                <div style={{ padding: '4px 16px 24px' }}>
+                  <Glass r={20}>
+                    <div style={{ padding: 18, textAlign: 'center', ...tType('subhead'), color: T.fg2 }}>
+                      No attributes synced yet.
+                    </div>
+                  </Glass>
+                </div>
+              )}
+              {hasAny && (
+                <>
+                  {/* Radar overview */}
+                  <div style={{ padding: '4px 16px 12px' }}>
+                    <Glass r={22}>
+                      <div style={{ padding: 14, display: 'flex', justifyContent: 'center' }}>
+                        <Radar
+                          size={220}
+                          axes={groupsToShow.map(g => g.label)}
+                          series={[{
+                            color: T.purple[400],
+                            values: groupsToShow.map(g => {
+                              const avg = groupAvg(attrs, g.fields);
+                              return avg == null ? 0 : Math.max(0, Math.min(1, avg / 20));
+                            }),
+                          }]}
+                        />
+                      </div>
+                    </Glass>
+                  </div>
+
+                  {/* Expandable group sections */}
+                  <div style={{ padding: '4px 16px 40px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {groupsToShow.map(g => {
+                      const avg = groupAvg(attrs, g.fields);
+                      const open = openGroup === g.key;
+                      const populated = g.fields.filter(f => attrs && typeof attrs[f.col] === 'number');
+                      return (
+                        <Glass key={g.key} r={18}>
+                          <div
+                            onClick={() => setOpenGroup(open ? null : g.key)}
+                            style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', cursor: 'pointer', gap: 10 }}
+                          >
+                            <div style={{ flex: 1, ...tType('headline'), color: T.fg }}>{g.label}</div>
+                            <div style={{ ...tType('footnote'), color: T.fg2 }}>
+                              {avg != null ? `Avg ${avg.toFixed(1)}` : '—'}
+                            </div>
+                            <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
+                              <path d="M2 1l5 4-5 4" stroke={T.fg3} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                          {open && populated.length > 0 && (
+                            <div style={{ padding: '0 16px 14px', borderTop: `0.5px solid ${T.hairline}`, paddingTop: 8 }}>
+                              {populated.map(f => (
+                                <AttributeBar key={f.col} label={f.label} value={attrs![f.col]} />
+                              ))}
+                            </div>
+                          )}
+                          {open && populated.length === 0 && (
+                            <div style={{ padding: '0 16px 14px', ...tType('footnote'), color: T.fg3 }}>
+                              No values for this group.
+                            </div>
+                          )}
+                        </Glass>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </>
+          );
+        })()}
       </div>
       <TabBar active={1} onChange={onTabChange} />
     </div>
