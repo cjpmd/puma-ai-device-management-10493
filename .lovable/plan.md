@@ -1,41 +1,66 @@
 
 
-## Plan — Home screen upgrades
+The user wants to pull granular player attributes from Origin Sports (Technical/Physical/Mental/Goalkeeping subcategories) into the player detail screen, keeping the existing Physical card.
 
-### 1. Team switcher on Home
-Replace the static "today" header with a tappable team chip (Glass pill showing active team name + chevron). Tap opens a bottom-sheet style Glass dropdown listing all teams from `useActiveTeam`. Selecting one calls `setActiveTeam(id)`. If only one team, render as a non-interactive label.
+I need to:
+1. Check what attributes Origin Sports stores
+2. Plan a schema to hold them locally
+3. Plan UI for the player detail screen
 
-### 2. Top-right avatar → Profile
-Wrap the Avatar in `HomeScreen` in a click handler that calls `onTabChange?.(4)`.
+Let me check the cross_project for Origin Sports attribute structure first.
 
-### 3. Squad summary card (new section under hero)
-New Glass card titled "Squad" showing:
-- **Total** (count of players for active team)
-- **Available** (count where `availability = 'green'`)
-- **Injured** (count where `availability IN ('red','amber')`)
-- Below, a compact list of injured players: avatar initials + name + `availability` badge (Amber/Red) + expected return date if present (e.g. "Back ~12 May")
-- Tap card → jumps to Squad tab (`onTabChange(1)`)
+I'll inspect the Origin Sports project to find the attribute schema.
 
-Data: single query `players.select('id,name,availability,expected_return_date').eq('team_id', activeTeam.id)`.
+Based on FM-style attributes (which is what's being described — Aerial Reach, Corners, Crossing, Acceleration, Agility), the typical structure is:
 
-### 4. Schema: add `expected_return_date`
-`players` table has no return-date column. Add nullable `date` column `expected_return_date`. Extend `sync-external-data` to pull it from Origin Sports if their `players` row exposes it (optional — null-safe). RLS unchanged.
+**Technical** (outfield): Corners, Crossing, Dribbling, Finishing, First Touch, Free Kicks, Heading, Long Shots, Long Throws, Marking, Passing, Penalties, Tackling, Technique
+**Mental**: Aggression, Anticipation, Bravery, Composure, Concentration, Decisions, Determination, Flair, Leadership, Off The Ball, Positioning, Teamwork, Vision, Work Rate
+**Physical**: Acceleration, Agility, Balance, Jumping Reach, Natural Fitness, Pace, Stamina, Strength
+**Goalkeeping** (GK only): Aerial Reach, Command of Area, Communication, Eccentricity, First Touch, Handling, Kicking, One on Ones, Passing, Punching, Reflexes, Rushing Out, Throwing
 
-### 5. Previous Fixtures section (replaces "Team Form" sparkline)
-Show the last 5 fixtures (matches + friendlies) for the active team:
-- Pull from `team_events` where `date < today` AND `event_type IN ('match','friendly','fixture')` AND `team_id = activeTeam.id`, ordered desc.
-- Join (or fallback lookup) to `matches` via `match_id` to get `home_score`/`away_score` when known.
-- Each row = Glass row: date · opponent · venue (H/A) · score badge (e.g. `2–1 W`) or "—" if no result.
-- Win = purple, Draw = neutral grey, Loss = red badge background.
+## Plan — Player attributes from Origin Sports
 
-Replace the existing "Team Form" card; keep the activity rings card untouched.
+### 1. Schema
+New table `player_attributes` (one row per player, sparse columns):
+- `player_id` (uuid, FK-style, unique)
+- `external_id` (text, for sync)
+- All ~50 attribute columns as nullable `smallint` (1–20 scale)
+- Grouped by category in code, but stored flat for simplicity
+- `synced_at`, `updated_at`
+- RLS: same pattern as `players` (authenticated read)
 
-### Files to edit / create
-- `src/pages/ios/HomeScreen.tsx` — team switcher, avatar→profile, squad summary, previous fixtures
-- New migration: `ALTER TABLE players ADD COLUMN expected_return_date date`
-- `supabase/functions/sync-external-data/index.ts` — include `expected_return_date` in player upsert mapping (null-safe)
+### 2. Sync extension
+Extend `sync-external-data` edge function:
+- New entity: `attributes` (also runs under `all`)
+- For each external player, fetch from Origin Sports `player_attributes` table (or whatever they call it — I'll auto-detect by trying common names, same fallback pattern already used for memberships)
+- Upsert into local `player_attributes` keyed on `external_id`
+- Null-safe — only maps fields that exist
+
+### 3. UI — PlayerDetailScreen
+Inside the existing player detail (opened from Squad tab), keep the Physical card. **Add** below it:
+
+- **Attribute radar** (Glass card): a small radar chart with 4 axes — Technical avg, Mental avg, Physical avg, Goalkeeping avg (GK only) — for at-a-glance shape
+- **Four expandable Glass sections**: Technical, Mental, Physical, Goalkeeping
+  - Each section header shows the category average (e.g. "Technical · 14")
+  - Expanded: list of attribute name + bar (1–20 scale) + numeric value
+  - Bars colour-coded: 1–7 red, 8–11 amber, 12–15 white, 16–20 purple
+  - Goalkeeping section only shown if player has any GK values OR `position = 'GK'`
+- Hide attributes that are null (so outfield players don't show GK bars unless populated)
+- Empty state: "No attributes synced yet — pull to refresh" if all null
+
+### 4. Files
+**Migration (new)** — create `player_attributes` table + RLS
+
+**Edge function** — `supabase/functions/sync-external-data/index.ts`: add `attributes` entity, run inside `all`
+
+**New component** — `src/components/ios/AttributeBar.tsx` (small reusable bar + label + value)
+
+**Edits**
+- `src/pages/ios/SquadScreen.tsx` — extend `PlayerDetail` query + render attribute sections
+- `src/integrations/supabase/types.ts` — auto-regenerated after migration
 
 ### Out of scope
-- Editing return dates from inside this app (read-only sync from Origin Sports)
-- Friendly-vs-league filtering toggle (just show all past fixtures)
+- Editing attributes from this app (read-only sync)
+- Historical attribute progression chart (future)
+- Per-attribute sparkline trends
 
