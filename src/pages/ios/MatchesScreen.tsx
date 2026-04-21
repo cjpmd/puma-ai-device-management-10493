@@ -123,20 +123,29 @@ export function MatchesScreen({ onTabChange }: MatchesScreenProps) {
         )}
 
         {matches.map((m) => {
-          const isLive = m.status === 'live' || m.status === 'recording';
-          const isFinished = m.status === 'completed' || (m.home_score != null && m.away_score != null);
-          const score = isFinished ? `${m.home_score ?? 0}-${m.away_score ?? 0}` : 'vs';
+          const isLive = m.match_status === 'live' || m.match_status === 'recording';
+          const hasScore = m.home_score != null && m.away_score != null;
+          const isPast = m.date ? new Date(m.date) < new Date(new Date().toDateString()) : false;
+          const isFinished = m.match_status === 'completed' || hasScore;
+          const score = hasScore ? `${m.home_score}-${m.away_score}` : 'vs';
           const ourScore = m.is_home ? m.home_score : m.away_score;
           const theirScore = m.is_home ? m.away_score : m.home_score;
-          const win = isFinished && ourScore != null && theirScore != null && ourScore > theirScore;
-          const draw = isFinished && ourScore != null && theirScore != null && ourScore === theirScore;
+          const win = hasScore && ourScore! > theirScore!;
+          const draw = hasScore && ourScore === theirScore;
+          const homeLabel = m.is_home ? (activeTeam?.name || 'Home') : (m.opponent || 'Opponent');
+          const awayLabel = m.is_home ? (m.opponent || 'Opponent') : (activeTeam?.name || 'Away');
+          const statusLabel = isPast ? 'RESULT PENDING' : 'UPCOMING';
+          const handleTap = () => {
+            if (m.match_id) navigate(`/matches/${m.match_id}`);
+            else navigate('/matches');
+          };
 
           return (
             <div key={m.id} style={{ padding: '0 16px 12px' }}>
-              <Glass r={22} tint={isLive ? 'magenta' : 'neutral'} onClick={() => navigate(`/matches/${m.id}`)}>
+              <Glass r={22} tint={isLive ? 'magenta' : 'neutral'} onClick={handleTap}>
                 <div style={{ padding: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <div style={{ ...tType('caption1'), color: T.fg2 }}>{formatDate(m.match_date)}</div>
+                    <div style={{ ...tType('caption1'), color: T.fg2 }}>{formatDate(m.date)}</div>
                     {isLive ? (
                       <Glass r={8} tint="magenta" style={{ padding: '3px 8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -144,24 +153,24 @@ export function MatchesScreen({ onTabChange }: MatchesScreenProps) {
                           <div style={{ ...tType('caption2'), color: T.fg, fontWeight: 700 }}>LIVE</div>
                         </div>
                       </Glass>
-                    ) : isFinished ? (
+                    ) : hasScore ? (
                       <div style={{ ...tType('caption1'), color: win ? T.green : draw ? T.fg2 : T.red, fontWeight: 700 }}>
                         {win ? 'WIN' : draw ? 'DRAW' : 'LOSS'}
                       </div>
                     ) : (
-                      <div style={{ ...tType('caption1'), color: T.fg2, textTransform: 'uppercase' }}>{m.status}</div>
+                      <div style={{ ...tType('caption1'), color: T.fg2, textTransform: 'uppercase' }}>{statusLabel}</div>
                     )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ ...tType('headline'), color: T.fg }}>{m.home_team || activeTeam?.name || 'Home'}</div>
+                      <div style={{ ...tType('headline'), color: T.fg }}>{homeLabel}</div>
                       <div style={{ ...tType('footnote'), color: T.fg2 }}>Home</div>
                     </div>
                     <div style={{ textAlign: 'center', padding: '0 16px' }}>
                       <div style={{ ...tType('title2'), color: T.fg }}>{score}</div>
                     </div>
                     <div style={{ flex: 1, textAlign: 'right' }}>
-                      <div style={{ ...tType('headline'), color: T.fg }}>{m.away_team || 'Opponent'}</div>
+                      <div style={{ ...tType('headline'), color: T.fg }}>{awayLabel}</div>
                       <div style={{ ...tType('footnote'), color: T.fg2 }}>Away</div>
                     </div>
                   </div>
