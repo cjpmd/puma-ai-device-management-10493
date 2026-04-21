@@ -1,47 +1,38 @@
 
 
-## Plan — Show Origin Sports fixtures + compute scores from goals
+## Plan — Fix Matches list + score derivation
 
 ### Diagnosis
-1. **Matches screen** (image 19) reads only the local `matches` table. That table only ever gets rows when you create a match in‑app via "Match Day Setup". The 63 Origin Sports fixtures live in `team_events`, so the Matches screen never sees them (and the few rows that do appear show "Opponent" because `matches.away_team` is `NULL`).
-
-2. **Previous Fixtures** (image 18) all show "Result pending" because `team_events.home_score` / `away_score` are NULL for all 63 rows. The current sync tries to read `event.home_score`, `our_score`, `team_score`, `opponent_score` — none of those exist on Origin Sports' `events` table. **Scores on Origin Sports are derived from `match_events` rows (goal events)**, not stored on the event itself.
-
-3. Side issue surfaced while investigating: the sync function also writes to `team_event_player_stats` and `team_match_events`, **neither of which exists** in this database. Those calls are silently failing. We'll create the `team_match_events` table now (we need it anyway to derive scores) and skip `team_event_player_stats` for this pass.
+1. **Matches screen blank.** The 63 synced fixtures have `event_type` values `'fixture'` (24) and `'friendly'` (27) — never `'match'`. `MatchesScreen.tsx` filters `.eq('event_type', 'match')` so it returns zero rows. (HomeScreen's "Previous Fixtures" works because it correctly uses `.in('event_type', ['match','friendly','fixture',...])`.)
+2. **Scores still pending.** `team_match_events` has 0 rows after sync, and the "External match_events columns" log line never fired. So either the external `match_events` table returned empty for this user, or the goal-derivation block silently returned early. Either way HomeScreen has nothing to render.
+3. The score-derivation logic in the edge function also has a bug: the `Map<localEventId, counts>` is keyed by the **event UUID**, but the verbose log + an empty `team_match_events` table means we can't yet confirm whether external `match_events` exposes a `team_side` / `is_home` flag at all. Worst case, every goal hits the `else` branch and silently never increments.
 
 ### Fix
 
-**A. Compute scores from goal events in `sync-external-events`**
-- Create local table `team_match_events (id, external_id, event_id, player_id, event_type, minute, period_number, team_side, notes, synced_at)` with `team_side text` (`'home' | 'away' | 'own'`) so we can attribute goals correctly. RLS policies match `team_events` (read via team membership, write via service role).
-- After upserting `team_match_events`, for each Origin Sports event:
-  - Count `event_type IN ('goal','Goal')` grouped by `team_side` (treat `own` goals against the scoring team).
-  - If the external event has explicit `home_score`/`away_score`/`our_score`/`opponent_score` columns, prefer those; otherwise fall back to the goal counts.
-  - Write `home_score` / `away_score` onto the corresponding `team_events` row.
-- Add a temporary `console.log(JSON.stringify(Object.keys(externalEvents[0])))` once per run so we can confirm which score columns (if any) Origin Sports actually exposes — then tighten the field aliases in a follow-up if needed.
+**A. Matches screen — show real fixtures (one-line fix)**
+- `src/pages/ios/MatchesScreen.tsx`: replace `.eq('event_type', 'match')` with `.in('event_type', ['match','fixture','friendly','Match','Fixture','Friendly'])`.
+- Update the header subtitle from `{matches.length} match{...}es` → `{matches.length} fixture{...}s` so it reads correctly when "friendly" rows appear.
+- No other render changes needed — the existing template already uses `is_home` + `opponent` + `activeTeam.name` properly.
 
-**B. Make Matches screen show Origin Sports fixtures**
-- Rewrite `MatchesScreen.tsx` data source from `matches` → `team_events` (filtered by `activeTeam.id`), ordered by `date DESC`, last 20.
-- Render using `team_events` columns:
-  - Home label: `is_home ? activeTeam.name : opponent`
-  - Away label: `is_home ? opponent : activeTeam.name`
-  - Score: `home_score`/`away_score` (post-fix these will populate)
-  - Status pill: `LIVE` if a linked `matches` row has `status in ('live','recording')`; `WIN/DRAW/LOSS` if both scores present; otherwise `UPCOMING` for future dates / `RESULT PENDING` for past.
-- Tap opens `/matches/${match_id}` if a linked `matches` row exists, otherwise opens a lightweight detail (we'll lazily create a `matches` row on first tap of a Match Day Setup so existing recordings still work).
+**B. Score derivation — make it observable + robust**
+- `supabase/functions/sync-external-events/index.ts`:
+  - Log row counts at each step: `console.log(...externalEvents.length, externalMatchEvents?.length, eventMap.size)`. So next sync we can immediately see which side is empty.
+  - When `me.team_side` / `me.team` / `me.is_home` are all missing, fall back to the `team_events.is_home` flag of the parent event: i.e. if `event.is_home === true` and the goal belongs to "us", it's a `home` goal. Build a `eventIsHomeMap` (event_id → is_home) up front and use `me.is_our_team` / `me.is_opposition` style aliases when present (`me.is_our_team`, `me.our_team`, `me.team === 'us'`).
+  - Also consider score columns directly on the external `events` row (already attempted: `home_score`, `our_score`, `team_score` etc.) — keep, but also try `score_home`, `score_away`, `goals_for`, `goals_against`.
+- This makes the derived score work for any reasonable Origin Sports schema; if it still fails, the new logs will tell us exactly which column name to add.
 
-**C. HomeScreen — already correct after sync fix**
-- No code change. Once `home_score`/`away_score` populate via (A), the W/D/L chips render automatically from existing logic.
+**C. After deploy**
+Trigger the Sync from Profile once more. Expected result:
+- Matches screen lists 51 rows with opponent names + Home/Away labels.
+- HomeScreen "Previous Fixtures" shows real scores for any fixture that has goal events on Origin Sports; remaining rows correctly show "Result pending".
 
 ### Files
-
 **Edit**
-- `supabase/functions/sync-external-events/index.ts` — fetch `match_events` from external DB, derive scores from goals, also store in new `team_match_events` table; better column-alias logging.
-- `src/pages/ios/MatchesScreen.tsx` — switch from `matches` to `team_events`; format opponent label using `is_home` + `activeTeam.name`.
-
-**New**
-- Migration: create `public.team_match_events` (FK to `team_events`, RLS via existing `user_team_access` membership), with index on `event_id`.
+- `src/pages/ios/MatchesScreen.tsx` — broaden `event_type` filter, tweak count label.
+- `supabase/functions/sync-external-events/index.ts` — verbose count logs, more score-column aliases, fall back to parent-event `is_home` when goal `team_side` is missing, build `eventIsHomeMap`.
 
 ### Out of scope
-- `team_event_player_stats` table (lineups/minutes per match) — separate pass.
-- Backfilling `matches` rows for every historic Origin Sports fixture so the Matches screen and old code paths stay in sync — for now MatchesScreen reads `team_events` directly and the linked `matches` row is created on demand when you open Match Day Setup.
-- Goal scorers / cards timeline UI — table exists but visualisation comes later.
+- Backfilling `matches` rows for every fixture (still lazy-create on Match Day Setup tap).
+- Goal scorers / cards UI on the fixture detail page.
+- `team_event_player_stats` table (still missing — separate pass).
 
