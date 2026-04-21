@@ -146,6 +146,7 @@ Deno.serve(async (req) => {
       .from("match_events")
       .select("*");
 
+    console.log(`External match_events fetched: ${externalMatchEvents?.length ?? 0}`);
     if (!matchEventsError) {
       if (externalMatchEvents && externalMatchEvents.length > 0) {
         console.log("External match_events columns:", JSON.stringify(Object.keys(externalMatchEvents[0])));
@@ -157,10 +158,31 @@ Deno.serve(async (req) => {
         const localEventId = eventMap.get(me.event_id);
         if (!localEventId) continue;
 
-        // Normalize team_side: 'home' | 'away' | 'own' (own goal counts for opposite team)
-        const rawSide = (me.team_side || me.team || (me.is_home === true ? "home" : me.is_home === false ? "away" : null) || "").toString().toLowerCase();
+        // Normalize team_side: 'home' | 'away' | 'own'.
+        // Try explicit fields; then is_our_team / our_team / team === 'us'/'them';
+        // finally fall back to parent-event is_home flag.
+        const parentIsHome = eventIsHomeMap.get(localEventId);
+        const rawSideExplicit = (me.team_side || me.team || "").toString().toLowerCase();
+        const isOurTeam =
+          me.is_our_team === true ||
+          me.our_team === true ||
+          rawSideExplicit === "us" ||
+          rawSideExplicit === "our" ||
+          rawSideExplicit === "team";
+        const isOpposition =
+          me.is_our_team === false ||
+          me.our_team === false ||
+          rawSideExplicit === "them" ||
+          rawSideExplicit === "opponent" ||
+          rawSideExplicit === "opposition";
+
         let teamSide: "home" | "away" | "own" | null = null;
-        if (rawSide === "home" || rawSide === "away" || rawSide === "own") teamSide = rawSide;
+        if (rawSideExplicit === "home" || rawSideExplicit === "away" || rawSideExplicit === "own") {
+          teamSide = rawSideExplicit as "home" | "away" | "own";
+        } else if (me.is_home === true) teamSide = "home";
+        else if (me.is_home === false) teamSide = "away";
+        else if (isOurTeam && parentIsHome !== undefined) teamSide = parentIsHome ? "home" : "away";
+        else if (isOpposition && parentIsHome !== undefined) teamSide = parentIsHome ? "away" : "home";
 
         const { error: upsertError } = await localSupabase.from("team_match_events").upsert({
           external_id: me.id,
