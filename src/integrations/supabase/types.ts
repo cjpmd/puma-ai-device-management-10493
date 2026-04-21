@@ -1354,6 +1354,66 @@ export type Database = {
           },
         ]
       }
+      team_match_events: {
+        Row: {
+          created_at: string
+          event_id: string
+          event_type: string
+          external_id: string
+          id: string
+          minute: number | null
+          notes: string | null
+          period_number: number | null
+          player_id: string | null
+          synced_at: string | null
+          team_side: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          event_type: string
+          external_id: string
+          id?: string
+          minute?: number | null
+          notes?: string | null
+          period_number?: number | null
+          player_id?: string | null
+          synced_at?: string | null
+          team_side?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          event_type?: string
+          external_id?: string
+          id?: string
+          minute?: number | null
+          notes?: string | null
+          period_number?: number | null
+          player_id?: string | null
+          synced_at?: string | null
+          team_side?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_match_events_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "team_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_match_events_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       teams: {
         Row: {
           age_group: string | null
