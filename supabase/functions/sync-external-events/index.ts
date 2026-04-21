@@ -48,6 +48,7 @@ Deno.serve(async (req) => {
 
     // ── 1. Events ──────────────────────────────────────────────────────────────
     const { data: externalEvents, error: eventsError } = await externalSupabase.from("events").select("*");
+    console.log(`External events fetched: ${externalEvents?.length ?? 0}`);
     if (eventsError) {
       results.events.errors++;
     } else {
@@ -57,16 +58,17 @@ Deno.serve(async (req) => {
       for (const event of externalEvents || []) {
         const { data: localTeam } = await localSupabase.from("teams").select("id").eq("external_id", event.team_id).single();
 
+        // Try common external score column aliases. Origin Sports may not use all of these.
+        const ourScore = event.our_score ?? event.team_score ?? event.goals_for ?? null;
+        const oppScore = event.opponent_score ?? event.opp_score ?? event.goals_against ?? null;
         const homeScore =
           event.home_score ??
-          (event.is_home ? event.our_score : event.opponent_score) ??
-          (event.is_home ? event.team_score : event.opponent_score) ??
-          null;
+          event.score_home ??
+          (event.is_home === true ? ourScore : event.is_home === false ? oppScore : null);
         const awayScore =
           event.away_score ??
-          (event.is_home ? event.opponent_score : event.our_score) ??
-          (event.is_home ? event.opponent_score : event.team_score) ??
-          null;
+          event.score_away ??
+          (event.is_home === true ? oppScore : event.is_home === false ? ourScore : null);
 
         const { error: upsertError } = await localSupabase.from("team_events").upsert({
           external_id: event.id,
@@ -95,8 +97,12 @@ Deno.serve(async (req) => {
     // ── Build lookup maps once for player_stats + match_events ────────────────
     const { data: localEventsIndex } = await localSupabase
       .from("team_events")
-      .select("id, external_id");
+      .select("id, external_id, is_home");
     const eventMap = new Map((localEventsIndex || []).map((e: any) => [e.external_id, e.id]));
+    const eventIsHomeMap = new Map<string, boolean>(
+      (localEventsIndex || []).map((e: any) => [e.id, e.is_home === true])
+    );
+    console.log(`Local team_events indexed: ${eventMap.size}`);
 
     const { data: localPlayersIndex } = await localSupabase
       .from("players")
@@ -140,6 +146,7 @@ Deno.serve(async (req) => {
       .from("match_events")
       .select("*");
 
+    console.log(`External match_events fetched: ${externalMatchEvents?.length ?? 0}`);
     if (!matchEventsError) {
       if (externalMatchEvents && externalMatchEvents.length > 0) {
         console.log("External match_events columns:", JSON.stringify(Object.keys(externalMatchEvents[0])));
@@ -151,10 +158,31 @@ Deno.serve(async (req) => {
         const localEventId = eventMap.get(me.event_id);
         if (!localEventId) continue;
 
-        // Normalize team_side: 'home' | 'away' | 'own' (own goal counts for opposite team)
-        const rawSide = (me.team_side || me.team || (me.is_home === true ? "home" : me.is_home === false ? "away" : null) || "").toString().toLowerCase();
+        // Normalize team_side: 'home' | 'away' | 'own'.
+        // Try explicit fields; then is_our_team / our_team / team === 'us'/'them';
+        // finally fall back to parent-event is_home flag.
+        const parentIsHome = eventIsHomeMap.get(localEventId);
+        const rawSideExplicit = (me.team_side || me.team || "").toString().toLowerCase();
+        const isOurTeam =
+          me.is_our_team === true ||
+          me.our_team === true ||
+          rawSideExplicit === "us" ||
+          rawSideExplicit === "our" ||
+          rawSideExplicit === "team";
+        const isOpposition =
+          me.is_our_team === false ||
+          me.our_team === false ||
+          rawSideExplicit === "them" ||
+          rawSideExplicit === "opponent" ||
+          rawSideExplicit === "opposition";
+
         let teamSide: "home" | "away" | "own" | null = null;
-        if (rawSide === "home" || rawSide === "away" || rawSide === "own") teamSide = rawSide;
+        if (rawSideExplicit === "home" || rawSideExplicit === "away" || rawSideExplicit === "own") {
+          teamSide = rawSideExplicit as "home" | "away" | "own";
+        } else if (me.is_home === true) teamSide = "home";
+        else if (me.is_home === false) teamSide = "away";
+        else if (isOurTeam && parentIsHome !== undefined) teamSide = parentIsHome ? "home" : "away";
+        else if (isOpposition && parentIsHome !== undefined) teamSide = parentIsHome ? "away" : "home";
 
         const { error: upsertError } = await localSupabase.from("team_match_events").upsert({
           external_id: me.id,
