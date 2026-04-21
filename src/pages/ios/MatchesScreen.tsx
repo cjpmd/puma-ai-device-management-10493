@@ -44,7 +44,7 @@ export function MatchesScreen({ onTabChange }: MatchesScreenProps) {
         .from('team_events')
         .select('id, title, opponent, is_home, home_score, away_score, date, start_time, match_id')
         .eq('team_id', activeTeam.id)
-        .eq('event_type', 'match')
+        .in('event_type', ['match', 'fixture', 'friendly', 'Match', 'Fixture', 'Friendly'])
         .order('date', { ascending: false, nullsFirst: false })
         .limit(20);
 
@@ -78,7 +78,7 @@ export function MatchesScreen({ onTabChange }: MatchesScreenProps) {
       <div style={{ height: 4 }} />
       <div style={{ padding: '8px 20px 12px' }}>
         <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>
-          {activeTeam?.name || 'All teams'} · {matches.length} match{matches.length === 1 ? '' : 'es'}
+          {activeTeam?.name || 'All teams'} · {matches.length} fixture{matches.length === 1 ? '' : 's'}
         </div>
         <div style={{ ...tType('largeTitle'), color: T.fg }}>Matches</div>
       </div>
