@@ -48,6 +48,7 @@ Deno.serve(async (req) => {
 
     // ── 1. Events ──────────────────────────────────────────────────────────────
     const { data: externalEvents, error: eventsError } = await externalSupabase.from("events").select("*");
+    console.log(`External events fetched: ${externalEvents?.length ?? 0}`);
     if (eventsError) {
       results.events.errors++;
     } else {
@@ -57,16 +58,17 @@ Deno.serve(async (req) => {
       for (const event of externalEvents || []) {
         const { data: localTeam } = await localSupabase.from("teams").select("id").eq("external_id", event.team_id).single();
 
+        // Try common external score column aliases. Origin Sports may not use all of these.
+        const ourScore = event.our_score ?? event.team_score ?? event.goals_for ?? null;
+        const oppScore = event.opponent_score ?? event.opp_score ?? event.goals_against ?? null;
         const homeScore =
           event.home_score ??
-          (event.is_home ? event.our_score : event.opponent_score) ??
-          (event.is_home ? event.team_score : event.opponent_score) ??
-          null;
+          event.score_home ??
+          (event.is_home === true ? ourScore : event.is_home === false ? oppScore : null);
         const awayScore =
           event.away_score ??
-          (event.is_home ? event.opponent_score : event.our_score) ??
-          (event.is_home ? event.opponent_score : event.team_score) ??
-          null;
+          event.score_away ??
+          (event.is_home === true ? oppScore : event.is_home === false ? ourScore : null);
 
         const { error: upsertError } = await localSupabase.from("team_events").upsert({
           external_id: event.id,
@@ -95,8 +97,12 @@ Deno.serve(async (req) => {
     // ── Build lookup maps once for player_stats + match_events ────────────────
     const { data: localEventsIndex } = await localSupabase
       .from("team_events")
-      .select("id, external_id");
+      .select("id, external_id, is_home");
     const eventMap = new Map((localEventsIndex || []).map((e: any) => [e.external_id, e.id]));
+    const eventIsHomeMap = new Map<string, boolean>(
+      (localEventsIndex || []).map((e: any) => [e.id, e.is_home === true])
+    );
+    console.log(`Local team_events indexed: ${eventMap.size}`);
 
     const { data: localPlayersIndex } = await localSupabase
       .from("players")
