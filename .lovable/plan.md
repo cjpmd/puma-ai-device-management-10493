@@ -1,51 +1,63 @@
 
 
-## Plan — fixtures, injured filter, Ultra cards
+## Plan — Restore Capacitor config so QR capture page loads
 
-### 1. Past fixtures: pull scores from Origin Sports
-**Diagnosis:** team_events rows exist (12+ past matches for the active team), but every `matches.home_score` / `matches.away_score` is `NULL`, and most events have `match_id = NULL`. So the Home screen renders "—" instead of "1‑0 W".
+### Diagnosis
+- `capacitor.config.ts` was overwritten on commit `9bcb546` ("Remove server configuration from capacitor.config.ts"). It now has no `server.url`, so the installed iOS native app loads the bundled `dist/` (stale/empty) instead of the live Lovable preview.
+- The `/capture/:token` route + the `validate-camera-token` edge function both exist and look correct in the codebase.
+- When you scan the QR code on your iPhone, iOS opens the link in the Capacitor app (because of the `player-analysis://` scheme + Universal Links), and the native app has no live bundle to render → **blank screen**.
+- In a regular mobile browser (Safari without the app installed), the same URL would actually work — so this is specifically a "native app shell is empty" problem, not a routing or backend bug.
 
-**Fix:**
-- **`sync-external-events`** — extend the events sync to:
-  - Read `home_score` / `away_score` (and any `result` / `our_score` / `opponent_score` aliases) from the external Origin Sports `events` / `matches` tables.
-  - For past events with scores, upsert a `matches` row (or update the linked one) with `home_score`, `away_score`, `kickoff_at`, then set `team_events.match_id` to that row.
-  - Also write the scores directly onto a new lightweight pair of columns on `team_events` (`home_score int, away_score int`) so we don't need a join — simpler and faster on the Home screen.
-- **Migration** — add nullable `home_score`, `away_score` to `team_events`.
-- **HomeScreen** — read scores directly from `team_events` (drop the `matches` join). If still null → show "Result pending" pill instead of "—".
-- **Display** — when result exists, render it like the Origin Sports screenshot: small score `1-0` then a tiny coloured `W`/`D`/`L` chip on the right (currently we cram them together).
+### Fix
+Restore `capacitor.config.ts` to the version you provided, with the small tweaks needed for it to actually compile and behave correctly:
 
-### 2. Injured filter on Squad screen — show real injured players
-**Diagnosis:** real data is correct (Luca Stott / Fergus Cooper = `amber`, Rory Beattie = `red`). The Home count is right. The Squad Injured tab is empty because its filter looks for the strings `'injured'` / `'unavailable'`, never `red` / `amber`.
+```ts
+import { CapacitorConfig } from "@capacitor/cli";
 
-**Fix (one-line in `SquadScreen.tsx`):**
-- Change the Injured filter to: `['red','amber','injured','unavailable'].includes(...)`.
-- Change the Available filter to match by `green` or empty/`available`.
-- Show a small coloured pill (`AMBER` / `RED`) next to each player row in Injured view, mirroring the Home screen style.
+const config: CapacitorConfig = {
+  appId: "app.lovable.cb1a7443dfe74413bc7a813cf6770aa3",
+  appName: "Player Analysis",
+  webDir: "dist",
+  server: {
+    url: "https://cb1a7443-dfe7-4413-bc7a-813cf6770aa3.lovableproject.com?forceHideBadge=true",
+    cleartext: true,
+  },
+  ios: {
+    contentInset: "always",
+    scheme: "Player Analysis",
+    backgroundColor: "#ffffff",
+  },
+  plugins: {
+    CameraPreview: {
+      iosDisableAudio: false,
+    },
+  },
+};
 
-### 3. Ultra Analysis — Overall Session cards rendering as white blocks
-**Diagnosis:** `MetricCard` and `PerformanceChart` hardcode `bg-white shadow-lg`, so they punch white panels through the aurora wallpaper.
+export default config;
+```
 
-**Fix:**
-- **`MetricCard.tsx`** — replace `bg-white shadow-lg` with `glass border border-white/10 text-white`, muted text → `text-white/60`.
-- **`PerformanceChart.tsx`** — same glass treatment + recharts grid stroke `rgba(255,255,255,0.08)`, axis tick fill `rgba(255,255,255,0.55)`, tooltip dark.
-- **`Tabs` list** — switch to `bg-white/5 border border-white/10`; active trigger `bg-white/15 text-white`.
-- **`PlayerMovementMap`** wrapper — wrap in same glass card.
+Notes on what I'm doing differently from the JSON you pasted:
+- `packageClassList` is **not a valid CapacitorConfig field** in TypeScript — Capacitor auto-registers plugins that are installed via npm. Including it would cause a TypeScript build error. It is safe to leave out.
+- Everything else (server.url, scheme `Player Analysis`, appName `Player Analysis`, CameraPreview plugin) matches your provided config.
 
-These components are also used elsewhere; the new glass styling is theme-agnostic (works on light pages too because translucent), so no regressions expected, but I'll spot-check Index/MLTraining when wired.
+### What you need to do after the change
+The `capacitor.config.ts` is read at native build/sync time, not at runtime. So after I save the file:
+
+1. `git pull` your repo locally
+2. `npm install` (just in case)
+3. `npx cap sync ios`
+4. Re-run the app from Xcode (or `npx cap run ios`)
+
+Once that's done, the iOS app will load the live Lovable preview, which contains the `/capture/:token` route, and scanning either QR code will open the camera capture page correctly.
 
 ### Files
 **Edit**
-- `src/pages/ios/HomeScreen.tsx` — read scores from `team_events`, restyle result chip
-- `src/pages/ios/SquadScreen.tsx` — fix Available/Injured filters, add availability pill
-- `src/pages/Analysis.tsx` — Tabs list dark styling
-- `src/components/MetricCard.tsx` — glass dark variant
-- `src/components/PerformanceChart.tsx` — glass dark variant + recharts theming
-- `supabase/functions/sync-external-events/index.ts` — pull `home_score`, `away_score`, write to `team_events` (and `matches` if a row exists)
+- `capacitor.config.ts` — restore `server.url`, `cleartext`, restore `appName` / `ios.scheme` to "Player Analysis"
 
-**New**
-- Migration: `ALTER TABLE team_events ADD COLUMN home_score int, ADD COLUMN away_score int;`
+**No backend, route, or component changes needed** — the capture flow itself is intact.
 
 ### Out of scope
-- Backfilling historic match-result reasoning (red cards, scorers) — only score + outcome for now
-- Recolouring MLTraining / Devices cards to glass (separate pass)
+- Universal Links setup so QR codes scanned by iOS Camera open in Safari instead of the Capacitor app (separate decision — current behaviour of opening in the app is fine once the app loads the live preview)
+- Restoring `appName` to Capitalised "Player Analysis" anywhere else (only affects the iOS app shell name on the home screen)
 
