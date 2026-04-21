@@ -43,6 +43,7 @@ Deno.serve(async (req) => {
       events: { updated: 0, errors: 0 },
       player_stats: { updated: 0, errors: 0 },
       match_events: { updated: 0, errors: 0 },
+      scores_derived: 0,
     };
 
     // ── 1. Events ──────────────────────────────────────────────────────────────
@@ -50,6 +51,9 @@ Deno.serve(async (req) => {
     if (eventsError) {
       results.events.errors++;
     } else {
+      if (externalEvents && externalEvents.length > 0) {
+        console.log("External events columns:", JSON.stringify(Object.keys(externalEvents[0])));
+      }
       for (const event of externalEvents || []) {
         const { data: localTeam } = await localSupabase.from("teams").select("id").eq("external_id", event.team_id).single();
 
