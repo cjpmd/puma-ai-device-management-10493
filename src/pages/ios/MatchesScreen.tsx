@@ -8,16 +8,17 @@ import { T, tType, Wallpapers } from '@/lib/ios-tokens';
 import { useActiveTeam } from '@/hooks/useActiveTeam';
 import { supabase } from '@/integrations/supabase/client';
 
-interface MatchRow {
+interface FixtureRow {
   id: string;
   title: string | null;
-  home_team: string | null;
-  away_team: string | null;
+  opponent: string | null;
+  is_home: boolean | null;
   home_score: number | null;
   away_score: number | null;
-  match_date: string | null;
-  status: string;
-  is_home: boolean | null;
+  date: string;
+  start_time: string | null;
+  match_id: string | null;
+  match_status: string | null;
 }
 
 interface MatchesScreenProps {
@@ -27,20 +28,40 @@ interface MatchesScreenProps {
 export function MatchesScreen({ onTabChange }: MatchesScreenProps) {
   const navigate = useNavigate();
   const { activeTeam } = useActiveTeam();
-  const [matches, setMatches] = useState<MatchRow[]>([]);
+  const [matches, setMatches] = useState<FixtureRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      let q = supabase
-        .from('matches')
-        .select('id, title, home_team, away_team, home_score, away_score, match_date, status, is_home')
-        .order('match_date', { ascending: false, nullsFirst: false })
+      if (!activeTeam) {
+        setMatches([]);
+        setLoading(false);
+        return;
+      }
+      // Pull fixtures from team_events (synced from Origin Sports)
+      const { data: events } = await supabase
+        .from('team_events')
+        .select('id, title, opponent, is_home, home_score, away_score, date, start_time, match_id')
+        .eq('team_id', activeTeam.id)
+        .eq('event_type', 'match')
+        .order('date', { ascending: false, nullsFirst: false })
         .limit(20);
-      if (activeTeam) q = q.eq('team_id', activeTeam.id);
-      const { data } = await q;
-      setMatches(data || []);
+
+      const matchIds = (events || []).map(e => e.match_id).filter(Boolean) as string[];
+      let statusByMatchId = new Map<string, string>();
+      if (matchIds.length > 0) {
+        const { data: linkedMatches } = await supabase
+          .from('matches')
+          .select('id, status')
+          .in('id', matchIds);
+        statusByMatchId = new Map((linkedMatches || []).map(m => [m.id, m.status]));
+      }
+
+      setMatches((events || []).map(e => ({
+        ...e,
+        match_status: e.match_id ? statusByMatchId.get(e.match_id) || null : null,
+      })));
       setLoading(false);
     })();
   }, [activeTeam]);
