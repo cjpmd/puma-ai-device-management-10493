@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@capacitor-community/camera-preview": "^7.0.5",
+    "@capacitor-mlkit/barcode-scanning": "^8.0.1",
     "@capacitor/app": "^8.1.0",
     "@capacitor/cli": "^7.0.1",
     "@capacitor/core": "^7.0.1",
