@@ -41,7 +41,7 @@ export function CameraQRSetup({ matchId, cameraSide, uploadStatus }: CameraQRSet
   const copyLink = () => {
     if (captureUrl) {
       navigator.clipboard.writeText(captureUrl);
-      toast({ title: 'Link copied', description: 'Share via iMessage or WhatsApp' });
+      toast({ title: 'Deep link copied', description: 'Paste on a phone with Player Analysis installed' });
     }
   };
 
@@ -72,8 +72,14 @@ export function CameraQRSetup({ matchId, cameraSide, uploadStatus }: CameraQRSet
                 <QRCodeSVG value={captureUrl!} size={180} className="w-full h-full" />
               </div>
             </div>
+            <p className="text-xs text-muted-foreground text-center leading-relaxed">
+              Open <strong>Player Analysis</strong> on the donor phone → tap{' '}
+              <strong>Scan Camera QR</strong> → point at this code.
+              <br />
+              <span className="opacity-70">(Don\u2019t use the iOS Camera app — it ignores custom links.)</span>
+            </p>
             <Button variant="outline" size="sm" className="w-full h-11" onClick={copyLink}>
-              <Copy className="h-3 w-3 mr-2" /> Copy Link
+              <Copy className="h-3 w-3 mr-2" /> Copy deep link
             </Button>
             <Button variant="ghost" size="sm" className="w-full h-11" onClick={generateToken} disabled={generating}>
               <RefreshCw className="h-3 w-3 mr-2" /> Regenerate
