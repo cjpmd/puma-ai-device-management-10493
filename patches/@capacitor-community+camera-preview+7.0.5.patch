@@ -62,7 +62,17 @@
                  self.audioDevice = AVCaptureDevice.default(for: AVMediaType.audio)
 --- a/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.swift
 +++ b/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.swift
-@@ -91,6 +91,9 @@
+@@ -20,7 +20,8 @@
+         CAPPluginMethod(name: "setFlashMode", returnType: CAPPluginReturnPromise),
+         CAPPluginMethod(name: "startRecordVideo", returnType: CAPPluginReturnPromise),
+         CAPPluginMethod(name: "stopRecordVideo", returnType: CAPPluginReturnPromise),
+-        CAPPluginMethod(name: "isCameraStarted", returnType: CAPPluginReturnPromise)
++        CAPPluginMethod(name: "isCameraStarted", returnType: CAPPluginReturnPromise),
++        CAPPluginMethod(name: "isUltraWideAvailable", returnType: CAPPluginReturnPromise)
+     ]
+ 
+     var previewView: UIView!
+@@ -91,6 +92,9 @@
          self.enableZoom = call.getBool("enableZoom") ?? false
          self.disableAudio = call.getBool("disableAudio") ?? false
  
@@ -72,7 +82,7 @@
          AVCaptureDevice.requestAccess(for: .video, completionHandler: { (granted: Bool) in
              guard granted else {
                  call.reject("permission failed")
-@@ -325,6 +328,11 @@
+@@ -325,6 +329,11 @@
          }
      }
  

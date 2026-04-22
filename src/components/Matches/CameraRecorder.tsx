@@ -62,6 +62,7 @@ export function CameraRecorder({
   const [storageTotal, setStorageTotal] = useState<number | null>(null);
   const [appliedSettings, setAppliedSettings] = useState<string>('');
   const [isUltraWideLens, setIsUltraWideLens] = useState<boolean | null>(null);
+  const [ultraWideHardware, setUltraWideHardware] = useState<boolean | null>(null);
 
   // Web fallback refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -211,19 +212,23 @@ export function CameraRecorder({
         await CameraPreview.start(startOpts);
       }
       // Detect whether ultra-wide is actually active. Patched plugin
-      // exposes isUltraWideAvailable(); fall back to assuming false.
+      // exposes isUltraWideAvailable(); returns { value: hardwareAvailable, active: lensInUse }.
+      let hardwareAvailable = false;
       try {
         if (typeof CameraPreview.isUltraWideAvailable === 'function') {
           const r = await CameraPreview.isUltraWideAvailable();
-          isUltraWide = !!(r?.value ?? r);
+          hardwareAvailable = !!r?.value;
+          isUltraWide = !!r?.active;
         }
       } catch {}
+      setUltraWideHardware(hardwareAvailable);
       if (isUltraWide) {
         appliedZoom = 0.5;
         setAppliedSettings('4K · 30fps · Ultra-wide 0.5×');
+      } else if (hardwareAvailable) {
+        try { await CameraPreview.setZoom({ zoom: 1 }); } catch {}
+        setAppliedSettings('4K · 30fps · Wide 1× (fallback)');
       } else {
-        // Older plugin / older iPhones: best-effort zoom-out, but iOS
-        // clamps videoZoomFactor to >= 1, so this stays Standard 1×.
         try { await CameraPreview.setZoom({ zoom: 1 }); } catch {}
         setAppliedSettings('4K · 30fps · Wide 1×');
       }
@@ -580,7 +585,7 @@ export function CameraRecorder({
                 variant="outline"
                 className="bg-emerald-600/90 text-white border-emerald-300/50 text-xs"
               >
-                <Zap className="h-3 w-3 mr-1" /> Wide 0.5×
+                <Zap className="h-3 w-3 mr-1" /> Ultra-wide 0.5×
               </Badge>
             ) : (
               <>
@@ -588,10 +593,12 @@ export function CameraRecorder({
                   variant="outline"
                   className="bg-amber-500/90 text-white border-amber-300/50 text-xs"
                 >
-                  <Zap className="h-3 w-3 mr-1" /> Standard 1×
+                  <Zap className="h-3 w-3 mr-1" /> Wide 1×
                 </Badge>
                 <span className="text-[10px] text-white/80 bg-black/40 px-2 py-0.5 rounded">
-                  Ultra-wide unavailable
+                  {ultraWideHardware
+                    ? 'Ultra-wide available, using fallback'
+                    : 'Ultra-wide not supported on this device'}
                 </span>
               </>
             )}
