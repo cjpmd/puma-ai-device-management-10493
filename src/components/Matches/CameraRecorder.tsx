@@ -212,19 +212,23 @@ export function CameraRecorder({
         await CameraPreview.start(startOpts);
       }
       // Detect whether ultra-wide is actually active. Patched plugin
-      // exposes isUltraWideAvailable(); fall back to assuming false.
+      // exposes isUltraWideAvailable(); returns { value: hardwareAvailable, active: lensInUse }.
+      let hardwareAvailable = false;
       try {
         if (typeof CameraPreview.isUltraWideAvailable === 'function') {
           const r = await CameraPreview.isUltraWideAvailable();
-          isUltraWide = !!(r?.value ?? r);
+          hardwareAvailable = !!r?.value;
+          isUltraWide = !!r?.active;
         }
       } catch {}
+      setUltraWideHardware(hardwareAvailable);
       if (isUltraWide) {
         appliedZoom = 0.5;
         setAppliedSettings('4K · 30fps · Ultra-wide 0.5×');
+      } else if (hardwareAvailable) {
+        try { await CameraPreview.setZoom({ zoom: 1 }); } catch {}
+        setAppliedSettings('4K · 30fps · Wide 1× (fallback)');
       } else {
-        // Older plugin / older iPhones: best-effort zoom-out, but iOS
-        // clamps videoZoomFactor to >= 1, so this stays Standard 1×.
         try { await CameraPreview.setZoom({ zoom: 1 }); } catch {}
         setAppliedSettings('4K · 30fps · Wide 1×');
       }
