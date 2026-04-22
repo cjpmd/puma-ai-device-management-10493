@@ -61,6 +61,7 @@ export function CameraRecorder({
   const [storageFree, setStorageFree] = useState<number | null>(null);
   const [storageTotal, setStorageTotal] = useState<number | null>(null);
   const [appliedSettings, setAppliedSettings] = useState<string>('');
+  const [isUltraWideLens, setIsUltraWideLens] = useState<boolean | null>(null);
 
   // Web fallback refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -72,6 +73,8 @@ export function CameraRecorder({
   const telemetryIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nativeFilePathRef = useRef<string | null>(null);
+  const viewfinderRef = useRef<HTMLDivElement | null>(null);
+  const lastRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
 
   // ─── INIT ───
   useEffect(() => {
@@ -179,33 +182,41 @@ export function CameraRecorder({
       initWebCamera();
       return;
     }
+    // Wait one more tick so the viewfinder div is laid out and measurable.
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const rect = measureViewfinderRect();
     try {
       await CameraPreview.start({
         parent: 'camera-preview-container',
         position: 'rear',
         toBack: true,
-        width: 3840,
-        height: 2160,
+        // x/y/width/height position the native preview rectangle in CSS px
+        // so the camera draws inside the viewfinder div, not full-screen.
+        x: rect?.x ?? 0,
+        y: rect?.y ?? 0,
+        width: rect?.width ?? window.innerWidth,
+        height: rect?.height ?? window.innerHeight,
         enableZoom: true,
         disableAudio: false,
       });
-      // Try ultra-wide (min zoom) — 0.5x on supported iOS devices
+      // Wide-angle fallback chain: 0.5× (ultra-wide) → 1× → unzoomed
       let appliedZoom = 1;
       let isUltraWide = false;
       try {
         await CameraPreview.setZoom({ zoom: 0.5 });
-        setAppliedSettings('4K • 30fps • 0.5x ultra-wide');
+        setAppliedSettings('4K · 30fps · Wide-angle');
         appliedZoom = 0.5;
         isUltraWide = true;
       } catch {
         try {
           await CameraPreview.setZoom({ zoom: 1 });
-          setAppliedSettings('4K • 30fps • 1x');
+          setAppliedSettings('4K · 30fps · Standard lens');
           appliedZoom = 1;
         } catch {
-          setAppliedSettings('4K • 30fps');
+          setAppliedSettings('4K · 30fps');
         }
       }
+      setIsUltraWideLens(isUltraWide);
       setHasPermission(true);
       onStatusChange('ready');
       onCapabilities?.({
@@ -221,6 +232,62 @@ export function CameraRecorder({
       onStatusChange('error', 'Camera access denied');
     }
   };
+
+  // Measure the on-screen viewfinder div in CSS px.
+  const measureViewfinderRect = () => {
+    const el = viewfinderRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const rect = {
+      x: Math.round(r.left),
+      y: Math.round(r.top),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
+    lastRectRef.current = rect;
+    return rect;
+  };
+
+  // Re-fit native preview when the page resizes / rotates.
+  useEffect(() => {
+    if (!isNative || !useNative) return;
+    let raf: number | null = null;
+    const refit = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(async () => {
+        if (!CameraPreview) return;
+        const rect = measureViewfinderRect();
+        if (!rect) return;
+        try {
+          // No setSize API in @capacitor-community/camera-preview, so
+          // stop+start to apply the new rectangle.
+          await CameraPreview.stop();
+          await CameraPreview.start({
+            parent: 'camera-preview-container',
+            position: 'rear',
+            toBack: true,
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            enableZoom: true,
+            disableAudio: false,
+          });
+          // Re-apply preferred lens after restart
+          try { await CameraPreview.setZoom({ zoom: isUltraWideLens ? 0.5 : 1 }); } catch {}
+        } catch (e) {
+          console.warn('CameraPreview refit failed', e);
+        }
+      });
+    };
+    window.addEventListener('resize', refit);
+    window.addEventListener('orientationchange', refit);
+    return () => {
+      window.removeEventListener('resize', refit);
+      window.removeEventListener('orientationchange', refit);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [useNative, isUltraWideLens]);
 
   // ─── WEB FALLBACK ───
   const initWebCamera = async () => {
