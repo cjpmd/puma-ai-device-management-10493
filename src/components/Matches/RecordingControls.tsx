@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Circle, Square, Radio, Battery, BatteryCharging, ImageOff, Wifi, HardDrive, Eye, EyeOff, X, Camera, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Circle, Square, Radio, Battery, BatteryCharging, ImageOff, Wifi, HardDrive, Eye, EyeOff, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 type CameraStatus = 'disconnected' | 'ready' | 'recording' | 'stopped' | 'error' | 'cancelled';
@@ -315,6 +315,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
       recording: { className: 'bg-red-100 text-red-800', label: 'Recording' },
       stopped: { className: 'bg-blue-100 text-blue-800', label: 'Stopped' },
       error: { className: 'bg-destructive/10 text-destructive', label: 'Error' },
+      cancelled: { className: 'bg-muted text-muted-foreground', label: 'Cancelled' },
     };
     const c = config[status];
     return (
@@ -350,8 +351,8 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
       <CardContent className="space-y-4 px-3 sm:px-6">
         {/* Camera preview panels */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          <CameraPanel label="Left Camera" camera={leftCamera} />
-          <CameraPanel label="Right Camera" camera={rightCamera} />
+          <CameraPanel label="Left Camera" camera={leftCamera} side="left" />
+          <CameraPanel label="Right Camera" camera={rightCamera} side="right" />
         </div>
 
         {/* Live preview note */}
