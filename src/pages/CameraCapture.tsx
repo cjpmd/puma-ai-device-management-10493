@@ -352,8 +352,39 @@ const CameraCapture = () => {
     );
   }
 
+  if (cancelled) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <Card className="w-full max-w-sm">
+          <CardContent className="pt-8 text-center space-y-4">
+            <XCircle className="h-16 w-16 text-muted-foreground mx-auto" />
+            <h2 className="text-xl font-bold">
+              {cancelled === 'remote' ? 'Disconnected by organiser' : 'Camera closed'}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {cancelled === 'remote'
+                ? 'The match organiser disconnected this camera. You can close this page or scan a new QR code to reconnect.'
+                : 'Camera was closed before recording. You can close this page or scan a new QR code to reconnect.'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen wallpaper-twilight p-4 safe-top safe-bottom safe-x flex flex-col overflow-x-hidden text-white">
+      {/* Top-right close button — donor self-cancel */}
+      <button
+        type="button"
+        onClick={handleCancel}
+        aria-label="Close camera"
+        className="fixed top-2 right-2 z-50 h-10 w-10 rounded-full bg-black/60 text-white flex items-center justify-center backdrop-blur active:scale-95 transition-transform safe-top"
+        style={{ marginTop: 'env(safe-area-inset-top)' }}
+      >
+        <X className="h-5 w-5" />
+      </button>
+
       {/* Header */}
       <div className="text-center mb-4 pt-2">
         <Badge variant="secondary" className="text-base px-4 py-1 mb-3">
@@ -396,6 +427,7 @@ const CameraCapture = () => {
               onPreviewFrame={handlePreviewFrame}
               onTelemetry={handleTelemetry}
               onStorage={handleStorage}
+              onCapabilities={handleCapabilities}
               isConnected={isConnected}
               clockOffset={clockOffset}
               livePreviewBoost={livePreviewBoost}
