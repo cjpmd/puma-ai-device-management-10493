@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera, X } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera, X, QrCode, Home } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { CameraRecorder } from '@/components/Matches/CameraRecorder';
+import { Capacitor } from '@capacitor/core';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
