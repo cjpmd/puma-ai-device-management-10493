@@ -138,6 +138,19 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
     setIsRecording(false);
   }, []);
 
+  // Disconnect a single donor camera (master rejects)
+  const handleDisconnect = useCallback((side: 'left' | 'right') => {
+    if (!confirm(`Disconnect ${side === 'left' ? 'Left' : 'Right'} camera? They'll need to scan a new QR.`)) return;
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'recording',
+      payload: { type: 'command', command: 'disconnect', camera_side: side },
+    });
+    // Reset locally so the panel shows disconnected immediately
+    if (side === 'left') setLeftCamera({ status: 'disconnected' });
+    else setRightCamera({ status: 'disconnected' });
+  }, []);
+
   const toggleLivePreview = useCallback(() => {
     const newState = !livePreview;
     setLivePreview(newState);
@@ -164,7 +177,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
   const anyConnected = leftCamera.status !== 'disconnected' || rightCamera.status !== 'disconnected';
 
   // Camera preview panel
-  const CameraPanel = ({ label, camera }: { label: string; camera: CameraState }) => {
+  const CameraPanel = ({ label, camera, side }: { label: string; camera: CameraState; side: 'left' | 'right' }) => {
     const batteryPercent = camera.batteryLevel != null && camera.batteryLevel >= 0
       ? Math.round(camera.batteryLevel * 100)
       : null;
@@ -176,12 +189,26 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
     const lowStorage = camera.storageFreeBytes != null && camera.storageFreeBytes < 2 * 1024 ** 3; // <2GB
 
     const previewStale = camera.lastPreviewAt && Date.now() - camera.lastPreviewAt > 8000;
+    const isConnected = camera.status !== 'disconnected';
 
     return (
       <div className="flex-1 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">{label}</span>
-          <StatusBadge status={camera.status} />
+          <div className="flex items-center gap-1">
+            <StatusBadge status={camera.status} />
+            {isConnected && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => handleDisconnect(side)}
+                aria-label={`Disconnect ${label}`}
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Preview thumbnail */}
@@ -218,6 +245,37 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
             </div>
           )}
         </div>
+
+        {/* Capability badges — resolution / fps / lens */}
+        {camera.capabilities && (
+          <div className="flex flex-wrap gap-1">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
+              {camera.capabilities.resolution.includes('3840') || camera.capabilities.resolution.includes('2160')
+                ? '4K'
+                : camera.capabilities.resolution}
+            </Badge>
+            {camera.capabilities.fps > 0 && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
+                {camera.capabilities.fps}fps
+              </Badge>
+            )}
+            {camera.capabilities.ultraWide ? (
+              <Badge className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0 h-5">
+                ✓ Ultra-wide 0.5×
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className={`text-[10px] px-1.5 py-0 h-5 ${
+                  camera.capabilities.zoom > 1 ? 'text-orange-600 border-orange-300' : ''
+                }`}
+                title={camera.capabilities.zoom > 1 ? 'Narrow lens — less pitch coverage' : undefined}
+              >
+                {camera.capabilities.zoom}× lens
+              </Badge>
+            )}
+          </div>
+        )}
 
         {/* Battery */}
         {batteryPercent !== null && (
