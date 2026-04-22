@@ -54,9 +54,22 @@ const CameraCapture = () => {
   }, []);
 
   // Boxed viewfinder approach: the native camera preview is positioned to
-  // match the viewfinder div via x/y/width/height in CameraPreview.start(),
-  // so the rest of the page chrome can stay solid and readable. No global
-  // body-level transparency hacks needed.
+  // match the viewfinder div via x/y/width/height in CameraPreview.start().
+  // BUT the WebView itself must be transparent (toBack:true renders the
+  // camera *behind* the WKWebView), otherwise the page background covers
+  // the native preview rect. We toggle `camera-preview-active` on <html>
+  // while the recorder is mounted, and floating chrome elements keep their
+  // own dark-glass backgrounds for readability.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    if (!tokenInfo) return;
+    if (uploadDone || cancelled || file || uploading) return;
+    const html = document.documentElement;
+    html.classList.add('camera-preview-active');
+    return () => {
+      html.classList.remove('camera-preview-active');
+    };
+  }, [tokenInfo, uploadDone, cancelled, file, uploading]);
 
   const navigate = useNavigate();
   const goHome = useCallback(() => {

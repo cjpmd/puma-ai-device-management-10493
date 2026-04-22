@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Camera, Circle, Square, AlertTriangle, Zap } from 'lucide-react';
+import { Camera, Circle, Square, AlertTriangle, Zap, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 // Lazy imports — only resolved on native
@@ -186,35 +186,46 @@ export function CameraRecorder({
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     const rect = measureViewfinderRect();
     try {
-      await CameraPreview.start({
+      // Try ultra-wide first (requires patched plugin: passes
+      // `lens: 'ultraWide'` which uses .builtInUltraWideCamera on iOS).
+      // Falls back to standard wide-angle if not supported.
+      let isUltraWide = false;
+      let appliedZoom = 1;
+      const startOpts: any = {
         parent: 'camera-preview-container',
         position: 'rear',
         toBack: true,
-        // x/y/width/height position the native preview rectangle in CSS px
-        // so the camera draws inside the viewfinder div, not full-screen.
         x: rect?.x ?? 0,
         y: rect?.y ?? 0,
         width: rect?.width ?? window.innerWidth,
         height: rect?.height ?? window.innerHeight,
         enableZoom: true,
         disableAudio: false,
-      });
-      // Wide-angle fallback chain: 0.5× (ultra-wide) → 1× → unzoomed
-      let appliedZoom = 1;
-      let isUltraWide = false;
+        lens: 'ultraWide', // patched plugin reads this; plain plugin ignores it
+      };
       try {
-        await CameraPreview.setZoom({ zoom: 0.5 });
-        setAppliedSettings('4K · 30fps · Wide-angle');
-        appliedZoom = 0.5;
-        isUltraWide = true;
-      } catch {
-        try {
-          await CameraPreview.setZoom({ zoom: 1 });
-          setAppliedSettings('4K · 30fps · Standard lens');
-          appliedZoom = 1;
-        } catch {
-          setAppliedSettings('4K · 30fps');
+        await CameraPreview.start(startOpts);
+      } catch (firstErr) {
+        // Retry without the lens option for older/unpatched plugins
+        delete startOpts.lens;
+        await CameraPreview.start(startOpts);
+      }
+      // Detect whether ultra-wide is actually active. Patched plugin
+      // exposes isUltraWideAvailable(); fall back to assuming false.
+      try {
+        if (typeof CameraPreview.isUltraWideAvailable === 'function') {
+          const r = await CameraPreview.isUltraWideAvailable();
+          isUltraWide = !!(r?.value ?? r);
         }
+      } catch {}
+      if (isUltraWide) {
+        appliedZoom = 0.5;
+        setAppliedSettings('4K · 30fps · Ultra-wide 0.5×');
+      } else {
+        // Older plugin / older iPhones: best-effort zoom-out, but iOS
+        // clamps videoZoomFactor to >= 1, so this stays Standard 1×.
+        try { await CameraPreview.setZoom({ zoom: 1 }); } catch {}
+        setAppliedSettings('4K · 30fps · Wide 1×');
       }
       setIsUltraWideLens(isUltraWide);
       setHasPermission(true);
@@ -262,7 +273,7 @@ export function CameraRecorder({
           // No setSize API in @capacitor-community/camera-preview, so
           // stop+start to apply the new rectangle.
           await CameraPreview.stop();
-          await CameraPreview.start({
+          const refitOpts: any = {
             parent: 'camera-preview-container',
             position: 'rear',
             toBack: true,
@@ -272,9 +283,14 @@ export function CameraRecorder({
             height: rect.height,
             enableZoom: true,
             disableAudio: false,
-          });
-          // Re-apply preferred lens after restart
-          try { await CameraPreview.setZoom({ zoom: isUltraWideLens ? 0.5 : 1 }); } catch {}
+          };
+          if (isUltraWideLens) refitOpts.lens = 'ultraWide';
+          try {
+            await CameraPreview.start(refitOpts);
+          } catch {
+            delete refitOpts.lens;
+            await CameraPreview.start(refitOpts);
+          }
         } catch (e) {
           console.warn('CameraPreview refit failed', e);
         }
@@ -528,12 +544,32 @@ export function CameraRecorder({
           </div>
         )}
 
+        {/* While recording, paint over the live preview with a black REC
+            screen so the donor doesn't worry about what's being captured.
+            Native recording continues underneath — we only hide the WebView
+            view of it. The X button stops recording AND signals cancel. */}
         {isRecording && (
-          <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
-            <Badge className="bg-red-600 text-white">
-              <Circle className="h-2 w-2 fill-current mr-1 animate-pulse" />
-              REC {formatTime(elapsed)}
-            </Badge>
+          <div className="absolute inset-0 z-20 bg-black flex flex-col items-center justify-center text-white">
+            <button
+              type="button"
+              onClick={() => stopRecording()}
+              aria-label="Stop recording and exit"
+              className="absolute top-3 right-3 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="flex items-center gap-4">
+              <Circle className="h-20 w-20 fill-red-600 text-red-600 animate-pulse" />
+              <div className="flex flex-col">
+                <span className="text-4xl font-bold tracking-wider">REC</span>
+                <span className="text-2xl font-mono tabular-nums text-white/80">
+                  {formatTime(elapsed)}
+                </span>
+              </div>
+            </div>
+            <p className="mt-6 text-xs text-white/60 uppercase tracking-widest">
+              Recording in progress
+            </p>
           </div>
         )}
 
