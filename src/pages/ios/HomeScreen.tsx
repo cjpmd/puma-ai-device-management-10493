@@ -257,6 +257,29 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
           </Glass>
         </div>
 
+        {/* Scan camera QR (donor phone entry point) */}
+        <div style={{ padding: '0 16px 16px' }}>
+          <Glass r={20} onClick={() => navigate('/scan-qr')}>
+            <div style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 12,
+                background: 'rgba(120, 90, 255, 0.22)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: T.fg,
+              }}>
+                <QrCode size={22} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 600 }}>Scan Camera QR</div>
+                <div style={{ ...tType('caption1'), color: T.fg2 }}>
+                  Join a match as a donor camera
+                </div>
+              </div>
+              <div style={{ ...tType('title3'), color: T.fg2, fontWeight: 300 }}>›</div>
+            </div>
+          </Glass>
+        </div>
+
         {/* Squad summary */}
         <SectionHeader title="Squad" action="View all" />
         <div style={{ padding: '4px 16px 20px' }}>
