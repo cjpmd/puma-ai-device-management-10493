@@ -115,6 +115,12 @@ const CameraCapture = () => {
     channel
       .on('broadcast', { event: 'recording' }, ({ payload }) => {
         if (payload?.type === 'command') {
+          // Per-side filter: if the master targets a specific donor, ignore
+          // commands meant for the other donor. Master can still address
+          // both donors by omitting `camera_side` from the payload.
+          if (payload.camera_side && payload.camera_side !== tokenInfo.camera_side) {
+            return;
+          }
           if (payload.command === 'start') {
             setStartAt(payload.startAt);
             setRemoteCommand('start');
@@ -126,9 +132,7 @@ const CameraCapture = () => {
             setLivePreviewBoost(false);
           } else if (payload.command === 'disconnect') {
             // Master phone has rejected/closed this donor camera
-            if (!payload.camera_side || payload.camera_side === tokenInfo.camera_side) {
-              setCancelled('remote');
-            }
+            setCancelled('remote');
           }
         }
         // Respond to pings from control phone
