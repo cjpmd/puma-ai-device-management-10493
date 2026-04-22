@@ -33,6 +33,7 @@ interface CameraRecorderProps {
   onTelemetry?: (battery: number, isCharging: boolean) => void;
   onStorage?: (freeBytes: number, totalBytes: number) => void;
   onPong?: (sentAt: number, receivedAt: number) => void;
+  onCapabilities?: (caps: { resolution: string; fps: number; zoom: number; ultraWide: boolean; native: boolean }) => void;
   isConnected: boolean;
   clockOffset: number; // ms offset calculated from ping-pong
   livePreviewBoost?: boolean; // when true, stream preview frames more frequently
@@ -47,6 +48,7 @@ export function CameraRecorder({
   onTelemetry,
   onStorage,
   onPong,
+  onCapabilities,
   isConnected,
   clockOffset,
   livePreviewBoost = false,
