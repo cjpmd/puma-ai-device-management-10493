@@ -149,3 +149,18 @@ body.barcode-scanner-active .barcode-scanner-ui * {
 .camera-viewfinder-native {
   background: transparent !important;
 }
+
+/* When the donor capture screen is showing the live preview, the WebView
+   itself must be transparent so the AVCaptureVideoPreviewLayer (rendered
+   behind the WebView via toBack:true) is visible inside the viewfinder
+   rect. The chrome (header, badges, controls, REC overlay) keeps its own
+   solid/glass backgrounds so it remains readable. */
+html.camera-preview-active,
+html.camera-preview-active body,
+html.camera-preview-active #root,
+html.camera-preview-active .ios-app-shell,
+html.camera-preview-active .wallpaper-twilight,
+html.camera-preview-active .wallpaper-dawn,
+html.camera-preview-active .wallpaper-aurora {
+  background: transparent !important;
+}
