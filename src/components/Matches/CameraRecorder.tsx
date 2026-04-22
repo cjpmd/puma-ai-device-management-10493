@@ -62,6 +62,7 @@ export function CameraRecorder({
   const [storageTotal, setStorageTotal] = useState<number | null>(null);
   const [appliedSettings, setAppliedSettings] = useState<string>('');
   const [isUltraWideLens, setIsUltraWideLens] = useState<boolean | null>(null);
+  const [ultraWideHardware, setUltraWideHardware] = useState<boolean | null>(null);
 
   // Web fallback refs
   const videoRef = useRef<HTMLVideoElement>(null);
