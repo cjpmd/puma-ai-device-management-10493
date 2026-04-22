@@ -247,6 +247,13 @@ export function CameraRecorder({
       );
       setHasPermission(true);
       onStatusChange('ready');
+      onCapabilities?.({
+        resolution: settings?.width && settings?.height ? `${settings.width}×${settings.height}` : 'Auto',
+        fps: Math.round(settings?.frameRate || 0),
+        zoom: 1,
+        ultraWide: false,
+        native: false,
+      });
     } catch {
       setHasPermission(false);
       onStatusChange('error', 'Camera access denied');
