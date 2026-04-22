@@ -53,20 +53,24 @@ const CameraCapture = () => {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
-  // Toggle camera-preview-active class on <html> and <body> while the recorder
-  // is mounted (donor capture screen). This makes the WebView transparent so
-  // the native camera feed (rendered behind the WebView via toBack:true) is
-  // visible. Removed when the donor uploads, cancels, or is disconnected.
-  useEffect(() => {
-    const recorderMounted = !!tokenInfo && !file && !uploading && !uploadDone && !cancelled;
-    if (!recorderMounted) return;
-    document.documentElement.classList.add('camera-preview-active');
-    document.body.classList.add('camera-preview-active');
-    return () => {
-      document.documentElement.classList.remove('camera-preview-active');
-      document.body.classList.remove('camera-preview-active');
-    };
-  }, [tokenInfo, file, uploading, uploadDone, cancelled]);
+  // Boxed viewfinder approach: the native camera preview is positioned to
+  // match the viewfinder div via x/y/width/height in CameraPreview.start(),
+  // so the rest of the page chrome can stay solid and readable. No global
+  // body-level transparency hacks needed.
+
+  const navigate = useNavigate();
+  const goHome = useCallback(() => {
+    if (Capacitor.isNativePlatform()) {
+      navigate('/');
+    } else {
+      try { window.close(); } catch {}
+      // Fallback if window.close is blocked
+      setTimeout(() => navigate('/'), 100);
+    }
+  }, [navigate]);
+  const goScanQr = useCallback(() => {
+    navigate('/scan-qr');
+  }, [navigate]);
 
   // Validate token
   useEffect(() => {
@@ -346,7 +350,14 @@ const CameraCapture = () => {
             <p className="text-sm text-muted-foreground">
               {tokenInfo?.camera_side === 'left' ? 'Left' : 'Right'} camera video for "{tokenInfo?.match_title}" has been uploaded.
             </p>
-            <p className="text-xs text-muted-foreground">You can close this page now.</p>
+            <div className="flex flex-col gap-2 pt-2">
+              <Button variant="outline" onClick={goScanQr} className="w-full">
+                <QrCode className="h-4 w-4 mr-2" /> Scan new QR
+              </Button>
+              <Button onClick={goHome} className="w-full">
+                <Home className="h-4 w-4 mr-2" /> Close
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -367,6 +378,14 @@ const CameraCapture = () => {
                 ? 'The match organiser disconnected this camera. You can close this page or scan a new QR code to reconnect.'
                 : 'Camera was closed before recording. You can close this page or scan a new QR code to reconnect.'}
             </p>
+            <div className="flex flex-col gap-2 pt-2">
+              <Button variant="outline" onClick={goScanQr} className="w-full">
+                <QrCode className="h-4 w-4 mr-2" /> Scan new QR
+              </Button>
+              <Button onClick={goHome} className="w-full">
+                <Home className="h-4 w-4 mr-2" /> Close
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
