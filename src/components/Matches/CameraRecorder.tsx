@@ -585,7 +585,7 @@ export function CameraRecorder({
                 variant="outline"
                 className="bg-emerald-600/90 text-white border-emerald-300/50 text-xs"
               >
-                <Zap className="h-3 w-3 mr-1" /> Wide 0.5×
+                <Zap className="h-3 w-3 mr-1" /> Ultra-wide 0.5×
               </Badge>
             ) : (
               <>
@@ -593,10 +593,12 @@ export function CameraRecorder({
                   variant="outline"
                   className="bg-amber-500/90 text-white border-amber-300/50 text-xs"
                 >
-                  <Zap className="h-3 w-3 mr-1" /> Standard 1×
+                  <Zap className="h-3 w-3 mr-1" /> Wide 1×
                 </Badge>
                 <span className="text-[10px] text-white/80 bg-black/40 px-2 py-0.5 rounded">
-                  Ultra-wide unavailable
+                  {ultraWideHardware
+                    ? 'Ultra-wide available, using fallback'
+                    : 'Ultra-wide not supported on this device'}
                 </span>
               </>
             )}
