@@ -393,7 +393,7 @@ const CameraCapture = () => {
   }
 
   return (
-    <div className="min-h-screen wallpaper-twilight p-4 safe-top safe-bottom safe-x flex flex-col overflow-x-hidden text-white">
+    <div className="min-h-screen wallpaper-twilight p-4 landscape:p-2 safe-top safe-bottom safe-x flex flex-col overflow-x-hidden text-white">
       {/* Top-right close button — donor self-cancel */}
       <button
         type="button"
@@ -405,20 +405,20 @@ const CameraCapture = () => {
         <X className="h-5 w-5" />
       </button>
 
-      {/* Header */}
-      <div className="text-center mb-4 pt-2">
-        <Badge variant="secondary" className="text-base px-4 py-1 mb-3">
+      {/* Header — compacts in landscape so the viewfinder gets max space */}
+      <div className="text-center mb-4 pt-2 landscape:mb-2 landscape:pt-1">
+        <Badge variant="secondary" className="text-base px-4 py-1 mb-3 landscape:text-xs landscape:px-2 landscape:py-0.5 landscape:mb-1">
           {tokenInfo?.camera_side === 'left' ? '📷 Left Camera' : '📷 Right Camera'}
         </Badge>
-        <h1 className="text-xl font-bold">{tokenInfo?.match_title}</h1>
+        <h1 className="text-xl font-bold landscape:text-sm landscape:inline">{tokenInfo?.match_title}</h1>
         {tokenInfo?.match_date && (
-          <p className="text-sm text-muted-foreground mt-1">{new Date(tokenInfo.match_date).toLocaleDateString()}</p>
+          <p className="text-sm text-muted-foreground mt-1 landscape:hidden">{new Date(tokenInfo.match_date).toLocaleDateString()}</p>
         )}
-        {tokenInfo?.match_location && <p className="text-sm text-muted-foreground">{tokenInfo.match_location}</p>}
+        {tokenInfo?.match_location && <p className="text-sm text-muted-foreground landscape:hidden">{tokenInfo.match_location}</p>}
       </div>
 
       {/* Connection Status */}
-      <div className="flex items-center justify-center gap-2 mb-4">
+      <div className="flex items-center justify-center gap-2 mb-4 landscape:mb-2">
         {isOnline ? (
           <Badge variant="outline" className="text-emerald-600 border-emerald-300">
             <Wifi className="h-3 w-3 mr-1" /> Online
@@ -435,7 +435,7 @@ const CameraCapture = () => {
         )}
       </div>
 
-      <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full space-y-4">
+      <div className="flex-1 flex flex-col justify-center mx-auto w-full space-y-4 max-w-sm landscape:max-w-none">
         {/* Camera recorder — shown when no file selected yet */}
         {!file && !uploading && (
           <>
