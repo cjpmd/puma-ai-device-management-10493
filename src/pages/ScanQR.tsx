@@ -79,21 +79,21 @@ export default function ScanQR() {
         // Make webview transparent so the native camera feed shows through.
         document.querySelector('body')?.classList.add('barcode-scanner-active');
 
-        listenerHandle = await BarcodeScanner.addListener('barcodeScanned', async (event) => {
+        listenerHandle = await BarcodeScanner.addListener('barcodesScanned', async (event) => {
           if (handledRef.current) return;
-          const value = event.barcode?.rawValue ?? '';
-          const token = extractToken(value);
-          if (!token) {
-            // Not our QR — keep scanning, but flash a quick hint once.
-            return;
+          for (const b of event.barcodes ?? []) {
+            const token = extractToken(b.rawValue ?? '');
+            if (token) {
+              handledRef.current = true;
+              await stopScan();
+              if (listenerHandle) {
+                await listenerHandle.remove();
+                listenerHandle = null;
+              }
+              navigate(`/capture/${token}`);
+              return;
+            }
           }
-          handledRef.current = true;
-          await stopScan();
-          if (listenerHandle) {
-            await listenerHandle.remove();
-            listenerHandle = null;
-          }
-          navigate(`/capture/${token}`);
         });
 
         await BarcodeScanner.startScan({ formats: [BarcodeFormat.QrCode] });
