@@ -1,101 +1,58 @@
 
 
-## Plan — Native-only deep link QR capture (no web fallback)
+## Plan — Make QR codes scannable by iOS Camera (in‑app QR scanner)
 
-### Problem
-QR codes encode `https://…/capture/<token>` → iOS opens Safari. We need scanning to open the installed Capacitor app directly via custom URL scheme `playeranalysis://capture/<token>`. No `server.url`, no web fallback — fully native, offline-capable.
+### Why "No usable data found" appears
+The QR currently encodes `playeranalysis://capture/<token>`. iOS Camera (and most third‑party scanners) deliberately refuse to surface custom URL schemes — only `http(s)` URLs and a small allow‑list (mailto:, tel:, geo:) get a tappable banner. The QR data is fine; iOS is just ignoring custom schemes for security.
 
-Current `capacitor.config.ts` is also broken: `appId: 'com.pumaai.devicemanagement,` has an unterminated quote and a stray `}` after the comment block. The file won't compile.
+We have two ways to fix this without going back to a hosted web page:
+
+- **Option A (recommended for testing now): in‑app QR scanner.** The donor phone opens the installed Player Analysis app, taps "Scan QR", points it at the master phone, and the app jumps straight to `/capture/:token`. No iOS Camera involvement, no Universal Links, fully native, fully offline-capable.
+- **Option B (later, for production "scan with iOS Camera" UX): Universal Links** — needs an Apple Team ID + a hosted `apple-app-site-association` file. You explicitly said this is out of scope for this phase, so we're not doing it now.
+
+This plan implements Option A, plus keeps the deep link working so that *if someone does get the URL another way* (iMessage, AirDrop, Notes), tapping it still opens the app.
 
 ### Fix
 
-**1. Repair `capacitor.config.ts` and register URL scheme**
-```ts
-import { CapacitorConfig } from "@capacitor/cli";
+**1. Add an in‑app QR scanner using the existing camera plugin**
+- Install `@capacitor-mlkit/barcode-scanning` (Capacitor's official barcode scanner; fully native, works offline, no API keys).
+- New page `src/pages/ScanQR.tsx`:
+  - Full‑screen camera preview with a centred reticle + "Cancel" button.
+  - On scan, if the value starts with `playeranalysis://capture/`, extract the token and `navigate('/capture/<token>')`.
+  - If it starts with `https://…/capture/<token>` (back‑compat for old QRs already generated), strip and route the same way.
+  - Otherwise show a toast "Not a valid camera QR".
+- Route: add `<Route path="/scan-qr" element={<ScanQR />} />` in `App.tsx`.
 
-const config: CapacitorConfig = {
-  appId: "com.pumaai.devicemanagement",
-  appName: "Player Analysis",
-  webDir: "dist",
-  ios: {
-    contentInset: "always",
-    scheme: "playeranalysis",
-    backgroundColor: "#ffffff",
-  },
-  plugins: {
-    CameraPreview: {
-      iosDisableAudio: false,
-    },
-  },
-};
+**2. Add a "Scan QR" entry point on the donor phone**
+- On the iOS home screen (`src/pages/ios/HomeScreen.tsx`), add a prominent "Scan Camera QR" tile/button → navigates to `/scan-qr`.
+- Also add a small "Scan QR" link on the Match Day Setup screen for convenience.
 
-export default config;
-```
-- Fix syntax (close the string, remove stray `}`).
-- Keep `appId: "com.pumaai.devicemanagement"` to match what you've already built in Xcode (changing it forces a project rebuild).
-- Remove `server.url` entirely — app loads from bundled `dist/`.
-- Set `ios.scheme: "playeranalysis"` so Capacitor registers `playeranalysis://` as a URL Type on next `cap sync`.
-
-**2. Change QR encoding — `src/components/Matches/CameraQRSetup.tsx`**
-Replace:
-```ts
-const captureUrl = token ? `${window.location.origin}/capture/${token}` : null;
-```
-with:
-```ts
-const captureUrl = token ? `playeranalysis://capture/${token}` : null;
-```
-The "Copy Link" button copies the same `playeranalysis://…` URL.
-
-**3. Add `@capacitor/app` deep link handler**
-- Install `@capacitor/app`.
-- New file `src/hooks/useDeepLinkHandler.ts`:
-  ```ts
-  import { useEffect } from "react";
-  import { App } from "@capacitor/app";
-  import { useNavigate } from "react-router-dom";
-
-  export const useDeepLinkHandler = () => {
-    const navigate = useNavigate();
-    useEffect(() => {
-      const sub = App.addListener("appUrlOpen", (event) => {
-        const url = event.url;
-        if (url.startsWith("playeranalysis://capture/")) {
-          const token = url.split("capture/")[1];
-          navigate(`/capture/${token}`);
-        }
-      });
-      return () => { sub.then(s => s.remove()); };
-    }, [navigate]);
-  };
-  ```
-- Mount inside `App.tsx`. Because the hook calls `useNavigate()`, it must live **inside** `<BrowserRouter>`. Wrap the existing `<Routes>` block in a tiny `<AppShell>` component that calls `useDeepLinkHandler()` then renders `<Routes>…</Routes>` unchanged.
-
-**4. Build production bundle**
-Since we're removing `server.url`, the native app now loads `dist/`. The bundled assets must be current before each `cap sync`. No code change needed — just a reminder in the post-fix steps below.
-
-### After the change — what you do locally
-1. `git pull`
-2. `npm install` (picks up `@capacitor/app`)
-3. `npm run build` (produces fresh `dist/` since we no longer hot-load from a server URL)
-4. `npx cap sync ios`
-5. Open Xcode → confirm **Target → Info → URL Types** lists `playeranalysis` (Capacitor writes this from `ios.scheme` on sync).
-6. `npx cap run ios` on both phones.
-7. Master phone → generate QR → donor phone scans → iOS prompts "Open in Player Analysis?" → app opens on the capture screen.
+**3. Keep the QR generator producing the deep link, but make the human‑readable label clear**
+- `src/components/Matches/CameraQRSetup.tsx`: keep `playeranalysis://capture/<token>` as the QR payload (the in‑app scanner handles it perfectly).
+- Replace the helper text under the QR with: *"Open Player Analysis on the donor phone → tap **Scan QR** → point at this code."* So the user knows not to use the iOS Camera app.
+- Remove the "Copy Link" button's "Share via iMessage or WhatsApp" wording — that path won't work for non‑installed phones and we said no web fallback. Replace with "Copy deep link" (still useful for AirDrop/Notes paste on a phone that already has the app).
 
 ### Files
 
 **Edit**
-- `capacitor.config.ts` — fix syntax, set `ios.scheme: "playeranalysis"`, ensure no `server.url`.
-- `src/components/Matches/CameraQRSetup.tsx` — encode `playeranalysis://capture/<token>`.
-- `src/App.tsx` — wrap `<Routes>` so `useDeepLinkHandler()` runs inside `<BrowserRouter>`.
-- `package.json` — add `@capacitor/app`.
+- `src/App.tsx` — register `/scan-qr` route.
+- `src/components/Matches/CameraQRSetup.tsx` — update helper copy + button label.
+- `src/pages/ios/HomeScreen.tsx` — add "Scan Camera QR" tile.
+- `package.json` — add `@capacitor-mlkit/barcode-scanning`.
 
 **New**
-- `src/hooks/useDeepLinkHandler.ts` — listens for `appUrlOpen`, navigates to `/capture/:token`.
+- `src/pages/ScanQR.tsx` — native QR scanner page using `@capacitor-mlkit/barcode-scanning`, parses `playeranalysis://capture/<token>` and navigates.
+
+### After the change — what you do locally
+1. `git pull`
+2. `npm install` (picks up `@capacitor-mlkit/barcode-scanning`)
+3. `npm run build`
+4. `npx cap sync ios`
+5. Re‑deploy to both phones via Xcode.
+6. Master phone → generate QR. Donor phone → open Player Analysis → tap **Scan Camera QR** → point at the master phone. App jumps to `/capture/<token>`.
 
 ### Out of scope
-- Universal Links / web fallback (explicitly not wanted).
-- Android intent filter (iOS only for this pass).
-- Role-based gating for QR generation (coach vs parent).
+- Universal Links (later, when moving past testing).
+- Android scanner UI (iOS only this pass).
+- Role‑gating who can see the "Scan QR" tile (coach vs parent) — surface for everyone for now.
 
