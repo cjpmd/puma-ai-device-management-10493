@@ -20,7 +20,7 @@ export function CameraQRSetup({ matchId, cameraSide, uploadStatus }: CameraQRSet
   const { toast } = useToast();
 
   const isUploaded = uploadStatus === 'uploaded';
-  const captureUrl = token ? `${window.location.origin}/capture/${token}` : null;
+  const captureUrl = token ? `playeranalysis://capture/${token}` : null;
 
   const generateToken = async () => {
     setGenerating(true);

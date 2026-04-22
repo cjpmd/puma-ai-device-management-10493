@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useDeepLinkHandler } from "@/hooks/useDeepLinkHandler";
 import { IOSApp } from "./pages/ios/IOSApp";
 import { MobileNavShell } from "@/components/ios/MobileNavShell";
 import Index from "./pages/Index";
@@ -52,89 +53,96 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const AppRoutes = () => {
+  useDeepLinkHandler();
+  return (
+    <Routes>
+      <Route path="/auth" element={<Auth />} />
+      <Route path="/capture/:token" element={<CameraCapture />} />
+      <Route
+        path="/"
+        element={
+          <PrivateRoute>
+            <IOSApp />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/legacy"
+        element={
+          <PrivateRoute>
+            <Index />
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/ml-training"
+        element={
+          <PrivateRoute>
+            <MobileNavShell><MLTraining /></MobileNavShell>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/analysis"
+        element={
+          <PrivateRoute>
+            <MobileNavShell><Analysis /></MobileNavShell>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/devices"
+        element={
+          <PrivateRoute>
+            <MobileNavShell><Devices /></MobileNavShell>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/pitch-calibration"
+        element={
+          <PrivateRoute>
+            <MobileNavShell><PitchCalibration /></MobileNavShell>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/matches"
+        element={
+          <PrivateRoute>
+            <MobileNavShell><Matches /></MobileNavShell>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/matches/demo"
+        element={
+          <PrivateRoute>
+            <MobileNavShell><DemoMatch /></MobileNavShell>
+          </PrivateRoute>
+        }
+      />
+      <Route
+        path="/matches/:id"
+        element={
+          <PrivateRoute>
+            <MobileNavShell><MatchDetail /></MobileNavShell>
+          </PrivateRoute>
+        }
+      />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/capture/:token" element={<CameraCapture />} />
-          <Route
-            path="/"
-            element={
-              <PrivateRoute>
-                <IOSApp />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/legacy"
-            element={
-              <PrivateRoute>
-                <Index />
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/ml-training"
-            element={
-              <PrivateRoute>
-                <MobileNavShell><MLTraining /></MobileNavShell>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/analysis"
-            element={
-              <PrivateRoute>
-                <MobileNavShell><Analysis /></MobileNavShell>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/devices"
-            element={
-              <PrivateRoute>
-                <MobileNavShell><Devices /></MobileNavShell>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/pitch-calibration"
-            element={
-              <PrivateRoute>
-                <MobileNavShell><PitchCalibration /></MobileNavShell>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/matches"
-            element={
-              <PrivateRoute>
-                <MobileNavShell><Matches /></MobileNavShell>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/matches/demo"
-            element={
-              <PrivateRoute>
-                <MobileNavShell><DemoMatch /></MobileNavShell>
-              </PrivateRoute>
-            }
-          />
-          <Route
-            path="/matches/:id"
-            element={
-              <PrivateRoute>
-                <MobileNavShell><MatchDetail /></MobileNavShell>
-              </PrivateRoute>
-            }
-          />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AppRoutes />
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
