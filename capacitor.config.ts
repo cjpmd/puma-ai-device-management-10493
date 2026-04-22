@@ -1,12 +1,11 @@
 import { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "app.lovable.cb1a7443dfe74413bc7a813cf6770aa3",
+  appId: 'com.pumaai.devicemanagement,
   appName: "Player Analysis",
   webDir: "dist",
-  server: {
-    url: "https://cb1a7443-dfe7-4413-bc7a-813cf6770aa3.lovableproject.com?forceHideBadge=true",
-    cleartext: true,
+  // Only use server.url for development with hot reload
+  // Remove this for production native builds
   },
   ios: {
     contentInset: "always",
