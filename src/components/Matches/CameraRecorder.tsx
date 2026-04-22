@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Camera, Circle, Square, AlertTriangle, Zap } from 'lucide-react';
+import { Camera, Circle, Square, AlertTriangle, Zap, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 // Lazy imports — only resolved on native
@@ -186,35 +186,46 @@ export function CameraRecorder({
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     const rect = measureViewfinderRect();
     try {
-      await CameraPreview.start({
+      // Try ultra-wide first (requires patched plugin: passes
+      // `lens: 'ultraWide'` which uses .builtInUltraWideCamera on iOS).
+      // Falls back to standard wide-angle if not supported.
+      let isUltraWide = false;
+      let appliedZoom = 1;
+      const startOpts: any = {
         parent: 'camera-preview-container',
         position: 'rear',
         toBack: true,
-        // x/y/width/height position the native preview rectangle in CSS px
-        // so the camera draws inside the viewfinder div, not full-screen.
         x: rect?.x ?? 0,
         y: rect?.y ?? 0,
         width: rect?.width ?? window.innerWidth,
         height: rect?.height ?? window.innerHeight,
         enableZoom: true,
         disableAudio: false,
-      });
-      // Wide-angle fallback chain: 0.5× (ultra-wide) → 1× → unzoomed
-      let appliedZoom = 1;
-      let isUltraWide = false;
+        lens: 'ultraWide', // patched plugin reads this; plain plugin ignores it
+      };
       try {
-        await CameraPreview.setZoom({ zoom: 0.5 });
-        setAppliedSettings('4K · 30fps · Wide-angle');
-        appliedZoom = 0.5;
-        isUltraWide = true;
-      } catch {
-        try {
-          await CameraPreview.setZoom({ zoom: 1 });
-          setAppliedSettings('4K · 30fps · Standard lens');
-          appliedZoom = 1;
-        } catch {
-          setAppliedSettings('4K · 30fps');
+        await CameraPreview.start(startOpts);
+      } catch (firstErr) {
+        // Retry without the lens option for older/unpatched plugins
+        delete startOpts.lens;
+        await CameraPreview.start(startOpts);
+      }
+      // Detect whether ultra-wide is actually active. Patched plugin
+      // exposes isUltraWideAvailable(); fall back to assuming false.
+      try {
+        if (typeof CameraPreview.isUltraWideAvailable === 'function') {
+          const r = await CameraPreview.isUltraWideAvailable();
+          isUltraWide = !!(r?.value ?? r);
         }
+      } catch {}
+      if (isUltraWide) {
+        appliedZoom = 0.5;
+        setAppliedSettings('4K · 30fps · Ultra-wide 0.5×');
+      } else {
+        // Older plugin / older iPhones: best-effort zoom-out, but iOS
+        // clamps videoZoomFactor to >= 1, so this stays Standard 1×.
+        try { await CameraPreview.setZoom({ zoom: 1 }); } catch {}
+        setAppliedSettings('4K · 30fps · Wide 1×');
       }
       setIsUltraWideLens(isUltraWide);
       setHasPermission(true);
