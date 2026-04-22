@@ -190,19 +190,31 @@ export function CameraRecorder({
         disableAudio: false,
       });
       // Try ultra-wide (min zoom) — 0.5x on supported iOS devices
+      let appliedZoom = 1;
+      let isUltraWide = false;
       try {
         await CameraPreview.setZoom({ zoom: 0.5 });
         setAppliedSettings('4K • 30fps • 0.5x ultra-wide');
+        appliedZoom = 0.5;
+        isUltraWide = true;
       } catch {
         try {
           await CameraPreview.setZoom({ zoom: 1 });
           setAppliedSettings('4K • 30fps • 1x');
+          appliedZoom = 1;
         } catch {
           setAppliedSettings('4K • 30fps');
         }
       }
       setHasPermission(true);
       onStatusChange('ready');
+      onCapabilities?.({
+        resolution: '3840×2160',
+        fps: 30,
+        zoom: appliedZoom,
+        ultraWide: isUltraWide,
+        native: true,
+      });
     } catch (err: any) {
       console.error('Native camera init failed:', err);
       setHasPermission(false);
