@@ -11,6 +11,10 @@ import { T, tType, Wallpapers } from '@/lib/ios-tokens';
 import { useActiveTeam } from '@/hooks/useActiveTeam';
 import { supabase } from '@/integrations/supabase/client';
 
+const BUILD_STAMP: string =
+  (import.meta as any).env?.VITE_BUILD_STAMP ??
+  new Date().toISOString().slice(0, 16);
+
 function RingStat({ color, label, value, unit }: { color: string; label: string; value: string; unit: string }) {
   return (
     <div>
