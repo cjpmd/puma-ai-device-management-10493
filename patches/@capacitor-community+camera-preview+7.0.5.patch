@@ -84,3 +84,21 @@
      @objc func isCameraStarted(_ call: CAPPluginCall) {
          DispatchQueue.main.async {
              if self.cameraController.captureSession?.isRunning ?? false {
+--- a/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.m
++++ b/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.m
+@@
+ CAP_PLUGIN(CameraPreviewPlugin, "CameraPreview",
+            CAP_PLUGIN_METHOD(start, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(stop, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(capture, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(captureSample, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(getSupportedFlashModes, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(getHorizontalFov, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(setFlashMode, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(flip, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(setOpacity, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(stopRecordVideo, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(startRecordVideo, CAPPluginReturnPromise);
+            CAP_PLUGIN_METHOD(isRunning, CAPPluginReturnPromise);
++           CAP_PLUGIN_METHOD(isUltraWideAvailable, CAPPluginReturnPromise);
+ )
