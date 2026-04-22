@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { CameraRecorder } from '@/components/Matches/CameraRecorder';
 
@@ -31,6 +31,7 @@ const CameraCapture = () => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [uploadDone, setUploadDone] = useState(false);
+  const [cancelled, setCancelled] = useState<null | 'self' | 'remote'>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -50,6 +51,21 @@ const CameraCapture = () => {
     window.addEventListener('offline', off);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
+
+  // Toggle camera-preview-active class on <html> and <body> while the recorder
+  // is mounted (donor capture screen). This makes the WebView transparent so
+  // the native camera feed (rendered behind the WebView via toBack:true) is
+  // visible. Removed when the donor uploads, cancels, or is disconnected.
+  useEffect(() => {
+    const recorderMounted = !!tokenInfo && !file && !uploading && !uploadDone && !cancelled;
+    if (!recorderMounted) return;
+    document.documentElement.classList.add('camera-preview-active');
+    document.body.classList.add('camera-preview-active');
+    return () => {
+      document.documentElement.classList.remove('camera-preview-active');
+      document.body.classList.remove('camera-preview-active');
+    };
+  }, [tokenInfo, file, uploading, uploadDone, cancelled]);
 
   // Validate token
   useEffect(() => {
@@ -90,6 +106,11 @@ const CameraCapture = () => {
             setLivePreviewBoost(true);
           } else if (payload.command === 'live_preview_off') {
             setLivePreviewBoost(false);
+          } else if (payload.command === 'disconnect') {
+            // Master phone has rejected/closed this donor camera
+            if (!payload.camera_side || payload.camera_side === tokenInfo.camera_side) {
+              setCancelled('remote');
+            }
           }
         }
         // Respond to pings from control phone
