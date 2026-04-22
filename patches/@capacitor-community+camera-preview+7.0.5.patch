@@ -1,0 +1,88 @@
+diff --git a/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraController.swift b/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraController.swift
+index 0000000..0000001 100644
+--- a/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraController.swift
++++ b/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraController.swift
+@@ -36,6 +36,11 @@ class CameraController: NSObject {
+     var audioInput: AVCaptureDeviceInput?
+ 
+     var zoomFactor: CGFloat = 1.0
++
++    // Patched: when true, prefer .builtInUltraWideCamera as the rear lens.
++    var preferUltraWide: Bool = false
++    // Patched: tracks whether the active rear input is the ultra-wide lens.
++    var rearIsUltraWide: Bool = false
+ }
+ 
+ extension CameraController {
+@@ -46,18 +51,38 @@ extension CameraController {
+ 
+         func configureCaptureDevices() throws {
+ 
+-            let session = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], mediaType: AVMediaType.video, position: .unspecified)
++            // Patched: include ultra-wide so we can offer 0.5x field-of-view.
++            var deviceTypes: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera]
++            if #available(iOS 13.0, *) {
++                deviceTypes.insert(.builtInUltraWideCamera, at: 0)
++            }
++            let session = AVCaptureDevice.DiscoverySession(deviceTypes: deviceTypes, mediaType: AVMediaType.video, position: .unspecified)
+ 
+             let cameras = session.devices.compactMap { $0 }
+             guard !cameras.isEmpty else { throw CameraControllerError.noCamerasAvailable }
+ 
++            // Patched: prefer ultra-wide for the rear camera when requested
++            // and available. Otherwise fall back to standard wide-angle.
++            var rearUltraWide: AVCaptureDevice?
++            var rearWide: AVCaptureDevice?
+             for camera in cameras {
+                 if camera.position == .front {
+                     self.frontCamera = camera
+                 }
+ 
+                 if camera.position == .back {
+-                    self.rearCamera = camera
+-
+-                    try camera.lockForConfiguration()
+-                    camera.focusMode = .continuousAutoFocus
+-                    camera.unlockForConfiguration()
++                    if #available(iOS 13.0, *), camera.deviceType == .builtInUltraWideCamera {
++                        rearUltraWide = camera
++                    } else if camera.deviceType == .builtInWideAngleCamera {
++                        rearWide = camera
++                    }
+                 }
+             }
++            let chosen: AVCaptureDevice? = (self.preferUltraWide && rearUltraWide != nil) ? rearUltraWide : (rearWide ?? rearUltraWide)
++            if let chosen = chosen {
++                self.rearCamera = chosen
++                self.rearIsUltraWide = (rearUltraWide != nil) && (chosen === rearUltraWide!)
++                try chosen.lockForConfiguration()
++                chosen.focusMode = .continuousAutoFocus
++                chosen.unlockForConfiguration()
++            }
+             if disableAudio == false {
+                 self.audioDevice = AVCaptureDevice.default(for: AVMediaType.audio)
+             }
+diff --git a/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.swift b/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.swift
+index 0000000..0000001 100644
+--- a/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.swift
++++ b/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.swift
+@@ -90,6 +90,9 @@
+         self.enableZoom = call.getBool("enableZoom") ?? false
+         self.disableAudio = call.getBool("disableAudio") ?? false
+ 
++        // Patched: lens preference ("ultraWide" picks .builtInUltraWideCamera).
++        self.cameraController.preferUltraWide = (call.getString("lens") == "ultraWide")
++
+         AVCaptureDevice.requestAccess(for: .video, completionHandler: { (granted: Bool) in
+             guard granted else {
+                 call.reject("permission failed")
+@@ -328,6 +331,11 @@
+         call.resolve()
+     }
+ 
++    @objc func isUltraWideAvailable(_ call: CAPPluginCall) {
++        let available = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInUltraWideCamera], mediaType: .video, position: .back).devices.first != nil
++        call.resolve(["value": available, "active": self.cameraController.rearIsUltraWide])
++    }
++
+     @objc func isCameraStarted(_ call: CAPPluginCall) {
