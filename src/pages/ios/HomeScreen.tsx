@@ -278,6 +278,9 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
               <div style={{ ...tType('title3'), color: T.fg2, fontWeight: 300 }}>›</div>
             </div>
           </Glass>
+          <div style={{ ...tType('caption2'), color: T.fg2, opacity: 0.4, textAlign: 'center', padding: '4px 16px 0' }}>
+            build {new Date().toISOString().slice(0, 16)}
+          </div>
         </div>
 
         {/* Squad summary */}
