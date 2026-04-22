@@ -273,7 +273,7 @@ export function CameraRecorder({
           // No setSize API in @capacitor-community/camera-preview, so
           // stop+start to apply the new rectangle.
           await CameraPreview.stop();
-          await CameraPreview.start({
+          const refitOpts: any = {
             parent: 'camera-preview-container',
             position: 'rear',
             toBack: true,
@@ -283,9 +283,14 @@ export function CameraRecorder({
             height: rect.height,
             enableZoom: true,
             disableAudio: false,
-          });
-          // Re-apply preferred lens after restart
-          try { await CameraPreview.setZoom({ zoom: isUltraWideLens ? 0.5 : 1 }); } catch {}
+          };
+          if (isUltraWideLens) refitOpts.lens = 'ultraWide';
+          try {
+            await CameraPreview.start(refitOpts);
+          } catch {
+            delete refitOpts.lens;
+            await CameraPreview.start(refitOpts);
+          }
         } catch (e) {
           console.warn('CameraPreview refit failed', e);
         }
@@ -539,12 +544,32 @@ export function CameraRecorder({
           </div>
         )}
 
+        {/* While recording, paint over the live preview with a black REC
+            screen so the donor doesn't worry about what's being captured.
+            Native recording continues underneath — we only hide the WebView
+            view of it. The X button stops recording AND signals cancel. */}
         {isRecording && (
-          <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
-            <Badge className="bg-red-600 text-white">
-              <Circle className="h-2 w-2 fill-current mr-1 animate-pulse" />
-              REC {formatTime(elapsed)}
-            </Badge>
+          <div className="absolute inset-0 z-20 bg-black flex flex-col items-center justify-center text-white">
+            <button
+              type="button"
+              onClick={() => stopRecording()}
+              aria-label="Stop recording and exit"
+              className="absolute top-3 right-3 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="flex items-center gap-4">
+              <Circle className="h-20 w-20 fill-red-600 text-red-600 animate-pulse" />
+              <div className="flex flex-col">
+                <span className="text-4xl font-bold tracking-wider">REC</span>
+                <span className="text-2xl font-mono tabular-nums text-white/80">
+                  {formatTime(elapsed)}
+                </span>
+              </div>
+            </div>
+            <p className="mt-6 text-xs text-white/60 uppercase tracking-widest">
+              Recording in progress
+            </p>
           </div>
         )}
 
