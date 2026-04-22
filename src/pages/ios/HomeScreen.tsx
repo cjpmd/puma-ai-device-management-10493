@@ -178,6 +178,18 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
       <IOSStatusBar />
       <div style={{ height: 4 }} />
 
+      {/* Build stamp — fixed top-right, baked into bundle at build time */}
+      <div style={{
+        position: 'fixed', top: 6, right: 6, zIndex: 100,
+        background: '#a855f7', color: '#fff',
+        padding: '3px 8px', borderRadius: 8,
+        fontSize: 10, fontWeight: 700, fontFamily: 'monospace',
+        letterSpacing: 0.5,
+        pointerEvents: 'none',
+      }}>
+        v {BUILD_STAMP}
+      </div>
+
       {/* Header */}
       <div style={{ padding: '8px 20px 10px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
