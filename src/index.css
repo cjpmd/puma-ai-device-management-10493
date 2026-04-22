@@ -140,3 +140,22 @@ body.barcode-scanner-active .barcode-scanner-ui,
 body.barcode-scanner-active .barcode-scanner-ui * {
   visibility: visible;
 }
+
+/* When the native camera preview is running (donor capture screen),
+   the WebView and page wrappers must be transparent so the live
+   camera feed (rendered at the native layer behind the WebView) is
+   visible. Unlike the QR scanner we keep all chrome visible — only
+   backgrounds are stripped. */
+html.camera-preview-active,
+body.camera-preview-active,
+body.camera-preview-active #root,
+body.camera-preview-active .ios-app-shell,
+body.camera-preview-active .wallpaper-twilight,
+body.camera-preview-active .wallpaper-dawn,
+body.camera-preview-active .wallpaper-aurora {
+  background: transparent !important;
+}
+/* The viewfinder hole — actively transparent so the native preview shows through */
+.camera-viewfinder-native {
+  background: transparent !important;
+}
