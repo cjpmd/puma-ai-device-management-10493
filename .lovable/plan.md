@@ -1,95 +1,147 @@
 
 
-## Plan — Make the boxed camera actually visible + enable real ultra-wide lens
+## Plan — Fix false “Ultra-wide unavailable” on iPhone and make lens detection reflect the actual active lens
 
-### What's broken right now (confirmed from code + your screenshot)
+### What’s actually wrong
 
-1. **Camera box is empty / invisible.** The native preview is rendered with `toBack: true` (behind the WKWebView). We made the viewfinder `<div>` transparent, but its **parent** `<div class="wallpaper-twilight">` paints an opaque purple gradient over the entire page — including the rectangle where the camera should show through. There's no actual hole in the WebView for the camera to peek through. That's why you see the gap with nothing in it.
-2. **Ultra-wide is reported "unavailable" even though your iPhone has it.** I read the iOS Swift source of `@capacitor-community/camera-preview@7.0.5`: it discovers cameras with `AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera], …)` (line 49 of `CameraController.swift`). It only uses the **single wide-angle lens**. `setZoom({zoom: 0.5})` then hits `videoZoomFactor = 0.5`, which iOS clamps to a minimum of 1.0 — so we silently fall to "Standard 1×". The plugin has no concept of `.builtInUltraWideCamera` at all.
-3. **No "REC" placeholder when recording starts.** Today, while `startRecordVideo` runs, the page just shows the same viewfinder. You asked for an explicit black-screen + red REC circle + close button.
+Your screenshot confirms the donor iPhone does have an ultra-wide rear lens: the native Camera app shows **0.5× / 13mm**. So this is not a hardware problem — it is an app/plugin integration problem.
 
-### Fix 1 — Punch a hole in the WebView so the native camera shows through
+There are two likely app-side bugs in the current implementation:
 
-Strategy: instead of trying to make a single `<div>` transparent, switch the donor capture page into a **"camera-active"** mode where the WebView root is fully transparent EXCEPT the UI chrome (badges, header, controls, REC overlay), which remain solid via their own backgrounds.
+1. **The patched iOS plugin method is probably not exposed to JavaScript.**  
+   The Swift patch adds `isUltraWideAvailable(_:)`, but the Capacitor plugin’s `pluginMethods` list still only exposes:
+   `start`, `stop`, `capture`, `captureSample`, `flip`, `getSupportedFlashModes`, `setFlashMode`, `startRecordVideo`, `stopRecordVideo`, `isCameraStarted`.
 
-In `src/index.css` add:
-```css
-/* When the donor capture screen is showing the live preview, the WebView
-   itself must be transparent so the AVCaptureVideoPreviewLayer (rendered
-   behind the WebView via toBack:true) is visible inside the viewfinder rect. */
-html.camera-preview-active,
-html.camera-preview-active body,
-html.camera-preview-active #root,
-html.camera-preview-active .ios-app-shell,
-html.camera-preview-active .wallpaper-twilight {
-  background: transparent !important;
-}
-/* The viewfinder hole stays explicitly transparent. */
-.camera-viewfinder-native { background: transparent !important; }
+   That means `CameraPreview.isUltraWideAvailable` may never exist on the JS side, so the React code falls back to `false` and shows:
+   - `Standard 1×`
+   - `Ultra-wide unavailable`
+
+2. **The React code is checking the wrong field.**  
+   The patched Swift returns:
+   ```json
+   { "value": available, "active": rearIsUltraWide }
+   ```
+   But the code currently uses `value`, which only means “this phone has an ultra-wide camera”, not “the ultra-wide lens is the one currently active”.
+
+So even after the patch, the badge logic is not reliable yet.
+
+### Fix 1 — properly export the new Capacitor plugin method
+
+Update the iOS patch in:
+
+- `patches/@capacitor-community+camera-preview+7.0.5.patch`
+
+Add `isUltraWideAvailable` to the plugin’s exported method list in `CameraPreviewPlugin.swift`, e.g. alongside `isCameraStarted`.
+
+That ensures the JS bridge actually exposes:
+```ts
+CameraPreview.isUltraWideAvailable()
 ```
 
-In `src/pages/CameraCapture.tsx`:
-- When the recorder mounts in native mode, add `camera-preview-active` to `document.documentElement` (and remove on unmount / `cancelled` / `uploadDone`).
-- Wrap header / status badges / "Choose Existing Video" button / Cancel X button in a small wrapper with its own `bg-black/40 backdrop-blur` so they remain readable on top of the live camera. They no longer rely on the page background.
-- Restore the page background only when we leave the recording UI (cancelled / uploaded / file-selected states).
+Without this, the React layer can’t verify lens availability/active state at all.
 
-Net effect: in landscape, the donor sees the live camera filling the centre 16:9 box, with floating dark glass chips for badges/header above and below it, and the X close button top-right.
+### Fix 2 — use the plugin response correctly
 
-### Fix 2 — Enable the real ultra-wide (0.5×) lens
+In `src/components/Matches/CameraRecorder.tsx`:
 
-The plugin doesn't expose ultra-wide, so we patch it. Two parts:
+Change the detection logic so it distinguishes between:
+- `available` = the phone has an ultra-wide rear camera
+- `active` = the ultra-wide lens is the one currently selected by the plugin
 
-**Part A — patch the iOS plugin Swift** (`patch-package` post-install patch so it survives `npm install`):
-- Change line 49 of `CameraController.swift` from
-  `[.builtInWideAngleCamera]` → `[.builtInUltraWideCamera, .builtInWideAngleCamera, .builtInDualWideCamera]`
-- Where `rearCamera` is selected, prefer `.builtInUltraWideCamera` first, then fall back.
-- Add a new public method `setLens(lens: "ultraWide" | "wide")` that swaps the rear `AVCaptureDeviceInput` at runtime. (We actually only need to choose at start, so a simpler approach: read a new `lens` option in `start({ lens: "ultraWide" })` and pick the device on init.)
-- Expose a getter `isUltraWideAvailable` returning bool.
+Use the response like this conceptually:
+- `available = !!result.value`
+- `active = !!result.active`
 
-**Part B — TypeScript wrapper update** in `CameraRecorder.tsx`:
-- After resolving the plugin, call the new `isUltraWideAvailable()` check.
-- Pass `lens: 'ultraWide'` to `CameraPreview.start()` when supported. Set `appliedZoom = 0.5` and `isUltraWide = true` accordingly.
-- Drop the `setZoom({zoom: 0.5})` hack — that was never working; the actual switch is at the device-input level.
+Then:
+- if `active === true` → show `Ultra-wide 0.5×`
+- if `available === true && active === false` → show a fallback state like `Ultra-wide available, fallback to 1×`
+- if `available === false` → show `Ultra-wide unavailable`
 
-Add a `patches/@capacitor-community+camera-preview+7.0.5.patch` file and add `"postinstall": "patch-package"` to `package.json`. After `npm install && npx cap sync ios`, the patched Swift compiles into your app.
+Right now the UI collapses all non-success cases into the same “unavailable” message, which is misleading.
 
-### Fix 3 — REC placeholder screen
+### Fix 3 — verify the plugin really selects the ultra-wide lens on start
 
-In `CameraRecorder.tsx`, when `isRecording === true`, replace the viewfinder content (still keep the same outer div so the native preview rect doesn't move — we just paint over it) with a full-rect overlay:
-- Solid black `bg-black` covering the viewfinder box.
-- Centered: large pulsing red `Circle` icon (h-24 w-24) + "REC" text + elapsed timer (mm:ss).
-- Top-right inside the box: an X button that calls `stopRecording()` AND triggers the page's `handleCancel()` to go back to the previous screen / Camera-closed state.
-- Outside the box, the floating REC badge (top-left of the page) stays as-is for at-a-glance status.
+Keep the patched `lens: 'ultraWide'` option in `CameraPreview.start(...)`, but tighten the logic in `CameraRecorder.tsx`:
 
-Why we paint over instead of stopping the camera: the native preview layer is behind, and the recording is being captured from the same input. A black overlay in the WebView simply hides the live feed without interrupting capture — exactly what you asked for.
+- Start native camera with `lens: 'ultraWide'`
+- Immediately query `isUltraWideAvailable()`
+- Use `active` from the response to decide whether the plugin actually switched lenses
+- Set `appliedSettings` and the master-device capability payload from the same source of truth
 
-### Fix 4 — Polish
+Target states:
+- `4K · 30fps · Ultra-wide 0.5×`
+- `4K · 30fps · Wide 1× (fallback)`
 
-- Update the lens badge logic to reflect the patched plugin: green `Wide 0.5×` when ultra-wide is the active input, amber `Standard 1×` otherwise (true fallback for older iPhones without ultra-wide, e.g. SE, iPhone 8).
-- `appliedSettings` text becomes `4K · 30fps · Ultra-wide 0.5×` or `4K · 30fps · Wide 1×`.
+This makes the donor badge and the master telemetry consistent.
+
+### Fix 4 — improve the fallback message so it’s honest
+
+In `src/components/Matches/CameraRecorder.tsx`, replace the current fallback text:
+
+- current:
+  - `Standard 1×`
+  - `Ultra-wide unavailable`
+
+with something more accurate:
+
+- if ultra-wide exists but is not active:
+  - badge: `Wide 1×`
+  - helper text: `Ultra-wide available, but not activated`
+- if ultra-wide truly does not exist:
+  - badge: `Wide 1×`
+  - helper text: `Ultra-wide not supported on this device`
+
+That way the UI stops falsely telling you the phone lacks the lens.
+
+### Fix 5 — keep the REC placeholder behavior aligned with the current donor UX
+
+The current code already has the black recording overlay with:
+- black screen
+- large red circle
+- `REC`
+- timer
+- `X` button
+
+I’ll keep that behavior and make sure the `X` action cleanly:
+- stops recording
+- returns the donor to the closed/exit state
+- keeps the master informed through status updates
+
+No redesign needed there unless you want it changed later.
 
 ### Files
 
 **Edit**
-- `src/index.css` — add `.camera-preview-active` body/root/wallpaper transparency rules.
-- `src/pages/CameraCapture.tsx` — toggle `camera-preview-active` on `<html>` while recorder is mounted; give floating chrome elements their own dark glass background.
-- `src/components/Matches/CameraRecorder.tsx` — pass `lens: 'ultraWide'` to plugin, read `isUltraWideAvailable()`, drop `setZoom(0.5)` hack, render black/REC overlay over the viewfinder box while recording (with X to stop+exit).
-- `package.json` — add `patch-package` dependency + `postinstall` script.
+- `patches/@capacitor-community+camera-preview+7.0.5.patch`
+  - export `isUltraWideAvailable` in the plugin method list
+  - keep the ultra-wide device-selection patch
+- `src/components/Matches/CameraRecorder.tsx`
+  - read `active` vs `value` correctly
+  - separate “available” from “active”
+  - update donor badge + applied settings text
+  - send correct capability data to the master device
 
-**Create**
-- `patches/@capacitor-community+camera-preview+7.0.5.patch` — Swift patch to add `.builtInUltraWideCamera` to discovery, prefer it as rear camera, expose `lens` start option + `isUltraWideAvailable` method.
+### Expected result after the fix
 
-### After the change — local steps
-1. `git pull && npm install` (runs `patch-package` automatically and applies the Swift patch).
-2. `npm run build && npx cap sync ios`.
-3. Xcode → **Product → Clean Build Folder** → Run on the donor iPhone.
-4. Rotate to landscape: viewfinder now shows the live ultra-wide feed in a 16:9 box with floating dark badges above/below.
-5. Top-right of viewfinder shows green **Wide 0.5×**.
-6. Hit start (from master) → donor screen turns black with pulsing red REC circle + timer + X to stop.
-7. Hit X on the REC screen → stops + returns to "Camera closed" with Scan QR / Close buttons.
+On a donor iPhone that supports 0.5×:
+- the donor screen should show **Ultra-wide 0.5×** instead of `Standard 1×`
+- the master device should receive `ultraWide: true`
+- the capabilities badge on the master should show the ultra-wide status correctly
+
+If the plugin still falls back after that, the UI will explicitly say it is a **fallback**, not that the hardware is missing.
+
+### Local steps after implementation
+
+1. `git pull`
+2. `npm install`
+3. `npm run build && npx cap sync ios`
+4. In Xcode: **Product → Clean Build Folder**
+5. Re-run on the donor iPhone
+
+This clean rebuild matters because the lens logic lives in patched native Swift code.
 
 ### Out of scope
-- iPad-style picture-in-picture floating preview.
-- Per-camera lens picker on the master phone (we always default to ultra-wide when available).
-- Patching the Android side (you're on iPhone-only for donor recording per your spec).
+- Adding a manual lens picker on donor phones
+- Android lens patching
+- Reworking the donor layout again unless needed after the lens fix
 
