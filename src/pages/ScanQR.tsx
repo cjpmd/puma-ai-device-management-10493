@@ -38,7 +38,8 @@ export default function ScanQR() {
     } catch {
       /* no-op */
     }
-    document.querySelector('body')?.classList.remove('barcode-scanner-active');
+    document.body.classList.remove('barcode-scanner-active');
+    document.documentElement.classList.remove('barcode-scanner-active');
   };
 
   const cancel = async () => {
@@ -77,7 +78,8 @@ export default function ScanQR() {
         }
 
         // Make webview transparent so the native camera feed shows through.
-        document.querySelector('body')?.classList.add('barcode-scanner-active');
+        document.body.classList.add('barcode-scanner-active');
+        document.documentElement.classList.add('barcode-scanner-active');
 
         listenerHandle = await BarcodeScanner.addListener('barcodesScanned', async (event) => {
           if (handledRef.current) return;
@@ -134,7 +136,7 @@ export default function ScanQR() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 pointer-events-none">
+    <div className="barcode-scanner-ui fixed inset-0 z-50 pointer-events-none">
       {/* Reticle overlay */}
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="relative w-64 h-64 rounded-2xl border-2 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]">

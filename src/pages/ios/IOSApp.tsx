@@ -46,7 +46,7 @@ export function IOSApp() {
       WebkitFontSmoothing: 'antialiased' as React.CSSProperties['WebkitFontSmoothing'],
       overflow: 'hidden',
       position: 'relative',
-    }}>
+    }} className="ios-app-shell">
       {activeTab === 0 && <HomeScreen    onTabChange={setActiveTab} />}
       {activeTab === 1 && <SquadScreen   onTabChange={setActiveTab} />}
       {activeTab === 2 && <MatchesScreen onTabChange={setActiveTab} />}

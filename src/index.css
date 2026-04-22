@@ -121,3 +121,22 @@
       linear-gradient(180deg, #0e0820 0%, #050310 100%);
   }
 }
+
+/* When the native barcode scanner is running, the WebView must be transparent
+   so the camera preview (rendered at the native layer behind it) is visible.
+   We hide everything by default, then opt the scanner UI back in via
+   `.barcode-scanner-ui`. */
+html.barcode-scanner-active,
+html.barcode-scanner-active body,
+body.barcode-scanner-active,
+body.barcode-scanner-active #root,
+body.barcode-scanner-active .ios-app-shell {
+  background: transparent !important;
+}
+body.barcode-scanner-active {
+  visibility: hidden;
+}
+body.barcode-scanner-active .barcode-scanner-ui,
+body.barcode-scanner-active .barcode-scanner-ui * {
+  visibility: visible;
+}
