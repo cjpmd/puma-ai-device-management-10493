@@ -1,58 +1,40 @@
 
 
-## Plan — Make QR codes scannable by iOS Camera (in‑app QR scanner)
+## Plan — Get the new "Scan Camera QR" tile onto the iOS device
 
-### Why "No usable data found" appears
-The QR currently encodes `playeranalysis://capture/<token>`. iOS Camera (and most third‑party scanners) deliberately refuse to surface custom URL schemes — only `http(s)` URLs and a small allow‑list (mailto:, tel:, geo:) get a tappable banner. The QR data is fine; iOS is just ignoring custom schemes for security.
+### Diagnosis
+- Code is correct: the tile exists in `src/pages/ios/HomeScreen.tsx` (lines 260–278), the `/scan-qr` route is registered, and `ScanQR.tsx` is in place. The Lovable desktop preview shows it (image-22), and tapping it correctly shows the "needs the native app" fallback (image-23) because Capacitor only goes "native" inside the actual installed iOS app.
+- The phone isn't showing the tile, which means **the iOS app is still running an old `dist/` bundle**. Capacitor apps embed a snapshot of `dist/` at build time — if `npm run build` didn't run before `npx cap sync ios`, or Xcode's "Clean Build Folder" wiped the staged web assets, the new HomeScreen never made it into the `.ipa` installed on the phone.
+- A secondary suspect: there's no `server.url` (correct, you wanted that), so the phone has **no way** to pick up new code except by re‑bundling and re‑installing. There's no live reload safety net here.
 
-We have two ways to fix this without going back to a hosted web page:
+### Fix — verification step inside the app
+Add a tiny build-stamp badge to the iOS Home screen so we can tell at a glance which bundle is running on the phone. This is the fastest way to diagnose stale bundles in the future and confirm the new build actually landed.
 
-- **Option A (recommended for testing now): in‑app QR scanner.** The donor phone opens the installed Player Analysis app, taps "Scan QR", points it at the master phone, and the app jumps straight to `/capture/:token`. No iOS Camera involvement, no Universal Links, fully native, fully offline-capable.
-- **Option B (later, for production "scan with iOS Camera" UX): Universal Links** — needs an Apple Team ID + a hosted `apple-app-site-association` file. You explicitly said this is out of scope for this phase, so we're not doing it now.
+**Edit `src/pages/ios/HomeScreen.tsx`** — add a 1-line build stamp under the existing "Scan Camera QR" tile:
+```tsx
+<div style={{ ...tType('caption2'), color: T.fg2, opacity: 0.4, textAlign: 'center', padding: '4px 16px 0' }}>
+  build {import.meta.env.VITE_BUILD_ID ?? new Date().toISOString().slice(0,16)}
+</div>
+```
+Vite stamps `new Date()` at build time (it's evaluated when the bundle is built, not at runtime), so the timestamp on the phone will tell you exactly when the bundle on it was built. If after rebuilding the stamp on the phone is still old, you know the bundle didn't sync.
 
-This plan implements Option A, plus keeps the deep link working so that *if someone does get the URL another way* (iMessage, AirDrop, Notes), tapping it still opens the app.
+### What to run locally (the order matters)
+1. `git pull`
+2. `npm install`
+3. `rm -rf dist ios/App/App/public` ← **this is the key step you may be missing**. Xcode "Clean Build Folder" doesn't wipe the Capacitor web assets that live at `ios/App/App/public/`. If you skip this, the old `index.html` + JS bundle stays embedded in the app even after a fresh `npm run build`.
+4. `npm run build`
+5. `npx cap sync ios` (this copies the fresh `dist/` into `ios/App/App/public/` and re-installs CocoaPods for the new `@capacitor-mlkit/barcode-scanning` and `@capacitor/app` plugins)
+6. In Xcode: Product → Clean Build Folder, then Run on the device.
+7. On the phone, confirm the new build stamp appears under the Scan tile, and the tile itself is visible just under the "Next Friendly" card on the Home screen.
 
-### Fix
-
-**1. Add an in‑app QR scanner using the existing camera plugin**
-- Install `@capacitor-mlkit/barcode-scanning` (Capacitor's official barcode scanner; fully native, works offline, no API keys).
-- New page `src/pages/ScanQR.tsx`:
-  - Full‑screen camera preview with a centred reticle + "Cancel" button.
-  - On scan, if the value starts with `playeranalysis://capture/`, extract the token and `navigate('/capture/<token>')`.
-  - If it starts with `https://…/capture/<token>` (back‑compat for old QRs already generated), strip and route the same way.
-  - Otherwise show a toast "Not a valid camera QR".
-- Route: add `<Route path="/scan-qr" element={<ScanQR />} />` in `App.tsx`.
-
-**2. Add a "Scan QR" entry point on the donor phone**
-- On the iOS home screen (`src/pages/ios/HomeScreen.tsx`), add a prominent "Scan Camera QR" tile/button → navigates to `/scan-qr`.
-- Also add a small "Scan QR" link on the Match Day Setup screen for convenience.
-
-**3. Keep the QR generator producing the deep link, but make the human‑readable label clear**
-- `src/components/Matches/CameraQRSetup.tsx`: keep `playeranalysis://capture/<token>` as the QR payload (the in‑app scanner handles it perfectly).
-- Replace the helper text under the QR with: *"Open Player Analysis on the donor phone → tap **Scan QR** → point at this code."* So the user knows not to use the iOS Camera app.
-- Remove the "Copy Link" button's "Share via iMessage or WhatsApp" wording — that path won't work for non‑installed phones and we said no web fallback. Replace with "Copy deep link" (still useful for AirDrop/Notes paste on a phone that already has the app).
+### If after step 7 the tile still isn't there
+Then the bundle truly isn't updating. Send back a screenshot of the iOS Home screen — the missing/old build stamp will tell us whether it's a Capacitor sync issue (stamp matches an older build) or a rendering issue (stamp is fresh but tile missing, which would point to a runtime error we can chase via Safari → Develop → your iPhone → Console).
 
 ### Files
-
 **Edit**
-- `src/App.tsx` — register `/scan-qr` route.
-- `src/components/Matches/CameraQRSetup.tsx` — update helper copy + button label.
-- `src/pages/ios/HomeScreen.tsx` — add "Scan Camera QR" tile.
-- `package.json` — add `@capacitor-mlkit/barcode-scanning`.
-
-**New**
-- `src/pages/ScanQR.tsx` — native QR scanner page using `@capacitor-mlkit/barcode-scanning`, parses `playeranalysis://capture/<token>` and navigates.
-
-### After the change — what you do locally
-1. `git pull`
-2. `npm install` (picks up `@capacitor-mlkit/barcode-scanning`)
-3. `npm run build`
-4. `npx cap sync ios`
-5. Re‑deploy to both phones via Xcode.
-6. Master phone → generate QR. Donor phone → open Player Analysis → tap **Scan Camera QR** → point at the master phone. App jumps to `/capture/<token>`.
+- `src/pages/ios/HomeScreen.tsx` — add the build-stamp line under the Scan Camera QR tile.
 
 ### Out of scope
-- Universal Links (later, when moving past testing).
-- Android scanner UI (iOS only this pass).
-- Role‑gating who can see the "Scan QR" tile (coach vs parent) — surface for everyone for now.
+- Adding `server.url` back in for live reload — explicitly not wanted.
+- Universal Links.
 
