@@ -62,7 +62,17 @@
                  self.audioDevice = AVCaptureDevice.default(for: AVMediaType.audio)
 --- a/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.swift
 +++ b/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.swift
-@@ -91,6 +91,9 @@
+@@ -20,7 +20,8 @@
+         CAPPluginMethod(name: "setFlashMode", returnType: CAPPluginReturnPromise),
+         CAPPluginMethod(name: "startRecordVideo", returnType: CAPPluginReturnPromise),
+         CAPPluginMethod(name: "stopRecordVideo", returnType: CAPPluginReturnPromise),
+-        CAPPluginMethod(name: "isCameraStarted", returnType: CAPPluginReturnPromise)
++        CAPPluginMethod(name: "isCameraStarted", returnType: CAPPluginReturnPromise),
++        CAPPluginMethod(name: "isUltraWideAvailable", returnType: CAPPluginReturnPromise)
+     ]
+ 
+     var previewView: UIView!
+@@ -91,6 +92,9 @@
          self.enableZoom = call.getBool("enableZoom") ?? false
          self.disableAudio = call.getBool("disableAudio") ?? false
  
@@ -72,7 +82,7 @@
          AVCaptureDevice.requestAccess(for: .video, completionHandler: { (granted: Bool) in
              guard granted else {
                  call.reject("permission failed")
-@@ -325,6 +328,11 @@
+@@ -325,6 +329,11 @@
          }
      }
  
@@ -84,21 +94,3 @@
      @objc func isCameraStarted(_ call: CAPPluginCall) {
          DispatchQueue.main.async {
              if self.cameraController.captureSession?.isRunning ?? false {
---- a/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.m
-+++ b/node_modules/@capacitor-community/camera-preview/ios/Sources/CameraPreviewPlugin/CameraPreviewPlugin.m
-@@
- CAP_PLUGIN(CameraPreviewPlugin, "CameraPreview",
-            CAP_PLUGIN_METHOD(start, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(stop, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(capture, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(captureSample, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(getSupportedFlashModes, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(getHorizontalFov, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(setFlashMode, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(flip, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(setOpacity, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(stopRecordVideo, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(startRecordVideo, CAPPluginReturnPromise);
-            CAP_PLUGIN_METHOD(isRunning, CAPPluginReturnPromise);
-+           CAP_PLUGIN_METHOD(isUltraWideAvailable, CAPPluginReturnPromise);
- )
