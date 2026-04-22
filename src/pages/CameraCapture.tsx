@@ -213,6 +213,36 @@ const CameraCapture = () => {
     setRemoteCommand('idle');
   }, []);
 
+  // Capabilities (lens / resolution / fps) — broadcast once after camera init
+  const handleCapabilities = useCallback(
+    (caps: { resolution: string; fps: number; zoom: number; ultraWide: boolean; native: boolean }) => {
+      if (!channelRef.current || !tokenInfo) return;
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'recording',
+        payload: {
+          type: 'capabilities',
+          camera_side: tokenInfo.camera_side,
+          ...caps,
+        },
+      });
+    },
+    [tokenInfo]
+  );
+
+  // Cancel / close — donor self-cancellation
+  const handleCancel = useCallback(() => {
+    if (!confirm('Close camera and exit? Master phone will be notified.')) return;
+    if (channelRef.current && tokenInfo) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'recording',
+        payload: { type: 'status', camera_side: tokenInfo.camera_side, status: 'cancelled' },
+      });
+    }
+    setCancelled('self');
+  }, [tokenInfo]);
+
   const handleRecorderStatusChange = useCallback(
     (status: 'ready' | 'recording' | 'stopped' | 'error', err?: string) => {
       sendStatus(status, err);
