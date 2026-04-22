@@ -1,147 +1,77 @@
 
 
-## Plan — Fix false “Ultra-wide unavailable” on iPhone and make lens detection reflect the actual active lens
+## Plan — Stop the second donor phone crashing right after it scans the QR
 
-### What’s actually wrong
+### What's actually going wrong
 
-Your screenshot confirms the donor iPhone does have an ultra-wide rear lens: the native Camera app shows **0.5× / 13mm**. So this is not a hardware problem — it is an app/plugin integration problem.
+You said: same app on both donor phones, same account, both use the in-app **Scan Camera QR** flow, and the crash happens right after the QR is read and the camera "briefly opens". That rules out the things ChatGPT guessed:
 
-There are two likely app-side bugs in the current implementation:
+- **Not token reuse.** Master generates a unique token for *left* and another for *right* — they're different tokens.
+- **Not multi-session auth.** Supabase happily handles the same account on two devices; that doesn't crash native code.
+- **Not "first camera locked".** Each phone has its own camera; donor 1's camera is irrelevant to donor 2.
 
-1. **The patched iOS plugin method is probably not exposed to JavaScript.**  
-   The Swift patch adds `isUltraWideAvailable(_:)`, but the Capacitor plugin’s `pluginMethods` list still only exposes:
-   `start`, `stop`, `capture`, `captureSample`, `flip`, `getSupportedFlashModes`, `setFlashMode`, `startRecordVideo`, `stopRecordVideo`, `isCameraStarted`.
+What's actually happening on donor 2 is a **native iOS AVCaptureSession collision and a 0×0 preview rectangle**, all triggered by the QR-scan → capture-screen handoff. Three concrete bugs:
 
-   That means `CameraPreview.isUltraWideAvailable` may never exist on the JS side, so the React code falls back to `false` and shows:
-   - `Standard 1×`
-   - `Ultra-wide unavailable`
+### Bug 1 — MLKit scanner isn't fully released before `CameraPreview.start()` grabs the camera
 
-2. **The React code is checking the wrong field.**  
-   The patched Swift returns:
-   ```json
-   { "value": available, "active": rearIsUltraWide }
-   ```
-   But the code currently uses `value`, which only means “this phone has an ultra-wide camera”, not “the ultra-wide lens is the one currently active”.
-
-So even after the patch, the badge logic is not reliable yet.
-
-### Fix 1 — properly export the new Capacitor plugin method
-
-Update the iOS patch in:
-
-- `patches/@capacitor-community+camera-preview+7.0.5.patch`
-
-Add `isUltraWideAvailable` to the plugin’s exported method list in `CameraPreviewPlugin.swift`, e.g. alongside `isCameraStarted`.
-
-That ensures the JS bridge actually exposes:
-```ts
-CameraPreview.isUltraWideAvailable()
+In `src/pages/ScanQR.tsx`, when a QR is read we call:
+```
+await stopScan();
+…
+navigate(`/capture/${token}`);
 ```
 
-Without this, the React layer can’t verify lens availability/active state at all.
+`stopScan()` calls `BarcodeScanner.stopScan()` and removes the body class, but on iOS the underlying `AVCaptureSession` from MLKit is torn down **asynchronously** on the camera queue. We then immediately mount `CameraCapture` → `CameraRecorder` → `CameraPreview.start({ position:'rear', toBack:true })` typically within ~300 ms. On the second donor phone that race fires more reliably (cold caches, slower init), and AVFoundation throws `AVErrorDomain -11852 / -11819` ("camera in use by another client"), which the plugin re-throws as an unhandled native exception → app crash.
 
-### Fix 2 — use the plugin response correctly
+**Fix:** in `ScanQR.tsx`, `stopScan()` becomes a real teardown and waits for it:
+- await `BarcodeScanner.removeAllListeners()`
+- await `BarcodeScanner.stopScan()`
+- remove the body/html `barcode-scanner-active` classes
+- then `await new Promise(r => setTimeout(r, 250))` to let the AVCaptureSession queue actually release
 
-In `src/components/Matches/CameraRecorder.tsx`:
+Only then call `navigate(`/capture/${token}`)`. The settle delay is the standard iOS workaround for the well-known `BarcodeScanner ↔ CameraPreview` handoff race.
 
-Change the detection logic so it distinguishes between:
-- `available` = the phone has an ultra-wide rear camera
-- `active` = the ultra-wide lens is the one currently selected by the plugin
+### Bug 2 — Defensive guard if AVCaptureSession is *still* busy
 
-Use the response like this conceptually:
-- `available = !!result.value`
-- `active = !!result.active`
+In `src/components/Matches/CameraRecorder.tsx`'s `initNativeCamera()`, wrap `CameraPreview.start()` in a retry-with-backoff (3 attempts, 400ms apart). If the camera is briefly busy from MLKit's teardown, we recover instead of crashing. After the final failure, surface a friendly error in the existing `hasPermission === false` card with a **Try Again** button (already present) — the donor can retry without the page becoming unresponsive.
 
-Then:
-- if `active === true` → show `Ultra-wide 0.5×`
-- if `available === true && active === false` → show a fallback state like `Ultra-wide available, fallback to 1×`
-- if `available === false` → show `Ultra-wide unavailable`
+We also wrap the existing two `try { await CameraPreview.start(startOpts) }` calls in a top-level try/catch and never let the promise rejection escape to the React error boundary.
 
-Right now the UI collapses all non-success cases into the same “unavailable” message, which is misleading.
+### Bug 3 — Zero-size viewfinder rectangle when measured too early
 
-### Fix 3 — verify the plugin really selects the ultra-wide lens on start
+In `initNativeCamera()` we already do one `requestAnimationFrame` then `measureViewfinderRect()`. That's not enough on the second device because the `camera-preview-active` html class is being added in `CameraCapture.tsx` *concurrently* (a parallel `useEffect`), which forces a re-layout. The first measurement can come back with `width:0` / `height:0` if the viewfinder div hasn't taken its final size yet. Passing `width:0,height:0` to `CameraPreview.start()` is what reliably crashes the AVFoundation pipeline on iPhone.
 
-Keep the patched `lens: 'ultraWide'` option in `CameraPreview.start(...)`, but tighten the logic in `CameraRecorder.tsx`:
+**Fix:** in `measureViewfinderRect()`, if `width<10 || height<10` return `null`. In `initNativeCamera()`, if the rect is null/zero-sized, retry up to 5 times with `requestAnimationFrame` before giving up. Also defer the call until **after** `camera-preview-active` is on `<html>`. Easiest way: `CameraCapture.tsx` already sets the class in a `useEffect`; we just add a small `await new Promise(r => setTimeout(r, 50))` at the start of `initNativeCamera` so layout has settled.
 
-- Start native camera with `lens: 'ultraWide'`
-- Immediately query `isUltraWideAvailable()`
-- Use `active` from the response to decide whether the plugin actually switched lenses
-- Set `appliedSettings` and the master-device capability payload from the same source of truth
+### Bug 4 — Realtime broadcast cross-talk on master and both donors
 
-Target states:
-- `4K · 30fps · Ultra-wide 0.5×`
-- `4K · 30fps · Wide 1× (fallback)`
+Both donor phones subscribe to `recording-${match_id}`. Today, when master sends `live_preview_on/off` or `disconnect` without a `camera_side` filter, both donors react. That isn't the crash, but it is the source of the "behaves weirdly when two phones are connected" reports you'll get after this fix. Tighten it:
 
-This makes the donor badge and the master telemetry consistent.
+- In the donor's broadcast handler in `CameraCapture.tsx`, ignore any payload whose `camera_side` is set and doesn't match this donor's side. Already done for `disconnect`; do the same for `live_preview_on / live_preview_off / start / stop`. Master can still address "all" by omitting `camera_side`.
 
-### Fix 4 — improve the fallback message so it’s honest
+### Bug 5 — No diagnostics when it does crash
 
-In `src/components/Matches/CameraRecorder.tsx`, replace the current fallback text:
-
-- current:
-  - `Standard 1×`
-  - `Ultra-wide unavailable`
-
-with something more accurate:
-
-- if ultra-wide exists but is not active:
-  - badge: `Wide 1×`
-  - helper text: `Ultra-wide available, but not activated`
-- if ultra-wide truly does not exist:
-  - badge: `Wide 1×`
-  - helper text: `Ultra-wide not supported on this device`
-
-That way the UI stops falsely telling you the phone lacks the lens.
-
-### Fix 5 — keep the REC placeholder behavior aligned with the current donor UX
-
-The current code already has the black recording overlay with:
-- black screen
-- large red circle
-- `REC`
-- timer
-- `X` button
-
-I’ll keep that behavior and make sure the `X` action cleanly:
-- stops recording
-- returns the donor to the closed/exit state
-- keeps the master informed through status updates
-
-No redesign needed there unless you want it changed later.
+The current `catch` in `initNativeCamera` only does `console.error`. Add `Logger.error('camera-init', err)` style logging that ALSO sends a `status: 'error'` broadcast with the error message back to the master via `onStatusChange('error', err.message)`. That way next time we'll see it on the master device's panel instead of guessing.
 
 ### Files
 
 **Edit**
-- `patches/@capacitor-community+camera-preview+7.0.5.patch`
-  - export `isUltraWideAvailable` in the plugin method list
-  - keep the ultra-wide device-selection patch
-- `src/components/Matches/CameraRecorder.tsx`
-  - read `active` vs `value` correctly
-  - separate “available” from “active”
-  - update donor badge + applied settings text
-  - send correct capability data to the master device
+- `src/pages/ScanQR.tsx` — robust teardown of MLKit scanner with `removeAllListeners` + a 250 ms settle delay before `navigate()`.
+- `src/components/Matches/CameraRecorder.tsx` — retry `CameraPreview.start()` up to 3× on transient AVFoundation failures; reject 0-size rects and re-measure with `requestAnimationFrame` up to 5×; better error reporting to master via `onStatusChange`.
+- `src/pages/CameraCapture.tsx` — small settle delay before mounting `<CameraRecorder>` (or a `useState` gate that flips true after the `camera-preview-active` class is applied) and per-side filtering on `live_preview_on/off / start / stop` broadcasts.
 
-### Expected result after the fix
+**No DB changes. No schema changes. No new packages.**
 
-On a donor iPhone that supports 0.5×:
-- the donor screen should show **Ultra-wide 0.5×** instead of `Standard 1×`
-- the master device should receive `ultraWide: true`
-- the capabilities badge on the master should show the ultra-wide status correctly
-
-If the plugin still falls back after that, the UI will explicitly say it is a **fallback**, not that the hardware is missing.
-
-### Local steps after implementation
-
-1. `git pull`
-2. `npm install`
-3. `npm run build && npx cap sync ios`
-4. In Xcode: **Product → Clean Build Folder**
-5. Re-run on the donor iPhone
-
-This clean rebuild matters because the lens logic lives in patched native Swift code.
+### After the change — local steps
+1. `git pull && npm install`
+2. `npm run build && npx cap sync ios`
+3. Xcode → **Product → Clean Build Folder** → Run on **donor phone 2** (the one that was crashing).
+4. Donor 1 scans left QR → records.
+5. While donor 1 is on the capture screen, donor 2 opens the app → **Scan Camera QR** → scans the right QR. The MLKit scanner now waits for AVCaptureSession to release; if it's still busy, we retry; if the viewfinder isn't laid out, we retry — no crash.
+6. If anything still goes wrong, check master's connection panel — donor 2's tile will show a red **error** badge with the actual native error message, instead of the donor app silently dying.
 
 ### Out of scope
-- Adding a manual lens picker on donor phones
-- Android lens patching
-- Reworking the donor layout again unless needed after the lens fix
+- Switching off MLKit for a different scanner.
+- Generating one shared QR code (you correctly use one per side).
+- Auto-reconnect after a crash (donor will still need to scan again — but at least it won't crash).
 
