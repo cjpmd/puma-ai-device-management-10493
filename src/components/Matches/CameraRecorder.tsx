@@ -443,7 +443,11 @@ export function CameraRecorder({
       )}
 
       {/* Viewfinder */}
-      <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+      <div
+        className={`relative rounded-lg overflow-hidden aspect-video ${
+          isNative ? 'camera-viewfinder-native' : 'bg-black'
+        }`}
+      >
         {isNative ? (
           <div id="camera-preview-container" className="w-full h-full" />
         ) : (
