@@ -18,6 +18,7 @@ import Matches from "./pages/Matches";
 import MatchDetail from "./pages/MatchDetail";
 import DemoMatch from "./pages/DemoMatch";
 import CameraCapture from "./pages/CameraCapture";
+import ScanQR from "./pages/ScanQR";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -59,6 +60,14 @@ const AppRoutes = () => {
     <Routes>
       <Route path="/auth" element={<Auth />} />
       <Route path="/capture/:token" element={<CameraCapture />} />
+      <Route
+        path="/scan-qr"
+        element={
+          <PrivateRoute>
+            <ScanQR />
+          </PrivateRoute>
+        }
+      />
       <Route
         path="/"
         element={
