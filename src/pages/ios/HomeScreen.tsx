@@ -64,6 +64,7 @@ const initialsOf = (name: string) =>
 
 export function HomeScreen({ onTabChange }: HomeScreenProps) {
   const { activeTeam, teams, setActiveTeam, loading } = useActiveTeam();
+  const navigate = useNavigate();
   const [nextEvent, setNextEvent] = useState<NextEvent | null>(null);
   const [userInitials, setUserInitials] = useState('OS');
   const [showTeamPicker, setShowTeamPicker] = useState(false);
