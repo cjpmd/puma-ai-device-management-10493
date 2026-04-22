@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { QrCode } from 'lucide-react';
 import { Glass } from '@/components/ios/Glass';
 import { TabBar } from '@/components/ios/TabBar';
 import { Avatar } from '@/components/ios/Avatar';
@@ -62,6 +64,7 @@ const initialsOf = (name: string) =>
 
 export function HomeScreen({ onTabChange }: HomeScreenProps) {
   const { activeTeam, teams, setActiveTeam, loading } = useActiveTeam();
+  const navigate = useNavigate();
   const [nextEvent, setNextEvent] = useState<NextEvent | null>(null);
   const [userInitials, setUserInitials] = useState('OS');
   const [showTeamPicker, setShowTeamPicker] = useState(false);
@@ -250,6 +253,29 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
                   </div>
                 </div>
               </div>
+            </div>
+          </Glass>
+        </div>
+
+        {/* Scan camera QR (donor phone entry point) */}
+        <div style={{ padding: '0 16px 16px' }}>
+          <Glass r={20} onClick={() => navigate('/scan-qr')}>
+            <div style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 12,
+                background: 'rgba(120, 90, 255, 0.22)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: T.fg,
+              }}>
+                <QrCode size={22} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 600 }}>Scan Camera QR</div>
+                <div style={{ ...tType('caption1'), color: T.fg2 }}>
+                  Join a match as a donor camera
+                </div>
+              </div>
+              <div style={{ ...tType('title3'), color: T.fg2, fontWeight: 300 }}>›</div>
             </div>
           </Glass>
         </div>

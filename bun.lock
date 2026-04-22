@@ -6,6 +6,7 @@
       "name": "vite_react_shadcn_ts",
       "dependencies": {
         "@capacitor-community/camera-preview": "^7.0.5",
+        "@capacitor-mlkit/barcode-scanning": "^8.0.1",
         "@capacitor/app": "^8.1.0",
         "@capacitor/cli": "^7.0.1",
         "@capacitor/core": "^7.0.1",
@@ -107,6 +108,8 @@
     "@babel/types": ["@babel/types@7.25.9", "", { "dependencies": { "@babel/helper-string-parser": "^7.25.9", "@babel/helper-validator-identifier": "^7.25.9" } }, "sha512-OwS2CM5KocvQ/k7dFJa8i5bNGJP0hXWfVCfDkqRFP1IreH1JDC7wG6eCYCi0+McbfT8OR/kNqsI0UU0xP9H6PQ=="],
 
     "@capacitor-community/camera-preview": ["@capacitor-community/camera-preview@7.0.5", "", { "peerDependencies": { "@capacitor/core": ">=7.0.0" } }, "sha512-yxHoCs5ZmPOrELQSFc+A5mFwjwm9JPU1WFsfpxaFnh6RMeClF8tZDk6EcrlRKdymi1w9X/DGWE/Q8Tn8OJ/k+Q=="],
+
+    "@capacitor-mlkit/barcode-scanning": ["@capacitor-mlkit/barcode-scanning@8.0.1", "https://europe-west1-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache/@capacitor-mlkit/barcode-scanning/-/barcode-scanning-8.0.1.tgz", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-94SyxzbcQ2HBd7yxS34dqc0PzwdOw8/98xBrjw1ioznE/Ksky/iwsip5Bm8P8Qg+dgnJYWz7NcIPjd+6bLjVoQ=="],
 
     "@capacitor/app": ["@capacitor/app@8.1.0", "https://europe-west1-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache/@capacitor/app/-/app-8.1.0.tgz", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-MlmttTOWHDedr/G4SrhNRxsXMqY+R75S4MM4eIgzsgCzOYhb/MpCkA5Q3nuOCfL1oHm26xjUzqZ5aupbOwdfYg=="],
 
