@@ -22,4 +22,10 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  define: {
+    'import.meta.env.VITE_BUILD_STAMP': JSON.stringify(
+      process.env.VITE_BUILD_STAMP ??
+        new Date().toISOString().replace('T', ' ').slice(0, 16)
+    ),
+  },
 }));
