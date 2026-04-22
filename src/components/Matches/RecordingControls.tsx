@@ -3,10 +3,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Circle, Square, Radio, Battery, BatteryCharging, ImageOff, Wifi, HardDrive, Eye, EyeOff } from 'lucide-react';
+import { Circle, Square, Radio, Battery, BatteryCharging, ImageOff, Wifi, HardDrive, Eye, EyeOff, X, Camera, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
-type CameraStatus = 'disconnected' | 'ready' | 'recording' | 'stopped' | 'error';
+type CameraStatus = 'disconnected' | 'ready' | 'recording' | 'stopped' | 'error' | 'cancelled';
+
+interface CameraCapabilities {
+  resolution: string;
+  fps: number;
+  zoom: number;
+  ultraWide: boolean;
+  native: boolean;
+}
 
 interface CameraState {
   status: CameraStatus;
@@ -17,6 +25,7 @@ interface CameraState {
   storageFreeBytes?: number;
   storageTotalBytes?: number;
   lastPreviewAt?: number;
+  capabilities?: CameraCapabilities;
 }
 
 interface RecordingControlsProps {
@@ -51,7 +60,9 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
         if (!update) return;
 
         if (payload.type === 'status') {
-          update((prev) => ({ ...prev, status: payload.status, error: payload.error }));
+          // Treat 'cancelled' as a transition back to disconnected, but remember it briefly via status
+          const next: CameraStatus = payload.status === 'cancelled' ? 'disconnected' : payload.status;
+          update((prev) => ({ ...prev, status: next, error: payload.error }));
         } else if (payload.type === 'preview') {
           update((prev) => ({
             ...prev,
@@ -65,6 +76,17 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
             ...prev,
             storageFreeBytes: payload.freeBytes,
             storageTotalBytes: payload.totalBytes,
+          }));
+        } else if (payload.type === 'capabilities') {
+          update((prev) => ({
+            ...prev,
+            capabilities: {
+              resolution: payload.resolution,
+              fps: payload.fps,
+              zoom: payload.zoom,
+              ultraWide: payload.ultraWide,
+              native: payload.native,
+            },
           }));
         }
       })
