@@ -183,9 +183,18 @@ export function CameraRecorder({
       initWebCamera();
       return;
     }
-    // Wait one more tick so the viewfinder div is laid out and measurable.
-    await new Promise((r) => requestAnimationFrame(() => r(null)));
-    const rect = measureViewfinderRect();
+    // Let the `camera-preview-active` class on <html> settle so the
+    // viewfinder div has its final size before we measure it.
+    await new Promise((r) => setTimeout(r, 50));
+    // Wait until the viewfinder div is actually laid out with non-zero size.
+    // Passing 0×0 to AVFoundation crashes the native preview pipeline.
+    const rect = await waitForViewfinderRect(8);
+    if (!rect) {
+      console.error('[CameraRecorder] viewfinder rect never became measurable');
+      setHasPermission(false);
+      onStatusChange('error', 'Camera viewfinder not ready');
+      return;
+    }
     try {
       // Try ultra-wide first (requires patched plugin: passes
       // `lens: 'ultraWide'` which uses .builtInUltraWideCamera on iOS).
@@ -196,20 +205,24 @@ export function CameraRecorder({
         parent: 'camera-preview-container',
         position: 'rear',
         toBack: true,
-        x: rect?.x ?? 0,
-        y: rect?.y ?? 0,
-        width: rect?.width ?? window.innerWidth,
-        height: rect?.height ?? window.innerHeight,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
         enableZoom: true,
         disableAudio: false,
         lens: 'ultraWide', // patched plugin reads this; plain plugin ignores it
       };
       try {
-        await CameraPreview.start(startOpts);
+        // Retry up to 3× — MLKit barcode scanner's AVCaptureSession can
+        // take a few hundred ms to release on iOS after navigating away
+        // from /scan-qr, and the first attempt often hits "camera in use".
+        await startCameraPreviewWithRetry(startOpts, 3);
       } catch (firstErr) {
         // Retry without the lens option for older/unpatched plugins
+        console.warn('[CameraRecorder] ultraWide start failed, falling back', firstErr);
         delete startOpts.lens;
-        await CameraPreview.start(startOpts);
+        await startCameraPreviewWithRetry(startOpts, 3);
       }
       // Detect whether ultra-wide is actually active. Patched plugin
       // exposes isUltraWideAvailable(); returns { value: hardwareAvailable, active: lensInUse }.
@@ -243,17 +256,23 @@ export function CameraRecorder({
         native: true,
       });
     } catch (err: any) {
-      console.error('Native camera init failed:', err);
+      // Surface the actual native error to master so we can debug from the
+      // master phone's connection panel instead of guessing at silent crashes.
+      const msg = err?.message || err?.toString?.() || 'Camera failed to start';
+      console.error('[CameraRecorder] Native camera init failed after retries:', err);
       setHasPermission(false);
-      onStatusChange('error', 'Camera access denied');
+      onStatusChange('error', `Camera failed to start: ${msg}`);
     }
   };
 
   // Measure the on-screen viewfinder div in CSS px.
+  // Returns null if the rect is too small to be valid — prevents passing
+  // 0×0 to AVFoundation which crashes the native preview pipeline.
   const measureViewfinderRect = () => {
     const el = viewfinderRef.current;
     if (!el) return null;
     const r = el.getBoundingClientRect();
+    if (r.width < 10 || r.height < 10) return null;
     const rect = {
       x: Math.round(r.left),
       y: Math.round(r.top),
@@ -262,6 +281,37 @@ export function CameraRecorder({
     };
     lastRectRef.current = rect;
     return rect;
+  };
+
+  // Wait for the viewfinder div to actually have a non-zero size.
+  // The `camera-preview-active` class on <html> can trigger a re-layout
+  // concurrently with mount, so the first measurement is sometimes 0×0.
+  const waitForViewfinderRect = async (maxAttempts = 5) => {
+    for (let i = 0; i < maxAttempts; i++) {
+      const r = measureViewfinderRect();
+      if (r) return r;
+      await new Promise((res) => requestAnimationFrame(() => res(null)));
+    }
+    return null;
+  };
+
+  // Wrap CameraPreview.start() in a retry-with-backoff. The MLKit barcode
+  // scanner's AVCaptureSession can take a few hundred ms to actually release
+  // on iOS, so the first call often throws "camera in use by another client".
+  const startCameraPreviewWithRetry = async (opts: any, attempts = 3) => {
+    let lastErr: any = null;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        await CameraPreview.start(opts);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (i < attempts - 1) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+    }
+    throw lastErr;
   };
 
   // Re-fit native preview when the page resizes / rotates.
