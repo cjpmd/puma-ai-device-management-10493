@@ -11,6 +11,10 @@ import { T, tType, Wallpapers } from '@/lib/ios-tokens';
 import { useActiveTeam } from '@/hooks/useActiveTeam';
 import { supabase } from '@/integrations/supabase/client';
 
+const BUILD_STAMP: string =
+  (import.meta as any).env?.VITE_BUILD_STAMP ??
+  new Date().toISOString().slice(0, 16);
+
 function RingStat({ color, label, value, unit }: { color: string; label: string; value: string; unit: string }) {
   return (
     <div>
@@ -174,6 +178,18 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
       <IOSStatusBar />
       <div style={{ height: 4 }} />
 
+      {/* Build stamp — fixed top-right, baked into bundle at build time */}
+      <div style={{
+        position: 'fixed', top: 6, right: 6, zIndex: 100,
+        background: '#a855f7', color: '#fff',
+        padding: '3px 8px', borderRadius: 8,
+        fontSize: 10, fontWeight: 700, fontFamily: 'monospace',
+        letterSpacing: 0.5,
+        pointerEvents: 'none',
+      }}>
+        v {BUILD_STAMP}
+      </div>
+
       {/* Header */}
       <div style={{ padding: '8px 20px 10px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -278,9 +294,6 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
               <div style={{ ...tType('title3'), color: T.fg2, fontWeight: 300 }}>›</div>
             </div>
           </Glass>
-          <div style={{ ...tType('caption2'), color: T.fg2, opacity: 0.4, textAlign: 'center', padding: '4px 16px 0' }}>
-            build {new Date().toISOString().slice(0, 16)}
-          </div>
         </div>
 
         {/* Squad summary */}
