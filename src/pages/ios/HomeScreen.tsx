@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { QrCode } from 'lucide-react';
 import { Glass } from '@/components/ios/Glass';
 import { TabBar } from '@/components/ios/TabBar';
 import { Avatar } from '@/components/ios/Avatar';
