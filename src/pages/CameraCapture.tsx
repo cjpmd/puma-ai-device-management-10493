@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera, X } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera, X, QrCode, Home } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { CameraRecorder } from '@/components/Matches/CameraRecorder';
+import { Capacitor } from '@capacitor/core';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -52,20 +53,24 @@ const CameraCapture = () => {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
-  // Toggle camera-preview-active class on <html> and <body> while the recorder
-  // is mounted (donor capture screen). This makes the WebView transparent so
-  // the native camera feed (rendered behind the WebView via toBack:true) is
-  // visible. Removed when the donor uploads, cancels, or is disconnected.
-  useEffect(() => {
-    const recorderMounted = !!tokenInfo && !file && !uploading && !uploadDone && !cancelled;
-    if (!recorderMounted) return;
-    document.documentElement.classList.add('camera-preview-active');
-    document.body.classList.add('camera-preview-active');
-    return () => {
-      document.documentElement.classList.remove('camera-preview-active');
-      document.body.classList.remove('camera-preview-active');
-    };
-  }, [tokenInfo, file, uploading, uploadDone, cancelled]);
+  // Boxed viewfinder approach: the native camera preview is positioned to
+  // match the viewfinder div via x/y/width/height in CameraPreview.start(),
+  // so the rest of the page chrome can stay solid and readable. No global
+  // body-level transparency hacks needed.
+
+  const navigate = useNavigate();
+  const goHome = useCallback(() => {
+    if (Capacitor.isNativePlatform()) {
+      navigate('/');
+    } else {
+      try { window.close(); } catch {}
+      // Fallback if window.close is blocked
+      setTimeout(() => navigate('/'), 100);
+    }
+  }, [navigate]);
+  const goScanQr = useCallback(() => {
+    navigate('/scan-qr');
+  }, [navigate]);
 
   // Validate token
   useEffect(() => {
@@ -345,7 +350,14 @@ const CameraCapture = () => {
             <p className="text-sm text-muted-foreground">
               {tokenInfo?.camera_side === 'left' ? 'Left' : 'Right'} camera video for "{tokenInfo?.match_title}" has been uploaded.
             </p>
-            <p className="text-xs text-muted-foreground">You can close this page now.</p>
+            <div className="flex flex-col gap-2 pt-2">
+              <Button variant="outline" onClick={goScanQr} className="w-full">
+                <QrCode className="h-4 w-4 mr-2" /> Scan new QR
+              </Button>
+              <Button onClick={goHome} className="w-full">
+                <Home className="h-4 w-4 mr-2" /> Close
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -366,6 +378,14 @@ const CameraCapture = () => {
                 ? 'The match organiser disconnected this camera. You can close this page or scan a new QR code to reconnect.'
                 : 'Camera was closed before recording. You can close this page or scan a new QR code to reconnect.'}
             </p>
+            <div className="flex flex-col gap-2 pt-2">
+              <Button variant="outline" onClick={goScanQr} className="w-full">
+                <QrCode className="h-4 w-4 mr-2" /> Scan new QR
+              </Button>
+              <Button onClick={goHome} className="w-full">
+                <Home className="h-4 w-4 mr-2" /> Close
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -373,7 +393,7 @@ const CameraCapture = () => {
   }
 
   return (
-    <div className="min-h-screen wallpaper-twilight p-4 safe-top safe-bottom safe-x flex flex-col overflow-x-hidden text-white">
+    <div className="min-h-screen wallpaper-twilight p-4 landscape:p-2 safe-top safe-bottom safe-x flex flex-col overflow-x-hidden text-white">
       {/* Top-right close button — donor self-cancel */}
       <button
         type="button"
@@ -385,20 +405,20 @@ const CameraCapture = () => {
         <X className="h-5 w-5" />
       </button>
 
-      {/* Header */}
-      <div className="text-center mb-4 pt-2">
-        <Badge variant="secondary" className="text-base px-4 py-1 mb-3">
+      {/* Header — compacts in landscape so the viewfinder gets max space */}
+      <div className="text-center mb-4 pt-2 landscape:mb-2 landscape:pt-1">
+        <Badge variant="secondary" className="text-base px-4 py-1 mb-3 landscape:text-xs landscape:px-2 landscape:py-0.5 landscape:mb-1">
           {tokenInfo?.camera_side === 'left' ? '📷 Left Camera' : '📷 Right Camera'}
         </Badge>
-        <h1 className="text-xl font-bold">{tokenInfo?.match_title}</h1>
+        <h1 className="text-xl font-bold landscape:text-sm landscape:inline">{tokenInfo?.match_title}</h1>
         {tokenInfo?.match_date && (
-          <p className="text-sm text-muted-foreground mt-1">{new Date(tokenInfo.match_date).toLocaleDateString()}</p>
+          <p className="text-sm text-muted-foreground mt-1 landscape:hidden">{new Date(tokenInfo.match_date).toLocaleDateString()}</p>
         )}
-        {tokenInfo?.match_location && <p className="text-sm text-muted-foreground">{tokenInfo.match_location}</p>}
+        {tokenInfo?.match_location && <p className="text-sm text-muted-foreground landscape:hidden">{tokenInfo.match_location}</p>}
       </div>
 
       {/* Connection Status */}
-      <div className="flex items-center justify-center gap-2 mb-4">
+      <div className="flex items-center justify-center gap-2 mb-4 landscape:mb-2">
         {isOnline ? (
           <Badge variant="outline" className="text-emerald-600 border-emerald-300">
             <Wifi className="h-3 w-3 mr-1" /> Online
@@ -415,7 +435,7 @@ const CameraCapture = () => {
         )}
       </div>
 
-      <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full space-y-4">
+      <div className="flex-1 flex flex-col justify-center mx-auto w-full space-y-4 max-w-sm landscape:max-w-none">
         {/* Camera recorder — shown when no file selected yet */}
         {!file && !uploading && (
           <>
