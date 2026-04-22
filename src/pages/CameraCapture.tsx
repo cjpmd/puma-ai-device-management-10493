@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera, X } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { CameraRecorder } from '@/components/Matches/CameraRecorder';
 
@@ -31,6 +31,7 @@ const CameraCapture = () => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [uploadDone, setUploadDone] = useState(false);
+  const [cancelled, setCancelled] = useState<null | 'self' | 'remote'>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -50,6 +51,21 @@ const CameraCapture = () => {
     window.addEventListener('offline', off);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
+
+  // Toggle camera-preview-active class on <html> and <body> while the recorder
+  // is mounted (donor capture screen). This makes the WebView transparent so
+  // the native camera feed (rendered behind the WebView via toBack:true) is
+  // visible. Removed when the donor uploads, cancels, or is disconnected.
+  useEffect(() => {
+    const recorderMounted = !!tokenInfo && !file && !uploading && !uploadDone && !cancelled;
+    if (!recorderMounted) return;
+    document.documentElement.classList.add('camera-preview-active');
+    document.body.classList.add('camera-preview-active');
+    return () => {
+      document.documentElement.classList.remove('camera-preview-active');
+      document.body.classList.remove('camera-preview-active');
+    };
+  }, [tokenInfo, file, uploading, uploadDone, cancelled]);
 
   // Validate token
   useEffect(() => {
@@ -90,6 +106,11 @@ const CameraCapture = () => {
             setLivePreviewBoost(true);
           } else if (payload.command === 'live_preview_off') {
             setLivePreviewBoost(false);
+          } else if (payload.command === 'disconnect') {
+            // Master phone has rejected/closed this donor camera
+            if (!payload.camera_side || payload.camera_side === tokenInfo.camera_side) {
+              setCancelled('remote');
+            }
           }
         }
         // Respond to pings from control phone
@@ -191,6 +212,36 @@ const CameraCapture = () => {
     setFile(recordedFile);
     setRemoteCommand('idle');
   }, []);
+
+  // Capabilities (lens / resolution / fps) — broadcast once after camera init
+  const handleCapabilities = useCallback(
+    (caps: { resolution: string; fps: number; zoom: number; ultraWide: boolean; native: boolean }) => {
+      if (!channelRef.current || !tokenInfo) return;
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'recording',
+        payload: {
+          type: 'capabilities',
+          camera_side: tokenInfo.camera_side,
+          ...caps,
+        },
+      });
+    },
+    [tokenInfo]
+  );
+
+  // Cancel / close — donor self-cancellation
+  const handleCancel = useCallback(() => {
+    if (!confirm('Close camera and exit? Master phone will be notified.')) return;
+    if (channelRef.current && tokenInfo) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'recording',
+        payload: { type: 'status', camera_side: tokenInfo.camera_side, status: 'cancelled' },
+      });
+    }
+    setCancelled('self');
+  }, [tokenInfo]);
 
   const handleRecorderStatusChange = useCallback(
     (status: 'ready' | 'recording' | 'stopped' | 'error', err?: string) => {
@@ -301,8 +352,39 @@ const CameraCapture = () => {
     );
   }
 
+  if (cancelled) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-6">
+        <Card className="w-full max-w-sm">
+          <CardContent className="pt-8 text-center space-y-4">
+            <XCircle className="h-16 w-16 text-muted-foreground mx-auto" />
+            <h2 className="text-xl font-bold">
+              {cancelled === 'remote' ? 'Disconnected by organiser' : 'Camera closed'}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {cancelled === 'remote'
+                ? 'The match organiser disconnected this camera. You can close this page or scan a new QR code to reconnect.'
+                : 'Camera was closed before recording. You can close this page or scan a new QR code to reconnect.'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen wallpaper-twilight p-4 safe-top safe-bottom safe-x flex flex-col overflow-x-hidden text-white">
+      {/* Top-right close button — donor self-cancel */}
+      <button
+        type="button"
+        onClick={handleCancel}
+        aria-label="Close camera"
+        className="fixed top-2 right-2 z-50 h-10 w-10 rounded-full bg-black/60 text-white flex items-center justify-center backdrop-blur active:scale-95 transition-transform safe-top"
+        style={{ marginTop: 'env(safe-area-inset-top)' }}
+      >
+        <X className="h-5 w-5" />
+      </button>
+
       {/* Header */}
       <div className="text-center mb-4 pt-2">
         <Badge variant="secondary" className="text-base px-4 py-1 mb-3">
@@ -345,6 +427,7 @@ const CameraCapture = () => {
               onPreviewFrame={handlePreviewFrame}
               onTelemetry={handleTelemetry}
               onStorage={handleStorage}
+              onCapabilities={handleCapabilities}
               isConnected={isConnected}
               clockOffset={clockOffset}
               livePreviewBoost={livePreviewBoost}

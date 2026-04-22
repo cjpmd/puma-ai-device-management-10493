@@ -33,6 +33,7 @@ interface CameraRecorderProps {
   onTelemetry?: (battery: number, isCharging: boolean) => void;
   onStorage?: (freeBytes: number, totalBytes: number) => void;
   onPong?: (sentAt: number, receivedAt: number) => void;
+  onCapabilities?: (caps: { resolution: string; fps: number; zoom: number; ultraWide: boolean; native: boolean }) => void;
   isConnected: boolean;
   clockOffset: number; // ms offset calculated from ping-pong
   livePreviewBoost?: boolean; // when true, stream preview frames more frequently
@@ -47,6 +48,7 @@ export function CameraRecorder({
   onTelemetry,
   onStorage,
   onPong,
+  onCapabilities,
   isConnected,
   clockOffset,
   livePreviewBoost = false,
@@ -188,19 +190,31 @@ export function CameraRecorder({
         disableAudio: false,
       });
       // Try ultra-wide (min zoom) — 0.5x on supported iOS devices
+      let appliedZoom = 1;
+      let isUltraWide = false;
       try {
         await CameraPreview.setZoom({ zoom: 0.5 });
         setAppliedSettings('4K • 30fps • 0.5x ultra-wide');
+        appliedZoom = 0.5;
+        isUltraWide = true;
       } catch {
         try {
           await CameraPreview.setZoom({ zoom: 1 });
           setAppliedSettings('4K • 30fps • 1x');
+          appliedZoom = 1;
         } catch {
           setAppliedSettings('4K • 30fps');
         }
       }
       setHasPermission(true);
       onStatusChange('ready');
+      onCapabilities?.({
+        resolution: '3840×2160',
+        fps: 30,
+        zoom: appliedZoom,
+        ultraWide: isUltraWide,
+        native: true,
+      });
     } catch (err: any) {
       console.error('Native camera init failed:', err);
       setHasPermission(false);
@@ -233,6 +247,13 @@ export function CameraRecorder({
       );
       setHasPermission(true);
       onStatusChange('ready');
+      onCapabilities?.({
+        resolution: settings?.width && settings?.height ? `${settings.width}×${settings.height}` : 'Auto',
+        fps: Math.round(settings?.frameRate || 0),
+        zoom: 1,
+        ultraWide: false,
+        native: false,
+      });
     } catch {
       setHasPermission(false);
       onStatusChange('error', 'Camera access denied');
@@ -422,7 +443,11 @@ export function CameraRecorder({
       )}
 
       {/* Viewfinder */}
-      <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+      <div
+        className={`relative rounded-lg overflow-hidden aspect-video ${
+          isNative ? 'camera-viewfinder-native' : 'bg-black'
+        }`}
+      >
         {isNative ? (
           <div id="camera-preview-container" className="w-full h-full" />
         ) : (
