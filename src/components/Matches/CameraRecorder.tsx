@@ -511,7 +511,8 @@ export function CameraRecorder({
 
       {/* Viewfinder */}
       <div
-        className={`relative rounded-lg overflow-hidden aspect-video ${
+        ref={viewfinderRef}
+        className={`relative rounded-lg overflow-hidden aspect-video w-full mx-auto max-w-[min(95vw,calc(85vh*16/9))] landscape:max-w-[min(98vw,calc(80vh*16/9))] ${
           isNative ? 'camera-viewfinder-native' : 'bg-black'
         }`}
       >
@@ -536,11 +537,28 @@ export function CameraRecorder({
           </div>
         )}
 
-        {isNative && (
-          <div className="absolute top-3 right-3 z-10">
-            <Badge variant="outline" className="bg-black/50 text-white border-white/30 text-xs">
-              <Zap className="h-3 w-3 mr-1" /> 4K Native
-            </Badge>
+        {isNative && isUltraWideLens !== null && (
+          <div className="absolute top-3 right-3 z-10 flex flex-col items-end gap-1">
+            {isUltraWideLens ? (
+              <Badge
+                variant="outline"
+                className="bg-emerald-600/90 text-white border-emerald-300/50 text-xs"
+              >
+                <Zap className="h-3 w-3 mr-1" /> Wide 0.5×
+              </Badge>
+            ) : (
+              <>
+                <Badge
+                  variant="outline"
+                  className="bg-amber-500/90 text-white border-amber-300/50 text-xs"
+                >
+                  <Zap className="h-3 w-3 mr-1" /> Standard 1×
+                </Badge>
+                <span className="text-[10px] text-white/80 bg-black/40 px-2 py-0.5 rounded">
+                  Ultra-wide unavailable
+                </span>
+              </>
+            )}
           </div>
         )}
 
