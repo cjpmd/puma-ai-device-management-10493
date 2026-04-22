@@ -34,12 +34,22 @@ export default function ScanQR() {
 
   const stopScan = async () => {
     try {
+      // Remove all listeners FIRST so no stale events fire mid-teardown.
+      await BarcodeScanner.removeAllListeners();
+    } catch {
+      /* no-op */
+    }
+    try {
       await BarcodeScanner.stopScan();
     } catch {
       /* no-op */
     }
     document.body.classList.remove('barcode-scanner-active');
     document.documentElement.classList.remove('barcode-scanner-active');
+    // CRITICAL: iOS releases the AVCaptureSession asynchronously on the
+    // camera queue. Wait ~250ms before navigating to /capture/:token so the
+    // CameraPreview plugin doesn't collide with MLKit's session and crash.
+    await new Promise((r) => setTimeout(r, 250));
   };
 
   const cancel = async () => {
@@ -87,11 +97,11 @@ export default function ScanQR() {
             const token = extractToken(b.rawValue ?? '');
             if (token) {
               handledRef.current = true;
-              await stopScan();
               if (listenerHandle) {
-                await listenerHandle.remove();
+                await listenerHandle.remove().catch(() => {});
                 listenerHandle = null;
               }
+              await stopScan();
               navigate(`/capture/${token}`);
               return;
             }
