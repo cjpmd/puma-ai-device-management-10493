@@ -12,16 +12,35 @@ let Filesystem: any = null;
 
 const isNative = Capacitor.isNativePlatform();
 
+// Awaited loader for native plugins. Avoids the race where initNativeCamera
+// runs before the dynamic imports resolve, which previously caused the app
+// to silently fall back to the web getUserMedia path on iOS (producing a
+// misleading "Camera access denied" message inside the WKWebView).
+let nativePluginsReady: Promise<void> | null = null;
+const loadNativePlugins = (): Promise<void> => {
+  if (!isNative) return Promise.resolve();
+  if (!nativePluginsReady) {
+    nativePluginsReady = Promise.all([
+      import('@capacitor-community/camera-preview').then((m) => {
+        CameraPreview = m.CameraPreview;
+      }),
+      import('@capacitor/device').then((m) => {
+        DevicePlugin = m.Device;
+      }),
+      import('@capacitor/filesystem').then((m) => {
+        Filesystem = m.Filesystem;
+      }),
+    ]).then(() => undefined);
+  }
+  return nativePluginsReady;
+};
+
+// Kick off loading immediately on native so it's likely ready by the time
+// initNativeCamera() awaits it. The await is what guarantees correctness.
 if (isNative) {
-  import('@capacitor-community/camera-preview').then((m) => {
-    CameraPreview = m.CameraPreview;
-  });
-  import('@capacitor/device').then((m) => {
-    DevicePlugin = m.Device;
-  });
-  import('@capacitor/filesystem').then((m) => {
-    Filesystem = m.Filesystem;
-  });
+  loadNativePlugins().catch((e) =>
+    console.error('[CameraRecorder] Eager native plugin load failed', e),
+  );
 }
 
 interface CameraRecorderProps {
