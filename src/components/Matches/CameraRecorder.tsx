@@ -211,7 +211,10 @@ export function CameraRecorder({
       // to initWebCamera() on native: getUserMedia inside iOS WKWebView
       // always reports "denied", which is the misleading message users saw.
       console.error('[CameraRecorder] CameraPreview plugin unavailable on native build');
-      setHasPermission(false);
+      // Layout/plugin error — surface a specific message instead of the
+      // misleading permission-denied card.
+      setCameraError('Camera plugin failed to load');
+      setHasPermission(true);
       onStatusChange('error', 'Camera plugin failed to load');
       return;
     }
@@ -220,13 +223,32 @@ export function CameraRecorder({
     await new Promise((r) => setTimeout(r, 50));
     // Wait until the viewfinder div is actually laid out with non-zero size.
     // Passing 0×0 to AVFoundation crashes the native preview pipeline.
-    const rect = await waitForViewfinderRect(8);
+    let rect = await waitForViewfinderRect(20);
+    let usedFallback = false;
     if (!rect) {
-      console.error('[CameraRecorder] viewfinder rect never became measurable');
-      setHasPermission(false);
-      onStatusChange('error', 'Camera viewfinder not ready');
-      return;
+      // Don't hard-fail on a slightly delayed iOS WebView layout. Use a
+      // safe viewport-based fallback rect so the native preview can start;
+      // the resize/refit effect below will correct it once the real
+      // viewfinder becomes measurable.
+      console.warn(
+        '[CameraRecorder] viewfinder rect not measurable after extended wait — using fallback rect',
+      );
+      const vw = window.innerWidth || 390;
+      const vh = window.innerHeight || 844;
+      // Centered, 16:9, capped width, with a safe top inset for header chrome.
+      const fallbackWidth = Math.min(vw, Math.floor((vh - 160) * (16 / 9)) || vw);
+      const fallbackHeight = Math.floor(fallbackWidth * (9 / 16));
+      const fallbackX = Math.max(0, Math.floor((vw - fallbackWidth) / 2));
+      const fallbackY = 120; // below header / status badges
+      rect = lastRectRef.current ?? {
+        x: fallbackX,
+        y: fallbackY,
+        width: fallbackWidth,
+        height: fallbackHeight,
+      };
+      usedFallback = true;
     }
+    usedFallbackRectRef.current = usedFallback;
     try {
       // Try ultra-wide first (requires patched plugin: passes
       // `lens: 'ultraWide'` which uses .builtInUltraWideCamera on iOS).
@@ -278,6 +300,7 @@ export function CameraRecorder({
         setAppliedSettings('4K · 30fps · Wide 1×');
       }
       setIsUltraWideLens(isUltraWide);
+      setCameraError(null);
       setHasPermission(true);
       onStatusChange('ready');
       onCapabilities?.({
@@ -287,12 +310,54 @@ export function CameraRecorder({
         ultraWide: isUltraWide,
         native: true,
       });
+      // If we started with fallback geometry, schedule a refit once the
+      // real viewfinder rect becomes measurable.
+      if (usedFallbackRectRef.current) {
+        setTimeout(async () => {
+          const realRect = await waitForViewfinderRect(20);
+          if (!realRect) return;
+          if (
+            realRect.width === rect!.width &&
+            realRect.height === rect!.height &&
+            realRect.x === rect!.x &&
+            realRect.y === rect!.y
+          ) {
+            return;
+          }
+          try {
+            await CameraPreview.stop();
+            const refitOpts: any = {
+              parent: 'camera-preview-container',
+              position: 'rear',
+              toBack: true,
+              x: realRect.x,
+              y: realRect.y,
+              width: realRect.width,
+              height: realRect.height,
+              enableZoom: true,
+              disableAudio: false,
+            };
+            if (isUltraWide) refitOpts.lens = 'ultraWide';
+            try {
+              await CameraPreview.start(refitOpts);
+            } catch {
+              delete refitOpts.lens;
+              await CameraPreview.start(refitOpts);
+            }
+            usedFallbackRectRef.current = false;
+          } catch (e) {
+            console.warn('[CameraRecorder] Post-fallback refit failed', e);
+          }
+        }, 600);
+      }
     } catch (err: any) {
       // Surface the actual native error to master so we can debug from the
       // master phone's connection panel instead of guessing at silent crashes.
       const msg = err?.message || err?.toString?.() || 'Camera failed to start';
       console.error('[CameraRecorder] Native camera init failed after retries:', err);
-      setHasPermission(false);
+      // Native start failed — this is NOT a permission denial.
+      setCameraError(msg);
+      setHasPermission(true);
       onStatusChange('error', `Camera failed to start: ${msg}`);
     }
   };
