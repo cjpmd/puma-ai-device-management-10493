@@ -277,6 +277,47 @@ export type Database = {
           },
         ]
       }
+      match_shares: {
+        Row: {
+          created_at: string
+          created_by: string
+          expires_at: string | null
+          file_type: string
+          id: string
+          match_id: string
+          revoked: boolean
+          share_token: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          expires_at?: string | null
+          file_type: string
+          id?: string
+          match_id: string
+          revoked?: boolean
+          share_token: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          expires_at?: string | null
+          file_type?: string
+          id?: string
+          match_id?: string
+          revoked?: boolean
+          share_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_shares_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       match_videos: {
         Row: {
           camera_side: string
