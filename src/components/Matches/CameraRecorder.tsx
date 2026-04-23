@@ -82,6 +82,10 @@ export function CameraRecorder({
   const [appliedSettings, setAppliedSettings] = useState<string>('');
   const [isUltraWideLens, setIsUltraWideLens] = useState<boolean | null>(null);
   const [ultraWideHardware, setUltraWideHardware] = useState<boolean | null>(null);
+  // Non-permission startup error (plugin load, layout, native start failure).
+  // Kept separate from `hasPermission` so we don't show the misleading
+  // "Camera access denied" UI for what is really a layout/init issue.
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   // Web fallback refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -95,6 +99,7 @@ export function CameraRecorder({
   const nativeFilePathRef = useRef<string | null>(null);
   const viewfinderRef = useRef<HTMLDivElement | null>(null);
   const lastRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const usedFallbackRectRef = useRef(false);
 
   // ─── INIT ───
   useEffect(() => {
@@ -206,7 +211,10 @@ export function CameraRecorder({
       // to initWebCamera() on native: getUserMedia inside iOS WKWebView
       // always reports "denied", which is the misleading message users saw.
       console.error('[CameraRecorder] CameraPreview plugin unavailable on native build');
-      setHasPermission(false);
+      // Layout/plugin error — surface a specific message instead of the
+      // misleading permission-denied card.
+      setCameraError('Camera plugin failed to load');
+      setHasPermission(true);
       onStatusChange('error', 'Camera plugin failed to load');
       return;
     }
@@ -215,13 +223,32 @@ export function CameraRecorder({
     await new Promise((r) => setTimeout(r, 50));
     // Wait until the viewfinder div is actually laid out with non-zero size.
     // Passing 0×0 to AVFoundation crashes the native preview pipeline.
-    const rect = await waitForViewfinderRect(8);
+    let rect = await waitForViewfinderRect(20);
+    let usedFallback = false;
     if (!rect) {
-      console.error('[CameraRecorder] viewfinder rect never became measurable');
-      setHasPermission(false);
-      onStatusChange('error', 'Camera viewfinder not ready');
-      return;
+      // Don't hard-fail on a slightly delayed iOS WebView layout. Use a
+      // safe viewport-based fallback rect so the native preview can start;
+      // the resize/refit effect below will correct it once the real
+      // viewfinder becomes measurable.
+      console.warn(
+        '[CameraRecorder] viewfinder rect not measurable after extended wait — using fallback rect',
+      );
+      const vw = window.innerWidth || 390;
+      const vh = window.innerHeight || 844;
+      // Centered, 16:9, capped width, with a safe top inset for header chrome.
+      const fallbackWidth = Math.min(vw, Math.floor((vh - 160) * (16 / 9)) || vw);
+      const fallbackHeight = Math.floor(fallbackWidth * (9 / 16));
+      const fallbackX = Math.max(0, Math.floor((vw - fallbackWidth) / 2));
+      const fallbackY = 120; // below header / status badges
+      rect = lastRectRef.current ?? {
+        x: fallbackX,
+        y: fallbackY,
+        width: fallbackWidth,
+        height: fallbackHeight,
+      };
+      usedFallback = true;
     }
+    usedFallbackRectRef.current = usedFallback;
     try {
       // Try ultra-wide first (requires patched plugin: passes
       // `lens: 'ultraWide'` which uses .builtInUltraWideCamera on iOS).
@@ -273,6 +300,7 @@ export function CameraRecorder({
         setAppliedSettings('4K · 30fps · Wide 1×');
       }
       setIsUltraWideLens(isUltraWide);
+      setCameraError(null);
       setHasPermission(true);
       onStatusChange('ready');
       onCapabilities?.({
@@ -282,12 +310,54 @@ export function CameraRecorder({
         ultraWide: isUltraWide,
         native: true,
       });
+      // If we started with fallback geometry, schedule a refit once the
+      // real viewfinder rect becomes measurable.
+      if (usedFallbackRectRef.current) {
+        setTimeout(async () => {
+          const realRect = await waitForViewfinderRect(20);
+          if (!realRect) return;
+          if (
+            realRect.width === rect!.width &&
+            realRect.height === rect!.height &&
+            realRect.x === rect!.x &&
+            realRect.y === rect!.y
+          ) {
+            return;
+          }
+          try {
+            await CameraPreview.stop();
+            const refitOpts: any = {
+              parent: 'camera-preview-container',
+              position: 'rear',
+              toBack: true,
+              x: realRect.x,
+              y: realRect.y,
+              width: realRect.width,
+              height: realRect.height,
+              enableZoom: true,
+              disableAudio: false,
+            };
+            if (isUltraWide) refitOpts.lens = 'ultraWide';
+            try {
+              await CameraPreview.start(refitOpts);
+            } catch {
+              delete refitOpts.lens;
+              await CameraPreview.start(refitOpts);
+            }
+            usedFallbackRectRef.current = false;
+          } catch (e) {
+            console.warn('[CameraRecorder] Post-fallback refit failed', e);
+          }
+        }, 600);
+      }
     } catch (err: any) {
       // Surface the actual native error to master so we can debug from the
       // master phone's connection panel instead of guessing at silent crashes.
       const msg = err?.message || err?.toString?.() || 'Camera failed to start';
       console.error('[CameraRecorder] Native camera init failed after retries:', err);
-      setHasPermission(false);
+      // Native start failed — this is NOT a permission denial.
+      setCameraError(msg);
+      setHasPermission(true);
       onStatusChange('error', `Camera failed to start: ${msg}`);
     }
   };
@@ -299,6 +369,16 @@ export function CameraRecorder({
     const el = viewfinderRef.current;
     if (!el) return null;
     const r = el.getBoundingClientRect();
+    // Log progression so we can see on-device what's happening when
+    // layout settles (or doesn't).
+    if (typeof console !== 'undefined') {
+      console.log('[CameraRecorder] rect check', {
+        width: r.width,
+        height: r.height,
+        left: r.left,
+        top: r.top,
+      });
+    }
     if (r.width < 10 || r.height < 10) return null;
     const rect = {
       x: Math.round(r.left),
@@ -313,11 +393,14 @@ export function CameraRecorder({
   // Wait for the viewfinder div to actually have a non-zero size.
   // The `camera-preview-active` class on <html> can trigger a re-layout
   // concurrently with mount, so the first measurement is sometimes 0×0.
-  const waitForViewfinderRect = async (maxAttempts = 5) => {
+  // iOS WKWebView in particular can take significantly longer than a few
+  // animation frames after a route transition, so we use a fixed 50ms
+  // poll across ~20 attempts (~1s window) instead of rAF.
+  const waitForViewfinderRect = async (maxAttempts = 20) => {
     for (let i = 0; i < maxAttempts; i++) {
       const r = measureViewfinderRect();
       if (r) return r;
-      await new Promise((res) => requestAnimationFrame(() => res(null)));
+      await new Promise((res) => setTimeout(res, 50));
     }
     return null;
   };
@@ -390,7 +473,11 @@ export function CameraRecorder({
   // ─── WEB FALLBACK ───
   const initWebCamera = async () => {
     if (typeof MediaRecorder === 'undefined') {
-      setHasPermission(false);
+      // Not a permission issue — the browser just doesn't expose
+      // MediaRecorder. Surface as a feature-availability error.
+      setHasPermission(true);
+      setCameraError('Recording not supported on this browser');
+      onStatusChange('error', 'Recording not supported on this browser');
       return;
     }
     try {
@@ -410,6 +497,7 @@ export function CameraRecorder({
       setAppliedSettings(
         settings ? `${settings.width || '?'}×${settings.height || '?'} • ${Math.round(settings.frameRate || 0)}fps` : 'Auto'
       );
+      setCameraError(null);
       setHasPermission(true);
       onStatusChange('ready');
       onCapabilities?.({
@@ -420,17 +508,23 @@ export function CameraRecorder({
         native: false,
       });
     } catch (err: any) {
-      setHasPermission(false);
       // Only report "Camera access denied" for an actual permission denial.
       // Anything else (e.g. NotFoundError, AbortError, SecurityError on
       // WKWebView) gets surfaced with the real error name so it doesn't
       // get misdiagnosed as a permissions issue.
       const name = err?.name || 'UnknownError';
-      const msg =
-        name === 'NotAllowedError' || name === 'PermissionDeniedError'
-          ? 'Camera access denied'
-          : `Camera unavailable (${name})`;
+      const isPermission =
+        name === 'NotAllowedError' || name === 'PermissionDeniedError';
+      const msg = isPermission
+        ? 'Camera access denied'
+        : `Camera unavailable (${name})`;
       console.error('[CameraRecorder] Web camera init failed:', err);
+      if (isPermission) {
+        setHasPermission(false);
+      } else {
+        setHasPermission(true);
+        setCameraError(msg);
+      }
       onStatusChange('error', msg);
     }
   };
@@ -583,7 +677,41 @@ export function CameraRecorder({
           <AlertTriangle className="h-10 w-10 text-destructive mx-auto" />
           <p className="text-sm font-medium">Camera access denied</p>
           <p className="text-xs text-muted-foreground">Allow camera access in your device settings and reload.</p>
-          <Button size="sm" onClick={() => (isNative ? initNativeCamera() : initWebCamera())}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setCameraError(null);
+              if (isNative) initNativeCamera();
+              else initWebCamera();
+            }}
+          >
+            Try Again
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Non-permission startup error (plugin load, layout, native start failure).
+  // This is shown instead of the misleading "Camera access denied" card when
+  // the camera couldn't start for reasons that have nothing to do with iOS
+  // permission settings.
+  if (cameraError) {
+    return (
+      <Card className="border-destructive/50">
+        <CardContent className="pt-6 text-center space-y-3">
+          <AlertTriangle className="h-10 w-10 text-destructive mx-auto" />
+          <p className="text-sm font-medium">Camera failed to start</p>
+          <p className="text-xs text-muted-foreground break-words">{cameraError}</p>
+          <Button
+            size="sm"
+            onClick={() => {
+              setCameraError(null);
+              setHasPermission(null);
+              if (isNative) initNativeCamera();
+              else initWebCamera();
+            }}
+          >
             Try Again
           </Button>
         </CardContent>
