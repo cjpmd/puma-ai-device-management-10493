@@ -195,11 +195,19 @@ export function CameraRecorder({
 
   // ─── NATIVE CAMERA (auto-config 4K + ultra-wide) ───
   const initNativeCamera = async () => {
-    // Wait for lazy imports
-    await new Promise((r) => setTimeout(r, 300));
+    // Await the actual dynamic imports — never guess with setTimeout.
+    try {
+      await loadNativePlugins();
+    } catch (e) {
+      console.error('[CameraRecorder] Native plugin import failed', e);
+    }
     if (!CameraPreview) {
-      setUseNative(false);
-      initWebCamera();
+      // Real failure — module genuinely couldn't load. Do NOT fall through
+      // to initWebCamera() on native: getUserMedia inside iOS WKWebView
+      // always reports "denied", which is the misleading message users saw.
+      console.error('[CameraRecorder] CameraPreview plugin unavailable on native build');
+      setHasPermission(false);
+      onStatusChange('error', 'Camera plugin failed to load');
       return;
     }
     // Let the `camera-preview-active` class on <html> settle so the
