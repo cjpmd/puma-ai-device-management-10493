@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,11 +21,35 @@ const MatchDetail = () => {
   const { match, videos, jobs, loading, refetch } = useMatchPolling(id);
   const { toast } = useToast();
   const [devOpen, setDevOpen] = useState(false);
+  const [recordedAwaitingUpload, setRecordedAwaitingUpload] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
   const latestJob = jobs[0] || null;
 
   const leftVideo = videos.find((v) => v.camera_side === 'left');
   const rightVideo = videos.find((v) => v.camera_side === 'right');
   const bothUploaded = leftVideo?.upload_status === 'uploaded' && rightVideo?.upload_status === 'uploaded';
+
+  // Listen for donor "recording_saved" broadcasts so the QR cards can show
+  // "Recorded ✓ awaiting upload" before the donor actually uploads.
+  useEffect(() => {
+    if (!id) return;
+    const channel = supabase.channel(`recording-${id}`);
+    channel.on('broadcast', { event: 'recording' }, ({ payload }) => {
+      if (payload?.type === 'recording_saved' && (payload.camera_side === 'left' || payload.camera_side === 'right')) {
+        setRecordedAwaitingUpload((prev) => ({ ...prev, [payload.camera_side]: true }));
+      }
+    }).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [id]);
+
+  // Once a video is actually uploaded, clear the "awaiting upload" badge.
+  useEffect(() => {
+    if (leftVideo?.upload_status === 'uploaded') {
+      setRecordedAwaitingUpload((prev) => (prev.left ? { ...prev, left: false } : prev));
+    }
+    if (rightVideo?.upload_status === 'uploaded') {
+      setRecordedAwaitingUpload((prev) => (prev.right ? { ...prev, right: false } : prev));
+    }
+  }, [leftVideo?.upload_status, rightVideo?.upload_status]);
 
   const handleTriggerProcessing = async (config?: ProcessingConfig) => {
     try {
@@ -74,8 +98,18 @@ const MatchDetail = () => {
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">Generate QR codes for camera phones to scan. No login required.</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <CameraQRSetup matchId={id!} cameraSide="left" uploadStatus={leftVideo?.upload_status} />
-              <CameraQRSetup matchId={id!} cameraSide="right" uploadStatus={rightVideo?.upload_status} />
+              <CameraQRSetup
+                matchId={id!}
+                cameraSide="left"
+                uploadStatus={leftVideo?.upload_status}
+                awaitingUpload={recordedAwaitingUpload.left}
+              />
+              <CameraQRSetup
+                matchId={id!}
+                cameraSide="right"
+                uploadStatus={rightVideo?.upload_status}
+                awaitingUpload={recordedAwaitingUpload.right}
+              />
             </div>
           </CardContent>
         </Card>
@@ -118,7 +152,7 @@ const MatchDetail = () => {
         )}
 
         {/* Outputs (downloads) */}
-        <MatchOutputViewer matchId={id!} job={latestJob} />
+        <MatchOutputViewer matchId={id!} matchTitle={match.title} job={latestJob} />
 
         {/* Developer Controls (collapsible) */}
         <Collapsible open={devOpen} onOpenChange={setDevOpen}>
