@@ -43,6 +43,12 @@ const CameraCapture = () => {
   const [clockOffset, setClockOffset] = useState(0);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const pingResultsRef = useRef<number[]>([]);
+  // Mount gate: wait until `camera-preview-active` has been applied AND
+  // the page has had a couple of frames to settle the boxed viewfinder
+  // layout before mounting <CameraRecorder/>. This prevents the recorder
+  // from measuring 0×0 on iOS WebView during cold start, which previously
+  // surfaced as the misleading "Camera access denied" card.
+  const [recorderReady, setRecorderReady] = useState(false);
 
   // Online/offline
   useEffect(() => {
@@ -69,6 +75,29 @@ const CameraCapture = () => {
     return () => {
       html.classList.remove('camera-preview-active');
     };
+  }, [tokenInfo, uploadDone, cancelled, file, uploading]);
+
+  // Defer mounting CameraRecorder until after `camera-preview-active`
+  // has been applied and the WebView has had time to lay out the
+  // boxed viewfinder. ~120ms covers the iOS reflow + safe-area pass.
+  useEffect(() => {
+    if (!tokenInfo) {
+      setRecorderReady(false);
+      return;
+    }
+    if (uploadDone || cancelled || file || uploading) {
+      setRecorderReady(false);
+      return;
+    }
+    setRecorderReady(false);
+    const t = setTimeout(() => {
+      // Two animation frames after the timeout to be doubly sure layout
+      // has settled before measurement begins inside the recorder.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => setRecorderReady(true)),
+      );
+    }, 120);
+    return () => clearTimeout(t);
   }, [tokenInfo, uploadDone, cancelled, file, uploading]);
 
   const navigate = useNavigate();
