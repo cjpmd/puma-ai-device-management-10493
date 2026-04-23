@@ -473,7 +473,11 @@ export function CameraRecorder({
   // ─── WEB FALLBACK ───
   const initWebCamera = async () => {
     if (typeof MediaRecorder === 'undefined') {
-      setHasPermission(false);
+      // Not a permission issue — the browser just doesn't expose
+      // MediaRecorder. Surface as a feature-availability error.
+      setHasPermission(true);
+      setCameraError('Recording not supported on this browser');
+      onStatusChange('error', 'Recording not supported on this browser');
       return;
     }
     try {
@@ -493,6 +497,7 @@ export function CameraRecorder({
       setAppliedSettings(
         settings ? `${settings.width || '?'}×${settings.height || '?'} • ${Math.round(settings.frameRate || 0)}fps` : 'Auto'
       );
+      setCameraError(null);
       setHasPermission(true);
       onStatusChange('ready');
       onCapabilities?.({
@@ -503,17 +508,23 @@ export function CameraRecorder({
         native: false,
       });
     } catch (err: any) {
-      setHasPermission(false);
       // Only report "Camera access denied" for an actual permission denial.
       // Anything else (e.g. NotFoundError, AbortError, SecurityError on
       // WKWebView) gets surfaced with the real error name so it doesn't
       // get misdiagnosed as a permissions issue.
       const name = err?.name || 'UnknownError';
-      const msg =
-        name === 'NotAllowedError' || name === 'PermissionDeniedError'
-          ? 'Camera access denied'
-          : `Camera unavailable (${name})`;
+      const isPermission =
+        name === 'NotAllowedError' || name === 'PermissionDeniedError';
+      const msg = isPermission
+        ? 'Camera access denied'
+        : `Camera unavailable (${name})`;
       console.error('[CameraRecorder] Web camera init failed:', err);
+      if (isPermission) {
+        setHasPermission(false);
+      } else {
+        setHasPermission(true);
+        setCameraError(msg);
+      }
       onStatusChange('error', msg);
     }
   };
