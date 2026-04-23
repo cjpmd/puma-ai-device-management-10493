@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { QRCodeSVG } from 'qrcode.react';
-import { Copy, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
+import { Copy, RefreshCw, CheckCircle, Loader2, Clock, Bell } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -11,15 +11,17 @@ interface CameraQRSetupProps {
   matchId: string;
   cameraSide: 'left' | 'right';
   uploadStatus?: string;
+  awaitingUpload?: boolean;
 }
 
-export function CameraQRSetup({ matchId, cameraSide, uploadStatus }: CameraQRSetupProps) {
+export function CameraQRSetup({ matchId, cameraSide, uploadStatus, awaitingUpload }: CameraQRSetupProps) {
   const [token, setToken] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const { toast } = useToast();
 
   const isUploaded = uploadStatus === 'uploaded';
+  const showAwaitingUpload = !isUploaded && !!awaitingUpload;
   const captureUrl = token ? `playeranalysis://capture/${token}` : null;
 
   const generateToken = async () => {
@@ -45,21 +47,43 @@ export function CameraQRSetup({ matchId, cameraSide, uploadStatus }: CameraQRSet
     }
   };
 
+  const sendReminder = () => {
+    const url = `playeranalysis://my-recordings?match=${matchId}`;
+    navigator.clipboard.writeText(url);
+    toast({
+      title: 'Reminder link copied',
+      description: 'Send this to the donor — opens "My Recordings" in their app',
+    });
+  };
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center justify-between">
           <span>{cameraSide === 'left' ? '📷 Left Camera' : '📷 Right Camera'}</span>
-          {isUploaded && (
+          {isUploaded ? (
             <Badge className="bg-emerald-100 text-emerald-800">
               <CheckCircle className="h-3 w-3 mr-1" /> Uploaded
             </Badge>
-          )}
+          ) : showAwaitingUpload ? (
+            <Badge className="bg-amber-100 text-amber-800">
+              <Clock className="h-3 w-3 mr-1" /> Awaiting upload
+            </Badge>
+          ) : null}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {isUploaded ? (
           <p className="text-sm text-muted-foreground text-center">Video received ✓</p>
+        ) : showAwaitingUpload ? (
+          <div className="space-y-2 text-center">
+            <p className="text-sm text-muted-foreground">
+              Donor finished recording. Waiting for them to upload from <strong>My Recordings</strong>.
+            </p>
+            <Button variant="outline" size="sm" className="w-full h-11" onClick={sendReminder}>
+              <Bell className="h-3 w-3 mr-2" /> Copy reminder link
+            </Button>
+          </div>
         ) : !token ? (
           <Button onClick={generateToken} disabled={generating} className="w-full">
             {generating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
