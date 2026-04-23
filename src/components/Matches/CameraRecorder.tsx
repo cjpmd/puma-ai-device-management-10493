@@ -677,7 +677,33 @@ export function CameraRecorder({
           <AlertTriangle className="h-10 w-10 text-destructive mx-auto" />
           <p className="text-sm font-medium">Camera access denied</p>
           <p className="text-xs text-muted-foreground">Allow camera access in your device settings and reload.</p>
-          <Button size="sm" onClick={() => (isNative ? initNativeCamera() : initWebCamera())}>
+          <Button size="sm" onClick={() => { setCameraError(null); isNative ? initNativeCamera() : initWebCamera(); }}>
+            Try Again
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Non-permission startup error (plugin load, layout, native start failure).
+  // This is shown instead of the misleading "Camera access denied" card when
+  // the camera couldn't start for reasons that have nothing to do with iOS
+  // permission settings.
+  if (cameraError) {
+    return (
+      <Card className="border-destructive/50">
+        <CardContent className="pt-6 text-center space-y-3">
+          <AlertTriangle className="h-10 w-10 text-destructive mx-auto" />
+          <p className="text-sm font-medium">Camera failed to start</p>
+          <p className="text-xs text-muted-foreground break-words">{cameraError}</p>
+          <Button
+            size="sm"
+            onClick={() => {
+              setCameraError(null);
+              setHasPermission(null);
+              isNative ? initNativeCamera() : initWebCamera();
+            }}
+          >
             Try Again
           </Button>
         </CardContent>
