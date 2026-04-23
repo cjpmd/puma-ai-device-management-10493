@@ -485,19 +485,25 @@ const CameraCapture = () => {
         {/* Camera recorder — shown when no file selected yet */}
         {!file && !uploading && (
           <>
-            <CameraRecorder
-              onRecordingComplete={handleRecordingComplete}
-              remoteCommand={remoteCommand}
-              startAt={startAt}
-              onStatusChange={handleRecorderStatusChange}
-              onPreviewFrame={handlePreviewFrame}
-              onTelemetry={handleTelemetry}
-              onStorage={handleStorage}
-              onCapabilities={handleCapabilities}
-              isConnected={isConnected}
-              clockOffset={clockOffset}
-              livePreviewBoost={livePreviewBoost}
-            />
+            {recorderReady ? (
+              <CameraRecorder
+                onRecordingComplete={handleRecordingComplete}
+                remoteCommand={remoteCommand}
+                startAt={startAt}
+                onStatusChange={handleRecorderStatusChange}
+                onPreviewFrame={handlePreviewFrame}
+                onTelemetry={handleTelemetry}
+                onStorage={handleStorage}
+                onCapabilities={handleCapabilities}
+                isConnected={isConnected}
+                clockOffset={clockOffset}
+                livePreviewBoost={livePreviewBoost}
+              />
+            ) : (
+              <div className="rounded-lg aspect-video w-full bg-black/40 flex items-center justify-center text-xs text-white/70">
+                Preparing camera…
+              </div>
+            )}
 
             {/* File input fallback */}
             <input
