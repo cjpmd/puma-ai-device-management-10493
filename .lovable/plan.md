@@ -1,110 +1,196 @@
 
 
-## Plan — Fix "Camera access denied" on the donor iPhone after QR scan
+## Plan — Fix the false “Camera Access Denied” error by making the donor viewfinder layout reliable on iOS
 
-### What's actually broken
+### What’s actually wrong
 
-The screenshot shows the donor phone rendering the **web fallback** UI (no native preview rect, normal page background, "Camera access denied" card). On iOS, `navigator.mediaDevices.getUserMedia()` inside the WKWebView returns "denied" — that's expected, the native Capacitor plugin is what actually owns the camera. So the real question is: why is the donor phone running the web fallback at all on a native iOS build?
+This is no longer a real permissions problem.
 
-Root cause is in `src/components/Matches/CameraRecorder.tsx`, lines 9-25 and 178-185:
+Your log note matches the current code in `src/components/Matches/CameraRecorder.tsx`:
+
+- camera permission can already be granted
+- native plugin can already be loaded
+- but the code aborts if the boxed preview area is still measuring as `0×0`
+
+Right now this path is too fragile:
 
 ```ts
-let CameraPreview: any = null;
-if (isNative) {
-  import('@capacitor-community/camera-preview').then((m) => { CameraPreview = m.CameraPreview; });
-  …
+const rect = await waitForViewfinderRect(8);
+if (!rect) {
+  setHasPermission(false);
+  onStatusChange('error', 'Camera viewfinder not ready');
+  return;
 }
-…
-const initNativeCamera = async () => {
-  await new Promise((r) => setTimeout(r, 300));   // hope it's loaded
-  if (!CameraPreview) {
-    setUseNative(false);
-    initWebCamera();                              // → getUserMedia → "denied"
-    return;
-  }
 ```
 
-The lazy `import()` is fired but **never awaited**. The component then waits a fixed 300 ms and assumes the module has loaded. On a cold native start — exactly the situation we just made worse by adding the 250 ms `setTimeout` settle delay in `ScanQR.tsx` — the dynamic import for `@capacitor-community/camera-preview` (a native plugin module that includes a moderate amount of TS) hasn't resolved yet. `CameraPreview` is still `null`, the code falls into `initWebCamera()`, `getUserMedia` throws, and the catch on line 397 sets `"Camera access denied"`.
+That means a temporary layout-timing issue gets turned into:
+- `hasPermission = false`
+- the UI card that says **Camera access denied**
+- even though iOS already granted camera access
 
-This was almost certainly triggered by the recent ScanQR change pushing the CameraRecorder mount earlier in the cold-start window, but the underlying race has always been there — it's just become reliable now.
+So the bug is really:
 
-### Fix
+1. **Viewfinder measurement is timing out too early on iOS**
+2. **A layout/init failure is being mislabeled as a permission failure**
 
-Replace the fire-and-forget lazy imports with a proper awaited loader, and have `initNativeCamera()` await it before deciding native-vs-web. No more 300 ms guess.
+### Fix 1 — make viewfinder measurement much more tolerant
 
-**`src/components/Matches/CameraRecorder.tsx`**
+Update `src/components/Matches/CameraRecorder.tsx` so the preview rect wait is designed for iOS WebView timing instead of desktop timing.
 
-1. Replace the top-of-file block:
-   ```ts
-   if (isNative) {
-     import('@capacitor-community/camera-preview').then(...);
-     import('@capacitor/device').then(...);
-     import('@capacitor/filesystem').then(...);
-   }
-   ```
-   with a single shared promise:
-   ```ts
-   let nativePluginsReady: Promise<void> | null = null;
-   const loadNativePlugins = () => {
-     if (!isNative) return Promise.resolve();
-     if (!nativePluginsReady) {
-       nativePluginsReady = Promise.all([
-         import('@capacitor-community/camera-preview').then(m => { CameraPreview = m.CameraPreview; }),
-         import('@capacitor/device').then(m => { DevicePlugin = m.Device; }),
-         import('@capacitor/filesystem').then(m => { Filesystem = m.Filesystem; }),
-       ]).then(() => undefined);
-     }
-     return nativePluginsReady;
-   };
-   ```
+#### Changes
+- Increase `waitForViewfinderRect()` from a short animation-frame loop to a longer wait window
+- Use around **20 attempts** with a **~50ms pause** between attempts
+- Add measurement logging so we can see width/height progression on device
+- Keep rejecting tiny rects (`< 10px`) so we never pass junk values into native preview start
 
-2. In `initNativeCamera()`, replace the fixed 300 ms wait with:
-   ```ts
-   try {
-     await loadNativePlugins();
-   } catch (e) {
-     console.error('[CameraRecorder] Native plugin import failed', e);
-   }
-   if (!CameraPreview) {
-     // Real failure — module genuinely couldn't load. Show a clear message
-     // instead of silently falling through to the web getUserMedia path,
-     // which on iOS WKWebView always reports "denied".
-     setHasPermission(false);
-     onStatusChange('error', 'Camera plugin failed to load');
-     return;
-   }
-   ```
+Conceptually:
 
-3. Remove the silent `initWebCamera()` fallback when running natively. The web fallback is only correct for the actual web build; calling it inside an iOS shell is what produces the misleading "Camera access denied" card. Keep `initWebCamera()` in place for the `!isNative` path on lines 84-86.
+```ts
+const waitForViewfinderRect = async (maxAttempts = 20) => {
+  for (let i = 0; i < maxAttempts; i++) {
+    const rect = measureViewfinderRect();
+    if (rect) return rect;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return null;
+};
+```
 
-4. Update the catch in `initWebCamera()` so the error message distinguishes "no permission" from "feature unavailable" — only set `"Camera access denied"` when the real `NotAllowedError` is thrown; otherwise show the actual error name. This prevents future confusion if the web path ever runs unexpectedly.
+This gives the donor screen enough time for:
+- route transition
+- HTML transparency class application
+- safe-area layout
+- aspect-ratio sizing
+- final WebView reflow
 
-### Why this fixes it
+### Fix 2 — add a safe fallback rect instead of failing hard
 
-- The donor phone will now wait for the native plugin to actually be loaded before deciding what to do, with no fixed timeout.
-- If the plugin really can't load (e.g. truly missing on the build), the screen says "Camera plugin failed to load" instead of the misleading "Camera access denied" — which is what tricked us into hunting a permissions problem when the OS settings were already correct.
-- The native preview will start on the first attempt because `CameraPreview` is guaranteed non-null when `initNativeCamera()` reaches the `start()` call.
+If the viewfinder still isn’t measurable after the longer wait, don’t immediately fail the camera.
 
-### Files
+In `src/components/Matches/CameraRecorder.tsx`, change the rect resolution order to:
+
+1. current measured rect
+2. `lastRectRef.current` if available
+3. a safe viewport-based fallback rect
+
+Example fallback strategy:
+- center horizontally
+- use `window.innerWidth` capped to the same intended max width
+- use 16:9 aspect ratio
+- place it below the header area with a safe top inset
+
+That prevents the app from dying just because layout settled a little late.
+
+Expected result:
+- native camera can still start
+- resize/refit logic can correct it once the real box is measurable
+
+### Fix 3 — stop turning layout failures into “permission denied”
+
+Right now `hasPermission === false` always renders:
+
+- **Camera access denied**
+- “Allow camera access in your device settings…”
+
+That is misleading.
+
+Update `src/components/Matches/CameraRecorder.tsx` to separate:
+- actual permission denial
+- plugin load failure
+- preview layout not ready
+- native camera start failure
+
+#### Changes
+Add a dedicated error state, for example:
+- `cameraError: string | null`
+
+Then use:
+- `setHasPermission(false)` only for genuine permission problems
+- `setCameraError('Camera preview box not ready')` or similar for layout/start issues
+
+UI states should become:
+
+- real permission problem:
+  - title: `Camera access denied`
+  - helper: device settings guidance
+
+- non-permission startup problem:
+  - title: `Camera failed to start`
+  - helper: actual error text like:
+    - `Preview box not ready`
+    - `Camera plugin failed to load`
+    - `Camera in use, please try again`
+
+This will stop sending everyone down the wrong troubleshooting path.
+
+### Fix 4 — mount the recorder only after the page chrome is settled
+
+The recorder currently mounts as soon as the capture page renders, while `CameraCapture.tsx` is still applying the `camera-preview-active` class and laying out the donor screen.
+
+Add a small mount gate in `src/pages/CameraCapture.tsx`:
+
+- once `tokenInfo` is loaded and the capture UI is about to show
+- apply `camera-preview-active`
+- wait briefly or for 1–2 animation frames
+- then mount `<CameraRecorder />`
+
+That ensures the boxed preview container exists at a stable size before `initNativeCamera()` runs.
+
+Implementation options:
+- `readyToMountRecorder` state
+- flip to `true` after the class is applied and layout has settled
+
+This should materially reduce the number of 0×0 measurements before they happen.
+
+### Fix 5 — keep retrying preview start, then refit once layout becomes real
+
+The existing retry logic for `CameraPreview.start()` is still useful, so keep it.
+
+Add one more safety improvement in `src/components/Matches/CameraRecorder.tsx`:
+
+- if startup used a fallback rect, schedule one post-start refit
+- once the real viewfinder becomes measurable, stop/start preview with the true rect
+
+That gives:
+- reliable startup
+- correct final alignment
+- no crash from starting too early with invalid geometry
+
+### Files to update
 
 **Edit**
 - `src/components/Matches/CameraRecorder.tsx`
-  - Replace fire-and-forget dynamic imports with an awaited `loadNativePlugins()` promise.
-  - Remove the 300 ms `setTimeout` guess.
-  - On native, never fall through to `initWebCamera()` — show a clear plugin-load error instead.
-  - Tighten the web fallback's catch so only real `NotAllowedError` becomes "Camera access denied".
+  - strengthen `waitForViewfinderRect()`
+  - add debug measurement logging
+  - add fallback rect logic
+  - separate permission errors from startup/layout errors
+  - improve donor-facing error card copy
+  - optionally refit after startup if fallback geometry was used
 
-**No DB changes. No other files touched. No new packages. No native patch changes — the plugin is already installed and patched correctly.**
+- `src/pages/CameraCapture.tsx`
+  - gate `<CameraRecorder />` mount until the page layout and `camera-preview-active` class have settled
 
-### After the change — local steps
-1. `git pull && npm install`
-2. `npm run build && npx cap sync ios`
-3. Xcode → **Product → Clean Build Folder** → Run on the donor iPhone.
-4. Open the app → **Scan Camera QR** → scan a donor QR.
-5. The capture screen now shows the live ultra-wide preview in the boxed viewfinder. No "Camera access denied".
+### Expected result after the fix
+
+On the donor iPhone:
+
+- scanning the QR no longer falls into a fake **Camera access denied** state
+- the native preview starts even if the layout is slightly delayed
+- if layout is slow, fallback geometry is used temporarily and corrected afterward
+- if startup really fails, the donor sees an accurate error message instead of a permissions message
+
+### Local verification after implementation
+
+1. Rebuild and sync the iOS app.
+2. Open donor flow and scan a QR.
+3. Confirm the live boxed preview appears.
+4. Confirm logs show rect measurements progressing rather than failing immediately.
+5. Repeat on the second donor phone after donor one is already connected.
+6. If anything still fails, master should receive a specific startup error rather than a generic denial state.
 
 ### Out of scope
-- Reverting the ScanQR settle delay (it correctly fixes the donor-2 crash; we're keeping it).
-- Changing the iOS `Info.plist` or permission prompts (those are already correct — the previous error was a false negative, not a real permission denial).
-- Adding a manual lens picker on donor phones.
+
+- Reverting the QR scanner teardown delay
+- Reworking the donor UI design again
+- Changing the lens-selection logic unless startup still fails after the layout fix
 
