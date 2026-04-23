@@ -21,6 +21,8 @@ import CameraCapture from "./pages/CameraCapture";
 import ScanQR from "./pages/ScanQR";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import MyRecordings from "./pages/MyRecordings";
+import SharedVideo from "./pages/SharedVideo";
 
 const queryClient = new QueryClient();
 
@@ -60,6 +62,15 @@ const AppRoutes = () => {
     <Routes>
       <Route path="/auth" element={<Auth />} />
       <Route path="/capture/:token" element={<CameraCapture />} />
+      <Route path="/share/:token" element={<SharedVideo />} />
+      <Route
+        path="/my-recordings"
+        element={
+          <PrivateRoute>
+            <MyRecordings />
+          </PrivateRoute>
+        }
+      />
       <Route
         path="/scan-qr"
         element={

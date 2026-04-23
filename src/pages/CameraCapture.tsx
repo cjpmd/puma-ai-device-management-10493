@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera, X, QrCode, Home } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera, X, QrCode, Home, Film, Clock } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { CameraRecorder } from '@/components/Matches/CameraRecorder';
 import type { RecordingResult } from '@/components/Matches/CameraRecorder';
@@ -549,7 +549,7 @@ const CameraCapture = () => {
 
       <div className="flex-1 flex flex-col justify-center mx-auto w-full space-y-4 max-w-sm landscape:max-w-none">
         {/* Camera recorder — shown when no file selected yet */}
-        {!file && !uploading && (
+        {!file && !uploading && !savedRecordingId && (
           <>
             {recorderReady ? (
               <CameraRecorder
@@ -585,6 +585,44 @@ const CameraCapture = () => {
               Choose Existing Video
             </Button>
           </>
+        )}
+
+        {/* Recording saved locally — donor picks when to upload */}
+        {savedRecordingId && !uploading && !uploadDone && (
+          <Card>
+            <CardContent className="pt-6 space-y-4">
+              <div className="text-center space-y-2">
+                <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto" />
+                <h2 className="text-lg font-semibold">Recording saved</h2>
+                <p className="text-sm text-muted-foreground">
+                  {formatDuration(savedDuration)} • {formatBytes(savedSize)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Saved to this phone. You can upload now or later from My Recordings.
+                </p>
+              </div>
+
+              {error && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 text-sm text-destructive text-center">
+                  {error}
+                </div>
+              )}
+
+              <Button size="lg" className="w-full h-14" onClick={handleSavedUploadNow} disabled={!isOnline}>
+                <Upload className="h-5 w-5 mr-2" /> Upload now
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => navigate(`/my-recordings?match=${tokenInfo?.match_id || ''}`)}
+              >
+                <Film className="h-4 w-4 mr-2" /> Upload later — open My Recordings
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={goHome}>
+                <Home className="h-4 w-4 mr-2" /> Done
+              </Button>
+            </CardContent>
+          </Card>
         )}
 
         {/* File selected — ready to upload */}

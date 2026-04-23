@@ -19,6 +19,10 @@ export const useDeepLinkHandler = () => {
         if (token) {
           navigate(`/capture/${token}`);
         }
+      } else if (url.startsWith("playeranalysis://my-recordings")) {
+        // Optional ?match=<id> filter
+        const q = url.split("?")[1] || "";
+        navigate(`/my-recordings${q ? `?${q}` : ""}`);
       }
     });
 
