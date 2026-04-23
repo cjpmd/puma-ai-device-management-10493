@@ -43,8 +43,18 @@ if (isNative) {
   );
 }
 
+export interface RecordingResult {
+  /** Native file:// URI on iOS, or Filesystem-relative path on web/Android */
+  filePath: string;
+  /** Whether `filePath` is a Capacitor Filesystem-relative path */
+  filesystemPath: boolean;
+  sizeBytes: number;
+  durationSec: number;
+  mimeType: string;
+}
+
 interface CameraRecorderProps {
-  onRecordingComplete: (file: File) => void;
+  onRecordingComplete: (result: RecordingResult) => void;
   remoteCommand: 'idle' | 'start' | 'stop';
   startAt?: number; // scheduled start timestamp from control phone
   onStatusChange: (status: 'ready' | 'recording' | 'stopped' | 'error', error?: string) => void;
