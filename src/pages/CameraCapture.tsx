@@ -7,6 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { Upload, CheckCircle, XCircle, Wifi, WifiOff, Radio, Camera, X, QrCode, Home } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { CameraRecorder } from '@/components/Matches/CameraRecorder';
+import type { RecordingResult } from '@/components/Matches/CameraRecorder';
+import { localRecordings, formatBytes, formatDuration } from '@/services/localRecordings';
+import { uploadLocalRecording, isOnWifi, WifiRequired, UploadCancelled } from '@/services/uploadRecording';
 import { Capacitor } from '@capacitor/core';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -32,6 +35,9 @@ const CameraCapture = () => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [uploadDone, setUploadDone] = useState(false);
+  const [savedRecordingId, setSavedRecordingId] = useState<string | null>(null);
+  const [savedSize, setSavedSize] = useState<number>(0);
+  const [savedDuration, setSavedDuration] = useState<number>(0);
   const [cancelled, setCancelled] = useState<null | 'self' | 'remote'>(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -259,10 +265,70 @@ const CameraCapture = () => {
     [tokenInfo]
   );
 
-  const handleRecordingComplete = useCallback((recordedFile: File) => {
-    setFile(recordedFile);
-    setRemoteCommand('idle');
-  }, []);
+  const handleRecordingComplete = useCallback(
+    (result: RecordingResult) => {
+      if (!tokenInfo || !token) return;
+      // Persist into the local registry so it survives navigation, app
+      // background, and reboots. The donor can upload now or later from
+      // the My Recordings screen.
+      const id = localRecordings.newId();
+      localRecordings.add({
+        id,
+        matchId: tokenInfo.match_id,
+        matchTitle: tokenInfo.match_title,
+        cameraSide: tokenInfo.camera_side as 'left' | 'right',
+        uploadToken: token,
+        filePath: result.filePath,
+        filesystemPath: result.filesystemPath,
+        sizeBytes: result.sizeBytes,
+        durationSec: result.durationSec,
+        mimeType: result.mimeType,
+        recordedAt: new Date().toISOString(),
+        status: 'pending',
+        progress: 0,
+      });
+      setSavedRecordingId(id);
+      setSavedSize(result.sizeBytes);
+      setSavedDuration(result.durationSec);
+      setRemoteCommand('idle');
+      // Notify master so the QR card can show "Recorded ✔ awaiting upload"
+      channelRef.current?.send({
+        type: 'broadcast',
+        event: 'recording',
+        payload: {
+          type: 'recording_saved',
+          camera_side: tokenInfo.camera_side,
+          size_bytes: result.sizeBytes,
+          duration_sec: result.durationSec,
+        },
+      });
+    },
+    [tokenInfo, token],
+  );
+
+  const handleSavedUploadNow = useCallback(async () => {
+    if (!savedRecordingId) return;
+    setUploading(true);
+    setProgress(0);
+    setError(null);
+    try {
+      if (localRecordings.getWifiOnly() && !(await isOnWifi())) {
+        throw new WifiRequired();
+      }
+      await uploadLocalRecording(savedRecordingId, {
+        onProgress: (p) => setProgress(p),
+      });
+      setUploadDone(true);
+    } catch (err: any) {
+      if (err instanceof WifiRequired) {
+        setError('Waiting for WiFi. You can upload later from My Recordings.');
+      } else if (!(err instanceof UploadCancelled)) {
+        setError(err?.message || 'Upload failed');
+      }
+    } finally {
+      setUploading(false);
+    }
+  }, [savedRecordingId]);
 
   // Capabilities (lens / resolution / fps) — broadcast once after camera init
   const handleCapabilities = useCallback(
