@@ -82,6 +82,10 @@ export function CameraRecorder({
   const [appliedSettings, setAppliedSettings] = useState<string>('');
   const [isUltraWideLens, setIsUltraWideLens] = useState<boolean | null>(null);
   const [ultraWideHardware, setUltraWideHardware] = useState<boolean | null>(null);
+  // Non-permission startup error (plugin load, layout, native start failure).
+  // Kept separate from `hasPermission` so we don't show the misleading
+  // "Camera access denied" UI for what is really a layout/init issue.
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   // Web fallback refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -95,6 +99,7 @@ export function CameraRecorder({
   const nativeFilePathRef = useRef<string | null>(null);
   const viewfinderRef = useRef<HTMLDivElement | null>(null);
   const lastRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const usedFallbackRectRef = useRef(false);
 
   // ─── INIT ───
   useEffect(() => {
