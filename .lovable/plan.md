@@ -1,77 +1,110 @@
 
 
-## Plan — Stop the second donor phone crashing right after it scans the QR
+## Plan — Fix "Camera access denied" on the donor iPhone after QR scan
 
-### What's actually going wrong
+### What's actually broken
 
-You said: same app on both donor phones, same account, both use the in-app **Scan Camera QR** flow, and the crash happens right after the QR is read and the camera "briefly opens". That rules out the things ChatGPT guessed:
+The screenshot shows the donor phone rendering the **web fallback** UI (no native preview rect, normal page background, "Camera access denied" card). On iOS, `navigator.mediaDevices.getUserMedia()` inside the WKWebView returns "denied" — that's expected, the native Capacitor plugin is what actually owns the camera. So the real question is: why is the donor phone running the web fallback at all on a native iOS build?
 
-- **Not token reuse.** Master generates a unique token for *left* and another for *right* — they're different tokens.
-- **Not multi-session auth.** Supabase happily handles the same account on two devices; that doesn't crash native code.
-- **Not "first camera locked".** Each phone has its own camera; donor 1's camera is irrelevant to donor 2.
+Root cause is in `src/components/Matches/CameraRecorder.tsx`, lines 9-25 and 178-185:
 
-What's actually happening on donor 2 is a **native iOS AVCaptureSession collision and a 0×0 preview rectangle**, all triggered by the QR-scan → capture-screen handoff. Three concrete bugs:
-
-### Bug 1 — MLKit scanner isn't fully released before `CameraPreview.start()` grabs the camera
-
-In `src/pages/ScanQR.tsx`, when a QR is read we call:
-```
-await stopScan();
+```ts
+let CameraPreview: any = null;
+if (isNative) {
+  import('@capacitor-community/camera-preview').then((m) => { CameraPreview = m.CameraPreview; });
+  …
+}
 …
-navigate(`/capture/${token}`);
+const initNativeCamera = async () => {
+  await new Promise((r) => setTimeout(r, 300));   // hope it's loaded
+  if (!CameraPreview) {
+    setUseNative(false);
+    initWebCamera();                              // → getUserMedia → "denied"
+    return;
+  }
 ```
 
-`stopScan()` calls `BarcodeScanner.stopScan()` and removes the body class, but on iOS the underlying `AVCaptureSession` from MLKit is torn down **asynchronously** on the camera queue. We then immediately mount `CameraCapture` → `CameraRecorder` → `CameraPreview.start({ position:'rear', toBack:true })` typically within ~300 ms. On the second donor phone that race fires more reliably (cold caches, slower init), and AVFoundation throws `AVErrorDomain -11852 / -11819` ("camera in use by another client"), which the plugin re-throws as an unhandled native exception → app crash.
+The lazy `import()` is fired but **never awaited**. The component then waits a fixed 300 ms and assumes the module has loaded. On a cold native start — exactly the situation we just made worse by adding the 250 ms `setTimeout` settle delay in `ScanQR.tsx` — the dynamic import for `@capacitor-community/camera-preview` (a native plugin module that includes a moderate amount of TS) hasn't resolved yet. `CameraPreview` is still `null`, the code falls into `initWebCamera()`, `getUserMedia` throws, and the catch on line 397 sets `"Camera access denied"`.
 
-**Fix:** in `ScanQR.tsx`, `stopScan()` becomes a real teardown and waits for it:
-- await `BarcodeScanner.removeAllListeners()`
-- await `BarcodeScanner.stopScan()`
-- remove the body/html `barcode-scanner-active` classes
-- then `await new Promise(r => setTimeout(r, 250))` to let the AVCaptureSession queue actually release
+This was almost certainly triggered by the recent ScanQR change pushing the CameraRecorder mount earlier in the cold-start window, but the underlying race has always been there — it's just become reliable now.
 
-Only then call `navigate(`/capture/${token}`)`. The settle delay is the standard iOS workaround for the well-known `BarcodeScanner ↔ CameraPreview` handoff race.
+### Fix
 
-### Bug 2 — Defensive guard if AVCaptureSession is *still* busy
+Replace the fire-and-forget lazy imports with a proper awaited loader, and have `initNativeCamera()` await it before deciding native-vs-web. No more 300 ms guess.
 
-In `src/components/Matches/CameraRecorder.tsx`'s `initNativeCamera()`, wrap `CameraPreview.start()` in a retry-with-backoff (3 attempts, 400ms apart). If the camera is briefly busy from MLKit's teardown, we recover instead of crashing. After the final failure, surface a friendly error in the existing `hasPermission === false` card with a **Try Again** button (already present) — the donor can retry without the page becoming unresponsive.
+**`src/components/Matches/CameraRecorder.tsx`**
 
-We also wrap the existing two `try { await CameraPreview.start(startOpts) }` calls in a top-level try/catch and never let the promise rejection escape to the React error boundary.
+1. Replace the top-of-file block:
+   ```ts
+   if (isNative) {
+     import('@capacitor-community/camera-preview').then(...);
+     import('@capacitor/device').then(...);
+     import('@capacitor/filesystem').then(...);
+   }
+   ```
+   with a single shared promise:
+   ```ts
+   let nativePluginsReady: Promise<void> | null = null;
+   const loadNativePlugins = () => {
+     if (!isNative) return Promise.resolve();
+     if (!nativePluginsReady) {
+       nativePluginsReady = Promise.all([
+         import('@capacitor-community/camera-preview').then(m => { CameraPreview = m.CameraPreview; }),
+         import('@capacitor/device').then(m => { DevicePlugin = m.Device; }),
+         import('@capacitor/filesystem').then(m => { Filesystem = m.Filesystem; }),
+       ]).then(() => undefined);
+     }
+     return nativePluginsReady;
+   };
+   ```
 
-### Bug 3 — Zero-size viewfinder rectangle when measured too early
+2. In `initNativeCamera()`, replace the fixed 300 ms wait with:
+   ```ts
+   try {
+     await loadNativePlugins();
+   } catch (e) {
+     console.error('[CameraRecorder] Native plugin import failed', e);
+   }
+   if (!CameraPreview) {
+     // Real failure — module genuinely couldn't load. Show a clear message
+     // instead of silently falling through to the web getUserMedia path,
+     // which on iOS WKWebView always reports "denied".
+     setHasPermission(false);
+     onStatusChange('error', 'Camera plugin failed to load');
+     return;
+   }
+   ```
 
-In `initNativeCamera()` we already do one `requestAnimationFrame` then `measureViewfinderRect()`. That's not enough on the second device because the `camera-preview-active` html class is being added in `CameraCapture.tsx` *concurrently* (a parallel `useEffect`), which forces a re-layout. The first measurement can come back with `width:0` / `height:0` if the viewfinder div hasn't taken its final size yet. Passing `width:0,height:0` to `CameraPreview.start()` is what reliably crashes the AVFoundation pipeline on iPhone.
+3. Remove the silent `initWebCamera()` fallback when running natively. The web fallback is only correct for the actual web build; calling it inside an iOS shell is what produces the misleading "Camera access denied" card. Keep `initWebCamera()` in place for the `!isNative` path on lines 84-86.
 
-**Fix:** in `measureViewfinderRect()`, if `width<10 || height<10` return `null`. In `initNativeCamera()`, if the rect is null/zero-sized, retry up to 5 times with `requestAnimationFrame` before giving up. Also defer the call until **after** `camera-preview-active` is on `<html>`. Easiest way: `CameraCapture.tsx` already sets the class in a `useEffect`; we just add a small `await new Promise(r => setTimeout(r, 50))` at the start of `initNativeCamera` so layout has settled.
+4. Update the catch in `initWebCamera()` so the error message distinguishes "no permission" from "feature unavailable" — only set `"Camera access denied"` when the real `NotAllowedError` is thrown; otherwise show the actual error name. This prevents future confusion if the web path ever runs unexpectedly.
 
-### Bug 4 — Realtime broadcast cross-talk on master and both donors
+### Why this fixes it
 
-Both donor phones subscribe to `recording-${match_id}`. Today, when master sends `live_preview_on/off` or `disconnect` without a `camera_side` filter, both donors react. That isn't the crash, but it is the source of the "behaves weirdly when two phones are connected" reports you'll get after this fix. Tighten it:
-
-- In the donor's broadcast handler in `CameraCapture.tsx`, ignore any payload whose `camera_side` is set and doesn't match this donor's side. Already done for `disconnect`; do the same for `live_preview_on / live_preview_off / start / stop`. Master can still address "all" by omitting `camera_side`.
-
-### Bug 5 — No diagnostics when it does crash
-
-The current `catch` in `initNativeCamera` only does `console.error`. Add `Logger.error('camera-init', err)` style logging that ALSO sends a `status: 'error'` broadcast with the error message back to the master via `onStatusChange('error', err.message)`. That way next time we'll see it on the master device's panel instead of guessing.
+- The donor phone will now wait for the native plugin to actually be loaded before deciding what to do, with no fixed timeout.
+- If the plugin really can't load (e.g. truly missing on the build), the screen says "Camera plugin failed to load" instead of the misleading "Camera access denied" — which is what tricked us into hunting a permissions problem when the OS settings were already correct.
+- The native preview will start on the first attempt because `CameraPreview` is guaranteed non-null when `initNativeCamera()` reaches the `start()` call.
 
 ### Files
 
 **Edit**
-- `src/pages/ScanQR.tsx` — robust teardown of MLKit scanner with `removeAllListeners` + a 250 ms settle delay before `navigate()`.
-- `src/components/Matches/CameraRecorder.tsx` — retry `CameraPreview.start()` up to 3× on transient AVFoundation failures; reject 0-size rects and re-measure with `requestAnimationFrame` up to 5×; better error reporting to master via `onStatusChange`.
-- `src/pages/CameraCapture.tsx` — small settle delay before mounting `<CameraRecorder>` (or a `useState` gate that flips true after the `camera-preview-active` class is applied) and per-side filtering on `live_preview_on/off / start / stop` broadcasts.
+- `src/components/Matches/CameraRecorder.tsx`
+  - Replace fire-and-forget dynamic imports with an awaited `loadNativePlugins()` promise.
+  - Remove the 300 ms `setTimeout` guess.
+  - On native, never fall through to `initWebCamera()` — show a clear plugin-load error instead.
+  - Tighten the web fallback's catch so only real `NotAllowedError` becomes "Camera access denied".
 
-**No DB changes. No schema changes. No new packages.**
+**No DB changes. No other files touched. No new packages. No native patch changes — the plugin is already installed and patched correctly.**
 
 ### After the change — local steps
 1. `git pull && npm install`
 2. `npm run build && npx cap sync ios`
-3. Xcode → **Product → Clean Build Folder** → Run on **donor phone 2** (the one that was crashing).
-4. Donor 1 scans left QR → records.
-5. While donor 1 is on the capture screen, donor 2 opens the app → **Scan Camera QR** → scans the right QR. The MLKit scanner now waits for AVCaptureSession to release; if it's still busy, we retry; if the viewfinder isn't laid out, we retry — no crash.
-6. If anything still goes wrong, check master's connection panel — donor 2's tile will show a red **error** badge with the actual native error message, instead of the donor app silently dying.
+3. Xcode → **Product → Clean Build Folder** → Run on the donor iPhone.
+4. Open the app → **Scan Camera QR** → scan a donor QR.
+5. The capture screen now shows the live ultra-wide preview in the boxed viewfinder. No "Camera access denied".
 
 ### Out of scope
-- Switching off MLKit for a different scanner.
-- Generating one shared QR code (you correctly use one per side).
-- Auto-reconnect after a crash (donor will still need to scan again — but at least it won't crash).
+- Reverting the ScanQR settle delay (it correctly fixes the donor-2 crash; we're keeping it).
+- Changing the iOS `Info.plist` or permission prompts (those are already correct — the previous error was a false negative, not a real permission denial).
+- Adding a manual lens picker on donor phones.
 
