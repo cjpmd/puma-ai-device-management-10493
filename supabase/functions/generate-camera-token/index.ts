@@ -64,8 +64,9 @@ Deno.serve(async (req) => {
       .eq("match_id", match_id)
       .eq("camera_side", camera_side);
 
-    // Insert new token (expires in 24h)
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    // Insert new token (expires in 7 days so a donor can record on
+    // Saturday and upload on Sunday night).
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const { error: insertError } = await adminClient
       .from("upload_tokens")
       .insert({ match_id, camera_side, token, expires_at: expiresAt });

@@ -43,8 +43,18 @@ if (isNative) {
   );
 }
 
+export interface RecordingResult {
+  /** Native file:// URI on iOS, or Filesystem-relative path on web/Android */
+  filePath: string;
+  /** Whether `filePath` is a Capacitor Filesystem-relative path */
+  filesystemPath: boolean;
+  sizeBytes: number;
+  durationSec: number;
+  mimeType: string;
+}
+
 interface CameraRecorderProps {
-  onRecordingComplete: (file: File) => void;
+  onRecordingComplete: (result: RecordingResult) => void;
   remoteCommand: 'idle' | 'start' | 'stop';
   startAt?: number; // scheduled start timestamp from control phone
   onStatusChange: (status: 'ready' | 'recording' | 'stopped' | 'error', error?: string) => void;
@@ -583,12 +593,52 @@ export function CameraRecorder({
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         const mType = recorder.mimeType || 'video/webm';
         const ext = mType.includes('mp4') ? 'mp4' : 'webm';
         const blob = new Blob(chunksRef.current, { type: mType });
-        const file = new File([blob], `recording-${Date.now()}.${ext}`, { type: mType });
-        onRecordingComplete(file);
+        // Persist the blob to Capacitor Filesystem (or fall back to an
+        // in-memory blob URL on plain web) so it survives page unload and
+        // can be picked up by My Recordings later.
+        let filePath = '';
+        let filesystemPath = false;
+        try {
+          if (Filesystem) {
+            const { Directory } = await import('@capacitor/filesystem');
+            const reader = new FileReader();
+            const base64: string = await new Promise((resolve, reject) => {
+              reader.onloadend = () => {
+                const r = (reader.result as string) || '';
+                resolve(r.split(',')[1] || '');
+              };
+              reader.onerror = () => reject(reader.error);
+              reader.readAsDataURL(blob);
+            });
+            const path = `puma-recordings/recording-${Date.now()}.${ext}`;
+            await Filesystem.writeFile({
+              path,
+              data: base64,
+              directory: Directory.Data,
+              recursive: true,
+            });
+            filePath = path;
+            filesystemPath = true;
+          } else {
+            filePath = URL.createObjectURL(blob);
+            filesystemPath = false;
+          }
+        } catch (e) {
+          console.warn('[CameraRecorder] Persist to Filesystem failed, using blob URL', e);
+          filePath = URL.createObjectURL(blob);
+          filesystemPath = false;
+        }
+        onRecordingComplete({
+          filePath,
+          filesystemPath,
+          sizeBytes: blob.size,
+          durationSec: elapsed,
+          mimeType: mType,
+        });
         onStatusChange('stopped');
       };
       recorder.start(1000);
@@ -608,13 +658,26 @@ export function CameraRecorder({
         const result = await CameraPreview.stopRecordVideo();
         if (result?.videoFilePath) {
           nativeFilePathRef.current = result.videoFilePath;
-          const fileUri = result.videoFilePath.startsWith('file://')
-            ? result.videoFilePath
-            : `file://${result.videoFilePath}`;
-          const response = await fetch(fileUri);
-          const blob = await response.blob();
-          const file = new File([blob], `recording-${Date.now()}.mp4`, { type: 'video/mp4' });
-          onRecordingComplete(file);
+          // Keep the MP4 on disk — don't materialise a Blob in memory.
+          // Just probe the size (HEAD-style fetch) so we can show it in UI.
+          let sizeBytes = 0;
+          try {
+            const fileUri = result.videoFilePath.startsWith('file://')
+              ? result.videoFilePath
+              : `file://${result.videoFilePath}`;
+            const probe = await fetch(fileUri);
+            const blob = await probe.blob();
+            sizeBytes = blob.size;
+          } catch (e) {
+            console.warn('[CameraRecorder] Could not probe file size', e);
+          }
+          onRecordingComplete({
+            filePath: result.videoFilePath,
+            filesystemPath: false,
+            sizeBytes,
+            durationSec: elapsed,
+            mimeType: 'video/mp4',
+          });
         }
       } catch (err: any) {
         console.error('Stop recording error:', err);
