@@ -419,9 +419,19 @@ export function CameraRecorder({
         ultraWide: false,
         native: false,
       });
-    } catch {
+    } catch (err: any) {
       setHasPermission(false);
-      onStatusChange('error', 'Camera access denied');
+      // Only report "Camera access denied" for an actual permission denial.
+      // Anything else (e.g. NotFoundError, AbortError, SecurityError on
+      // WKWebView) gets surfaced with the real error name so it doesn't
+      // get misdiagnosed as a permissions issue.
+      const name = err?.name || 'UnknownError';
+      const msg =
+        name === 'NotAllowedError' || name === 'PermissionDeniedError'
+          ? 'Camera access denied'
+          : `Camera unavailable (${name})`;
+      console.error('[CameraRecorder] Web camera init failed:', err);
+      onStatusChange('error', msg);
     }
   };
 
