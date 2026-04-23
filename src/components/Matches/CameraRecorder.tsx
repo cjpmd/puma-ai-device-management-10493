@@ -369,6 +369,16 @@ export function CameraRecorder({
     const el = viewfinderRef.current;
     if (!el) return null;
     const r = el.getBoundingClientRect();
+    // Log progression so we can see on-device what's happening when
+    // layout settles (or doesn't).
+    if (typeof console !== 'undefined') {
+      console.log('[CameraRecorder] rect check', {
+        width: r.width,
+        height: r.height,
+        left: r.left,
+        top: r.top,
+      });
+    }
     if (r.width < 10 || r.height < 10) return null;
     const rect = {
       x: Math.round(r.left),
@@ -383,11 +393,14 @@ export function CameraRecorder({
   // Wait for the viewfinder div to actually have a non-zero size.
   // The `camera-preview-active` class on <html> can trigger a re-layout
   // concurrently with mount, so the first measurement is sometimes 0×0.
-  const waitForViewfinderRect = async (maxAttempts = 5) => {
+  // iOS WKWebView in particular can take significantly longer than a few
+  // animation frames after a route transition, so we use a fixed 50ms
+  // poll across ~20 attempts (~1s window) instead of rAF.
+  const waitForViewfinderRect = async (maxAttempts = 20) => {
     for (let i = 0; i < maxAttempts; i++) {
       const r = measureViewfinderRect();
       if (r) return r;
-      await new Promise((res) => requestAnimationFrame(() => res(null)));
+      await new Promise((res) => setTimeout(res, 50));
     }
     return null;
   };
