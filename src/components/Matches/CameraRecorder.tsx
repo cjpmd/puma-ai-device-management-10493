@@ -677,7 +677,14 @@ export function CameraRecorder({
           <AlertTriangle className="h-10 w-10 text-destructive mx-auto" />
           <p className="text-sm font-medium">Camera access denied</p>
           <p className="text-xs text-muted-foreground">Allow camera access in your device settings and reload.</p>
-          <Button size="sm" onClick={() => { setCameraError(null); isNative ? initNativeCamera() : initWebCamera(); }}>
+          <Button
+            size="sm"
+            onClick={() => {
+              setCameraError(null);
+              if (isNative) initNativeCamera();
+              else initWebCamera();
+            }}
+          >
             Try Again
           </Button>
         </CardContent>
@@ -701,7 +708,8 @@ export function CameraRecorder({
             onClick={() => {
               setCameraError(null);
               setHasPermission(null);
-              isNative ? initNativeCamera() : initWebCamera();
+              if (isNative) initNativeCamera();
+              else initWebCamera();
             }}
           >
             Try Again
