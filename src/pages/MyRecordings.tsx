@@ -82,25 +82,26 @@ const MyRecordings = () => {
   // WiFi-only is enabled and the user comes back to WiFi.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
-    let remove: (() => void) | null = null;
-    (async () => {
-      try {
-        const { Network } = await import('@capacitor/network');
-        const handle = await Network.addListener('networkStatusChange', async (status) => {
-          const wifi = status.connectionType === 'wifi';
-          setOnWifi(status.connected ? wifi : false);
-          if (localRecordings.getWifiOnly() && wifi) {
-            // Kick pending uploads
-            for (const r of localRecordings.list()) {
-              if (r.status === 'pending') startUpload(r.id).catch(() => {});
-            }
-          }
-        });
-        remove = () => handle.remove();
-      } catch {}
-    })();
+    const syncNetworkState = async () => {
+      const wifi = await isOnWifi();
+      setOnWifi(wifi);
+      if (localRecordings.getWifiOnly() && wifi) {
+        for (const r of localRecordings.list()) {
+          if (r.status === 'pending') startUpload(r.id).catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('online', syncNetworkState);
+    window.addEventListener('offline', syncNetworkState);
+
+    const poll = window.setInterval(syncNetworkState, 15000);
+    syncNetworkState().catch(() => {});
+
     return () => {
-      remove?.();
+      window.removeEventListener('online', syncNetworkState);
+      window.removeEventListener('offline', syncNetworkState);
+      window.clearInterval(poll);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

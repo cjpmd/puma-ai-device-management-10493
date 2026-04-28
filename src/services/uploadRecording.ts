@@ -18,22 +18,45 @@ export class WifiRequired extends Error {
   }
 }
 
+type NetworkInfo = {
+  effectiveType?: string;
+  type?: string;
+};
+
+const getBrowserNetworkInfo = (): NetworkInfo | null => {
+  if (typeof navigator === 'undefined') return null;
+  const nav = navigator as Navigator & {
+    connection?: NetworkInfo;
+    mozConnection?: NetworkInfo;
+    webkitConnection?: NetworkInfo;
+  };
+  return nav.connection ?? nav.mozConnection ?? nav.webkitConnection ?? null;
+};
+
 /**
  * Returns true if the device is currently connected via WiFi (or we can't
  * reliably tell, in which case we treat it as WiFi to avoid blocking the
  * web preview/desktop).
  */
 export const isOnWifi = async (): Promise<boolean> => {
-  if (!Capacitor.isNativePlatform()) return true;
-  try {
-    const { Network } = await import('@capacitor/network');
-    const status = await Network.getStatus();
-    if (!status.connected) return false;
-    return status.connectionType === 'wifi' || status.connectionType === 'unknown';
-  } catch (e) {
-    console.warn('[uploadRecording] Network plugin missing, assuming WiFi', e);
-    return true;
+  if (typeof navigator !== 'undefined' && 'onLine' in navigator && navigator.onLine === false) {
+    return false;
   }
+
+  const connection = getBrowserNetworkInfo();
+  const connectionType = connection?.type?.toLowerCase();
+  const effectiveType = connection?.effectiveType?.toLowerCase();
+
+  if (connectionType === 'wifi' || connectionType === 'ethernet') return true;
+  if (connectionType === 'cellular') return false;
+  if (effectiveType === '2g' || effectiveType === '3g' || effectiveType === '4g' || effectiveType === 'slow-2g') {
+    return false;
+  }
+
+  if (!Capacitor.isNativePlatform()) return true;
+
+  console.warn('[uploadRecording] Network type unavailable, assuming WiFi');
+  return true;
 };
 
 const readBlobFromRecording = async (rec: LocalRecording): Promise<Blob> => {
