@@ -21,6 +21,7 @@
     "@capacitor/device": "^7.0.0",
     "@capacitor/filesystem": "^7.0.0",
     "@capacitor/ios": "^7.0.1",
+    "@capacitor/network": "^8.0.1",
     "@hookform/resolvers": "^3.9.0",
     "@huggingface/transformers": "^3.5.1",
     "@radix-ui/react-accordion": "^1.2.0",
