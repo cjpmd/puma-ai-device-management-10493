@@ -7,9 +7,7 @@ const corsHeaders = {
 
 async function getClients(req: Request) {
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    throw new Error("Missing authorization header");
-  }
+  if (!authHeader?.startsWith("Bearer ")) throw new Error("Missing authorization header");
 
   const localSupabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -18,9 +16,7 @@ async function getClients(req: Request) {
 
   const token = authHeader.replace("Bearer ", "");
   const { data: { user }, error: authError } = await localSupabase.auth.getUser(token);
-  if (authError || !user) {
-    throw new Error("Unauthorized");
-  }
+  if (authError || !user) throw new Error("Unauthorized");
 
   const externalSupabase = createClient(
     Deno.env.get("EXTERNAL_SUPABASE_URL")!,
@@ -31,9 +27,7 @@ async function getClients(req: Request) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const { localSupabase, externalSupabase, user } = await getClients(req);
@@ -42,9 +36,10 @@ Deno.serve(async (req) => {
     const results = {
       academies: { updated: 0, errors: 0 },
       clubs_linked: 0,
+      user_academies: { fetched: 0, head_matched: 0 },
     };
 
-    // 1. Fetch all academies from FC
+    // ── 1. Fetch academies from FC ──────────────────────────────────────────
     const { data: externalAcademies, error: acErr } = await externalSupabase
       .from("academies")
       .select("id, name, logo_url, fa_registration_number, eppp_category, founded_year");
@@ -52,12 +47,11 @@ Deno.serve(async (req) => {
     if (acErr) {
       console.error("Error fetching academies from FC:", acErr);
       return new Response(JSON.stringify({ success: false, error: acErr.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 2. Upsert each academy locally
+    // ── 2. Upsert academies locally ─────────────────────────────────────────
     for (const academy of externalAcademies || []) {
       const { error: upsertErr } = await localSupabase.from("academies").upsert({
         external_id: academy.id,
@@ -77,29 +71,61 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Fetch academy_clubs links from FC
+    // ── 3. Fetch academy_clubs from FC and link local clubs ─────────────────
     const { data: academyClubs, error: linkErr } = await externalSupabase
       .from("academy_clubs")
       .select("academy_id, club_id");
 
     if (linkErr) {
-      console.error("Error fetching academy_clubs from FC:", linkErr);
+      console.error("Error fetching academy_clubs:", linkErr);
     } else {
       for (const link of academyClubs || []) {
         const { data: localAcademy } = await localSupabase
-          .from("academies")
-          .select("id")
-          .eq("external_id", link.academy_id)
-          .single();
-
+          .from("academies").select("id").eq("external_id", link.academy_id).single();
         if (!localAcademy) continue;
 
         const { error: updateErr } = await localSupabase
-          .from("clubs")
-          .update({ academy_id: localAcademy.id })
-          .eq("external_id", link.club_id);
-
+          .from("clubs").update({ academy_id: localAcademy.id }).eq("external_id", link.club_id);
         if (!updateErr) results.clubs_linked++;
+      }
+    }
+
+    // ── 4. Fetch user_academies from FC (with profile email for matching) ───
+    //
+    // user_academies links FC user IDs to academies. We fetch this data to:
+    //   a) report academy membership counts
+    //   b) attempt to match academy_admin users to local Performance accounts
+    //      by email, then record the head_of_academy on the local academy row.
+    const { data: fcUserAcademies, error: uaErr } = await externalSupabase
+      .from("user_academies")
+      .select("academy_id, user_id, role, profiles!inner(email)");
+
+    if (uaErr) {
+      console.warn("Could not fetch user_academies from FC (non-fatal):", uaErr.message);
+    } else {
+      results.user_academies.fetched = (fcUserAcademies || []).length;
+
+      // For each academy_admin entry, try to find the matching local user by
+      // email and record them on the local academy row.
+      for (const ua of (fcUserAcademies || []).filter((r: any) => r.role === "academy_admin")) {
+        const email: string | undefined = (ua as any).profiles?.email;
+        if (!email) continue;
+
+        const { data: localUser } = await localSupabase
+          .from("profiles").select("id").ilike("email", email).maybeSingle();
+        if (!localUser) continue;
+
+        const { data: localAcademy } = await localSupabase
+          .from("academies").select("id").eq("external_id", ua.academy_id).single();
+        if (!localAcademy) continue;
+
+        // Store the matched local user as head_of_academy on the Performance academy
+        await localSupabase
+          .from("academies")
+          .update({ head_of_academy_user_id: localUser.id })
+          .eq("id", localAcademy.id);
+
+        results.user_academies.head_matched++;
       }
     }
 
@@ -110,10 +136,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error("Error in sync-external-academy:", error);
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : "An unknown error occurred",
-      }),
+      JSON.stringify({ success: false, error: error instanceof Error ? error.message : "Unknown error" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
