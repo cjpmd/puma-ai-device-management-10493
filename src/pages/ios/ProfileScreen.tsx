@@ -99,23 +99,39 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
     if (syncingAcademy) return;
     setSyncingAcademy(true);
     toast({ title: 'Syncing academy…', description: 'Pulling academy structure from Origin Sports' });
-    const { data, error } = await supabase.functions.invoke('sync-external-academy');
-    setSyncingAcademy(false);
-    if (!error && data?.success) {
-      const now = new Date().toISOString();
-      setLastAcademySynced(now);
-      try { localStorage.setItem(LAST_ACADEMY_SYNC_KEY, now); } catch {}
-      const r = data.results || {};
-      toast({
-        title: 'Academy synced',
-        description: `Academies: ${r.academies?.updated ?? 0} · Clubs linked: ${r.clubs_linked ?? 0}`,
-      });
-    } else {
+
+    const { data: academyData, error: academyError } = await supabase.functions.invoke('sync-external-academy');
+
+    if (academyError || !academyData?.success) {
+      setSyncingAcademy(false);
       toast({
         title: 'Academy sync failed',
-        description: error?.message || data?.error || 'Could not reach Origin Sports',
+        description: academyError?.message || academyData?.error || 'Could not reach Origin Sports',
         variant: 'destructive',
       });
+      return;
+    }
+
+    // Chain sync-external-core to populate clubs.academy_id and other cross-references
+    const { data: coreData, error: coreError } = await supabase.functions.invoke('sync-external-core');
+
+    setSyncingAcademy(false);
+
+    const now = new Date().toISOString();
+    setLastAcademySynced(now);
+    try { localStorage.setItem(LAST_ACADEMY_SYNC_KEY, now); } catch {}
+
+    const ar = academyData.results || {};
+    const academySummary = `Academies: ${ar.academies?.updated ?? 0} · Clubs linked: ${ar.clubs_linked ?? 0}`;
+
+    if (coreError) {
+      toast({
+        title: 'Academy synced (core sync failed)',
+        description: `${academySummary} · Core: ${coreError.message}`,
+        variant: 'destructive',
+      });
+    } else {
+      toast({ title: 'Academy synced', description: academySummary });
     }
   };
 
@@ -203,7 +219,7 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
             <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 10,
-                background: `linear-gradient(135deg, #7c3aed, #4f46e5)`,
+                background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
