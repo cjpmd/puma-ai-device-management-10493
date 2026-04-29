@@ -12,6 +12,7 @@ import { syncAll } from '@/hooks/useUserTeams';
 import { useToast } from '@/hooks/use-toast';
 
 const LAST_SYNC_KEY = 'origin.lastSyncedAt';
+const LAST_ACADEMY_SYNC_KEY = 'origin.lastAcademySyncedAt';
 const fmtAgo = (iso: string) => {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   if (diff < 60) return 'just now';
@@ -33,8 +34,12 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
   const [matchCount, setMatchCount] = useState(0);
   const [playerCount, setPlayerCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [syncingAcademy, setSyncingAcademy] = useState(false);
   const [lastSynced, setLastSynced] = useState<string | null>(() => {
     try { return localStorage.getItem(LAST_SYNC_KEY); } catch { return null; }
+  });
+  const [lastAcademySynced, setLastAcademySynced] = useState<string | null>(() => {
+    try { return localStorage.getItem(LAST_ACADEMY_SYNC_KEY); } catch { return null; }
   });
 
   useEffect(() => {
@@ -90,6 +95,30 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
     }
   };
 
+  const handleSyncAcademy = async () => {
+    if (syncingAcademy) return;
+    setSyncingAcademy(true);
+    toast({ title: 'Syncing academy…', description: 'Pulling academy structure from Origin Sports' });
+    const { data, error } = await supabase.functions.invoke('sync-external-academy');
+    setSyncingAcademy(false);
+    if (!error && data?.success) {
+      const now = new Date().toISOString();
+      setLastAcademySynced(now);
+      try { localStorage.setItem(LAST_ACADEMY_SYNC_KEY, now); } catch {}
+      const r = data.results || {};
+      toast({
+        title: 'Academy synced',
+        description: `Academies: ${r.academies?.updated ?? 0} · Clubs linked: ${r.clubs_linked ?? 0}`,
+      });
+    } else {
+      toast({
+        title: 'Academy sync failed',
+        description: error?.message || data?.error || 'Could not reach Origin Sports',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate('/auth');
@@ -136,7 +165,7 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
         </div>
 
         {/* Sync from Origin Sports */}
-        <div style={{ padding: '0 16px 16px' }}>
+        <div style={{ padding: '0 16px 12px' }}>
           <Glass r={18} tint={syncing ? 'neutral' : 'purple'} onClick={!syncing ? handleSync : undefined}>
             <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{
@@ -162,6 +191,36 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
                 </div>
               </div>
               {!syncing && (
+                <svg width="10" height="16" viewBox="0 0 8 14"><path d="M1 1l6 6-6 6" stroke={T.fg} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              )}
+            </div>
+          </Glass>
+        </div>
+
+        {/* Sync Academy */}
+        <div style={{ padding: '0 16px 16px' }}>
+          <Glass r={18} tint={syncingAcademy ? 'neutral' : 'neutral'} onClick={!syncingAcademy ? handleSyncAcademy : undefined}>
+            <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: `linear-gradient(135deg, #7c3aed, #4f46e5)`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 3L2 9l10 6 10-6-10-6zM2 15l10 6 10-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ ...tType('headline'), color: T.fg }}>
+                  {syncingAcademy ? 'Syncing Academy…' : 'Sync Academy'}
+                </div>
+                <div style={{ ...tType('caption1'), color: T.fg2, marginTop: 2 }}>
+                  {syncingAcademy
+                    ? 'Pulling academy structure · clubs'
+                    : lastAcademySynced ? `Last synced ${fmtAgo(lastAcademySynced)}` : 'Tap to pull academy structure'}
+                </div>
+              </div>
+              {!syncingAcademy && (
                 <svg width="10" height="16" viewBox="0 0 8 14"><path d="M1 1l6 6-6 6" stroke={T.fg} strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
               )}
             </div>
