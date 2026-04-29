@@ -103,6 +103,26 @@ Deno.serve(async (req) => {
           if (upsertError) results.clubs.errors++;
           else results.clubs.updated++;
         }
+
+        // Link clubs to their academies (no-op if academies not yet synced)
+        const { data: academyClubs } = await externalSupabase
+          .from("academy_clubs")
+          .select("academy_id, club_id");
+
+        for (const link of academyClubs || []) {
+          const { data: localAcademy } = await localSupabase
+            .from("academies")
+            .select("id")
+            .eq("external_id", link.academy_id)
+            .single();
+
+          if (!localAcademy) continue;
+
+          await localSupabase
+            .from("clubs")
+            .update({ academy_id: localAcademy.id })
+            .eq("external_id", link.club_id);
+        }
       }
     }
 
