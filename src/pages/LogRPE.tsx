@@ -1,119 +1,228 @@
-import React, { useState, useEffect } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../lib/supabaseClient';
+
+const sb = supabase as any;
+
+const SESSION_TYPES = ['Training', 'Match', 'Gym', 'Recovery', 'Friendly', 'Other'];
+const RPE_LABELS: Record<number, string> = {
+  1: 'Rest', 2: 'Very Light', 3: 'Light', 4: 'Moderate', 5: 'Somewhat Hard',
+  6: 'Hard', 7: 'Very Hard', 8: 'Very Hard+', 9: 'Extremely Hard', 10: 'Maximum',
+};
+
+async function calcAcwr(playerId: string, sessionDate: string, todayLoad: number): Promise<number | null> {
+  const base = new Date(sessionDate);
+  const acuteCutoff   = new Date(base); acuteCutoff.setDate(acuteCutoff.getDate() - 6);
+  const chronicCutoff = new Date(base); chronicCutoff.setDate(chronicCutoff.getDate() - 27);
+
+  const { data } = await sb
+    .from('training_load')
+    .select('session_date, load_au')
+    .eq('player_id', playerId)
+    .gte('session_date', chronicCutoff.toISOString().split('T')[0])
+    .lt('session_date', sessionDate);
+
+  const rows = (data ?? []) as Array<{ session_date: string; load_au: number }>;
+  const acuteRows = rows.filter(r => r.session_date >= acuteCutoff.toISOString().split('T')[0]);
+
+  const acuteSum  = acuteRows.reduce((s, r) => s + (r.load_au ?? 0), 0) + todayLoad;
+  const chronicSum = rows.reduce((s, r) => s + (r.load_au ?? 0), 0) + todayLoad;
+  const chronicAvg = chronicSum / 28;
+
+  if (chronicAvg === 0) return null;
+  return Math.round((acuteSum / 7 / chronicAvg) * 100) / 100;
+}
 
 export default function LogRPE() {
   const { token } = useParams<{ token: string }>();
-  const [player, setPlayer]   = useState<{ id: string; name: string } | null>(null);
-  const [invalid, setInvalid] = useState(false);
-  const [rpe, setRpe]         = useState(6);
-  const [duration, setDuration] = useState(60);
-  const [sessionType, setSessionType] = useState('Training');
-  const [date, setDate]       = useState(new Date().toISOString().split('T')[0]);
-  const [saving, setSaving]   = useState(false);
-  const [saved, setSaved]     = useState(false);
+  const [rpe, setRpe]   = useState(0);
+  const [form, setForm] = useState({
+    session_date: new Date().toISOString().split('T')[0],
+    session_type: 'Training',
+    duration: '',
+    notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [done, setDone]     = useState(false);
+  const [error, setError]   = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!token) { setInvalid(true); return; }
-    (supabase as any)
-      .from('rpe_token')
-      .select('player_id, expires_at, players(id, name)')
-      .eq('token', token)
-      .gt('expires_at', new Date().toISOString())
-      .maybeSingle()
-      .then(({ data }: any) => {
-        if (!data) { setInvalid(true); return; }
-        setPlayer(data.players);
-      });
-  }, [token]);
+  const { data: player, isLoading } = useQuery({
+    queryKey: ['player-by-token', token],
+    enabled: !!token,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('players')
+        .select('id, name, position')
+        .eq('log_token', token)
+        .maybeSingle();
+      return data as { id: string; name: string; position?: string } | null;
+    },
+  });
 
-  const handleSubmit = async () => {
-    if (!player) return;
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!player || !rpe || !form.duration) return;
     setSaving(true);
-    await (supabase as any).from('training_load').insert({
-      player_id:        player.id,
-      session_date:     date,
-      session_type:     sessionType,
-      duration_minutes: duration,
+    setError(null);
+
+    const load_au = rpe * parseInt(form.duration);
+    const acwr    = await calcAcwr(player.id, form.session_date, load_au);
+
+    const { error: err } = await sb.from('training_load').insert({
+      player_id:    player.id,
+      session_date: form.session_date,
+      session_type: form.session_type,
       rpe,
+      duration:     parseInt(form.duration),
+      load_au,
+      acwr_at_time: acwr,
+      notes:        form.notes || null,
     });
+
     setSaving(false);
-    setSaved(true);
-  };
+    if (err) setError('Failed to save. Please try again.');
+    else setDone(true);
+  }
 
-  if (invalid) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="bg-white rounded-2xl border border-slate-200 p-8 max-w-sm w-full text-center">
-        <div className="text-4xl mb-3">⚠️</div>
-        <div className="text-base font-semibold text-slate-700">Link expired or invalid</div>
-        <p className="text-sm text-slate-400 mt-1">Ask your coach to send a new RPE link.</p>
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-slate-400 animate-pulse">Loading…</div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  if (!player) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-400 text-sm">Loading…</div>
-  );
-
-  if (saved) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="bg-white rounded-2xl border border-emerald-200 p-8 max-w-sm w-full text-center">
-        <div className="text-4xl mb-3">✅</div>
-        <div className="text-base font-semibold text-slate-700">Session logged!</div>
-        <p className="text-sm text-slate-400 mt-1">Load AU: {duration * rpe} · RPE {rpe}</p>
+  if (!player) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-center p-4">
+        <div>
+          <div className="text-rose-400 text-lg font-semibold">Invalid link</div>
+          <div className="text-slate-500 text-sm mt-1">This RPE log link is not recognised.</div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (done) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-center p-4">
+        <div className="space-y-3">
+          <div className="text-5xl">✓</div>
+          <div className="text-emerald-400 text-xl font-semibold">Session logged</div>
+          <div className="text-slate-400 text-sm">Thanks {player.name} — your session has been recorded.</div>
+          <button
+            onClick={() => { setDone(false); setRpe(0); setForm(f => ({ ...f, duration: '', notes: '' })); }}
+            className="mt-4 px-5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-colors"
+          >
+            Log another
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const loadPreview = rpe && form.duration ? rpe * parseInt(form.duration) : null;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-sm w-full">
-        <div className="text-xs text-slate-400 mb-1">RPE self-report</div>
-        <div className="text-lg font-bold text-slate-800 mb-5">{player.name}</div>
-
-        <div className="space-y-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-slate-500">Date</span>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-slate-500">Session type</span>
-            <select value={sessionType} onChange={e => setSessionType(e.target.value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
-              {['Training','Match','Gym','Recovery','Other'].map(t => <option key={t}>{t}</option>)}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="text-xs text-slate-500">Duration (minutes)</span>
-            <input type="number" min={5} max={300} value={duration} onChange={e => setDuration(+e.target.value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
-          </label>
-
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-between">
-              <span className="text-xs text-slate-500">Perceived effort (RPE)</span>
-              <span className="text-sm font-bold text-violet-700">{rpe} / 10</span>
-            </div>
-            <input type="range" min={1} max={10} value={rpe} onChange={e => setRpe(+e.target.value)}
-              className="w-full accent-violet-600" />
-            <div className="flex justify-between text-[10px] text-slate-400">
-              <span>1 — Very easy</span><span>5 — Hard</span><span>10 — Max</span>
-            </div>
-          </div>
-
-          <div className="pt-1 text-xs text-slate-400 text-center">
-            Load AU: <strong className="text-slate-700">{duration * rpe}</strong>
-          </div>
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm space-y-4">
+        <div className="text-center">
+          <div className="text-2xl font-bold text-white">{player.name}</div>
+          {player.position && <div className="text-slate-400 text-sm">{player.position}</div>}
+          <div className="text-slate-600 text-xs mt-0.5">Session RPE Log</div>
         </div>
 
-        <button onClick={handleSubmit} disabled={saving}
-          className="mt-5 w-full py-2.5 rounded-xl text-sm font-semibold bg-violet-600 text-white
-                     hover:bg-violet-700 disabled:opacity-40 transition-colors">
-          {saving ? 'Saving…' : 'Submit'}
-        </button>
+        <form onSubmit={handleSubmit} className="bg-slate-900 border border-white/10 rounded-2xl p-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Date</label>
+              <input
+                type="date"
+                value={form.session_date}
+                onChange={e => setForm(f => ({ ...f, session_date: e.target.value }))}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Session Type</label>
+              <select
+                value={form.session_type}
+                onChange={e => setForm(f => ({ ...f, session_type: e.target.value }))}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+              >
+                {SESSION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-2">
+              RPE{rpe > 0 ? ` — ${rpe} · ${RPE_LABELS[rpe]}` : ' (select below)'}
+            </label>
+            <div className="grid grid-cols-5 gap-1.5">
+              {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setRpe(n)}
+                  className={`py-2 rounded-lg text-sm font-bold transition-all ${
+                    rpe === n
+                      ? n <= 3 ? 'bg-emerald-500 text-white shadow-lg'
+                        : n <= 6 ? 'bg-amber-500 text-white shadow-lg'
+                        : 'bg-red-500 text-white shadow-lg'
+                      : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Duration (minutes)</label>
+            <input
+              type="number"
+              min="1"
+              max="300"
+              value={form.duration}
+              onChange={e => setForm(f => ({ ...f, duration: e.target.value }))}
+              placeholder="e.g. 90"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+              required
+            />
+          </div>
+
+          {loadPreview !== null && (
+            <div className="text-center py-1.5 bg-white/5 rounded-lg text-sm">
+              <span className="text-slate-400">Session load: </span>
+              <span className="text-white font-bold">{loadPreview} AU</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Notes (optional)</label>
+            <input
+              type="text"
+              value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="Any comments…"
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+            />
+          </div>
+
+          {error && <p className="text-rose-400 text-sm">{error}</p>}
+
+          <button
+            type="submit"
+            disabled={saving || !rpe || !form.duration}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold text-sm disabled:opacity-50 transition-colors"
+          >
+            {saving ? 'Saving…' : 'Submit Session'}
+          </button>
+        </form>
       </div>
     </div>
   );
