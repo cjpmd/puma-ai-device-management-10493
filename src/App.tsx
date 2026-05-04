@@ -26,6 +26,14 @@ import NotFound from "./pages/NotFound";
 import MyRecordings from "./pages/MyRecordings";
 import SharedVideo from "./pages/SharedVideo";
 import Dashboard from "./pages/Dashboard";
+import Players from "./pages/Players";
+import PlayerProfile from "./pages/PlayerProfile";
+import Medical from "./pages/Medical";
+import Welfare from "./pages/Welfare";
+import Scouting from "./pages/Scouting";
+import Compliance from "./pages/Compliance";
+import Settings from "./pages/Settings";
+import LogRPE from "./pages/LogRPE";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +67,8 @@ const AppRoutes = () => {
       <Route path="/auth" element={<Auth />} />
       <Route path="/capture/:token" element={<CameraCapture />} />
       <Route path="/share/:token" element={<SharedVideo />} />
+      {/* Unauthenticated RPE self-report — uses token-based access, no login required */}
+      <Route path="/log-rpe/:token" element={<LogRPE />} />
 
       {/* iOS shell routes (existing — untouched) */}
       <Route path="/" element={<PrivateRoute><IOSApp /></PrivateRoute>} />
@@ -83,12 +93,12 @@ const AppRoutes = () => {
       } />
       <Route path="/players" element={
         <PrivateRoute>
-          <AppShell><PlaceholderPage module="Players" /></AppShell>
+          <AppShell><Players /></AppShell>
         </PrivateRoute>
       } />
       <Route path="/players/:id" element={
         <PrivateRoute>
-          <AppShell><PlaceholderPage module="Player Profile" /></AppShell>
+          <AppShell><PlayerProfile /></AppShell>
         </PrivateRoute>
       } />
       <Route path="/squads" element={
@@ -103,17 +113,17 @@ const AppRoutes = () => {
       } />
       <Route path="/medical" element={
         <PrivateRoute>
-          <AppShell><PlaceholderPage module="Medical" /></AppShell>
+          <AppShell><Medical /></AppShell>
         </PrivateRoute>
       } />
       <Route path="/welfare" element={
         <PrivateRoute>
-          <AppShell><PlaceholderPage module="Welfare" /></AppShell>
+          <AppShell><Welfare /></AppShell>
         </PrivateRoute>
       } />
       <Route path="/scouting" element={
         <PrivateRoute>
-          <AppShell><PlaceholderPage module="Scouting" /></AppShell>
+          <AppShell><Scouting /></AppShell>
         </PrivateRoute>
       } />
       <Route path="/coaching" element={
@@ -123,12 +133,12 @@ const AppRoutes = () => {
       } />
       <Route path="/compliance" element={
         <PrivateRoute>
-          <AppShell><PlaceholderPage module="Compliance" /></AppShell>
+          <AppShell><Compliance /></AppShell>
         </PrivateRoute>
       } />
       <Route path="/settings" element={
         <PrivateRoute>
-          <AppShell><PlaceholderPage module="Settings" /></AppShell>
+          <AppShell><Settings /></AppShell>
         </PrivateRoute>
       } />
 
