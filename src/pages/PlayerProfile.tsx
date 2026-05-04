@@ -7,14 +7,15 @@ import {
   PolarGrid,
   PolarAngleAxis,
   ResponsiveContainer,
+  ComposedChart,
   LineChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  BarChart,
   Bar,
+  ReferenceLine,
 } from 'recharts';
 import { supabase } from '../lib/supabaseClient';
 import AttributeSnapshotModal from '../components/players/AttributeSnapshotModal';
@@ -25,11 +26,11 @@ const sb = supabase as any;
 type Tab = 'overview' | 'attributes' | 'history' | 'medical' | 'reviews';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'attributes', label: 'Attributes' },
-  { id: 'history', label: 'History' },
-  { id: 'medical', label: 'Medical' },
-  { id: 'reviews', label: 'Reviews' },
+  { id: 'overview',    label: 'Overview'    },
+  { id: 'attributes',  label: 'Attributes'  },
+  { id: 'history',     label: 'History'     },
+  { id: 'medical',     label: 'Medical'     },
+  { id: 'reviews',     label: 'Reviews'     },
 ];
 
 const CATEGORIES = ['technical', 'physical', 'tactical', 'mental'] as const;
@@ -37,19 +38,19 @@ type Category = typeof CATEGORIES[number];
 
 const CAT_COLORS: Record<Category, string> = {
   technical: '#8b5cf6',
-  physical: '#10b981',
-  tactical: '#3b82f6',
-  mental: '#f59e0b',
+  physical:  '#10b981',
+  tactical:  '#3b82f6',
+  mental:    '#f59e0b',
 };
 
 const RTP_LABELS = ['', 'Gym only', 'Running', 'Non-contact training', 'Full training', 'Match ready'];
 const REVIEW_TYPES = ['general', 'technical', 'physical', 'tactical', 'mental'];
 const REVIEW_BADGE: Record<string, string> = {
   technical: 'bg-violet-500/20 text-violet-300',
-  physical: 'bg-emerald-500/20 text-emerald-300',
-  tactical: 'bg-blue-500/20 text-blue-300',
-  mental: 'bg-amber-500/20 text-amber-300',
-  general: 'bg-white/10 text-white/60',
+  physical:  'bg-emerald-500/20 text-emerald-300',
+  tactical:  'bg-blue-500/20 text-blue-300',
+  mental:    'bg-amber-500/20 text-amber-300',
+  general:   'bg-white/10 text-white/60',
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -87,18 +88,16 @@ function categoryAverages(scores: Record<string, number>, defs: AttrDef[]): Reco
   return result;
 }
 
-// ── Maturation Bar ───────────────────────────────────────────────────────────────
+// ── Maturation Bar ────────────────────────────────────────────────────────────
 
 function MaturationBar({ bioAge, ca }: { bioAge: number; ca: number }) {
   const MIN = 9, MAX = 18;
   const clamp = (v: number) => Math.max(0, Math.min(100, ((v - MIN) / (MAX - MIN)) * 100));
   const offset = bioAge - ca;
   const badge =
-    offset > 1.0
-      ? { label: 'Early', cls: 'bg-orange-500/20 text-orange-300' }
-      : offset < -1.0
-      ? { label: 'Late', cls: 'bg-sky-500/20 text-sky-300' }
-      : { label: 'On time', cls: 'bg-emerald-500/20 text-emerald-300' };
+    offset > 1.0  ? { label: 'Early',   cls: 'bg-orange-500/20 text-orange-300' } :
+    offset < -1.0 ? { label: 'Late',    cls: 'bg-sky-500/20 text-sky-300' } :
+                    { label: 'On time', cls: 'bg-emerald-500/20 text-emerald-300' };
 
   return (
     <div className="space-y-3">
@@ -109,42 +108,28 @@ function MaturationBar({ bioAge, ca }: { bioAge: number; ca: number }) {
         </span>
       </div>
       <div className="relative h-4 bg-white/10 rounded-full mx-1">
-        <div
-          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-sky-400 border-2 border-slate-900 z-10"
-          style={{ left: `calc(${clamp(ca)}% - 6px)` }}
-          title={`Chrono: ${ca.toFixed(1)}`}
-        />
-        <div
-          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-orange-400 border-2 border-slate-900 z-10"
-          style={{ left: `calc(${clamp(bioAge)}% - 6px)` }}
-          title={`Bio: ${bioAge.toFixed(1)}`}
-        />
+        <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-sky-400 border-2 border-slate-900 z-10"
+          style={{ left: `calc(${clamp(ca)}% - 6px)` }} title={`Chrono: ${ca.toFixed(1)}`} />
+        <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-orange-400 border-2 border-slate-900 z-10"
+          style={{ left: `calc(${clamp(bioAge)}% - 6px)` }} title={`Bio: ${bioAge.toFixed(1)}`} />
       </div>
       <div className="flex justify-between text-xs text-white/25 px-1">
-        {[9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((y) => <span key={y}>{y}</span>)}
+        {[9,10,11,12,13,14,15,16,17,18].map((y) => <span key={y}>{y}</span>)}
       </div>
       <div className="flex gap-4 text-xs text-white/50">
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-sky-400 inline-block" />
-          Chrono {ca.toFixed(1)}
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" />
-          Bio {bioAge.toFixed(1)}
-        </span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-400 inline-block" /> Chrono {ca.toFixed(1)}</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400 inline-block" /> Bio {bioAge.toFixed(1)}</span>
       </div>
       <p className="text-white/40 text-xs">
-        {offset > 1.0
-          ? 'Biologically advanced — consider relative age when interpreting performance metrics.'
-          : offset < -1.0
-          ? 'Late developer — potential likely to emerge post-PHV. Monitor training load carefully.'
-          : 'Developing in line with chronological age.'}
+        {offset > 1.0  ? 'Biologically advanced — consider relative age when interpreting performance metrics.' :
+         offset < -1.0 ? 'Late developer — potential likely to emerge post-PHV. Monitor training load carefully.' :
+                          'Developing in line with chronological age.'}
       </p>
     </div>
   );
 }
 
-// ── Overview Tab ─────────────────────────────────────────────────────────────────
+// ── Overview Tab ──────────────────────────────────────────────────────────────
 
 function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; defs: AttrDef[] }) {
   const qc = useQueryClient();
@@ -165,9 +150,9 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
       return data.reduce(
         (acc: any, r: any) => ({
           appearances: acc.appearances + (r.appearances ?? 0),
-          minutes: acc.minutes + (r.minutes_played ?? 0),
-          goals: acc.goals + (r.goals ?? 0),
-          assists: acc.assists + (r.assists ?? 0),
+          minutes:     acc.minutes     + (r.minutes_played ?? 0),
+          goals:       acc.goals       + (r.goals ?? 0),
+          assists:     acc.assists     + (r.assists ?? 0),
         }),
         { appearances: 0, minutes: 0, goals: 0, assists: 0 },
       );
@@ -219,14 +204,14 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
 
   const statCards = [
     { label: 'Appearances', value: stats?.appearances ?? 0 },
-    { label: 'Minutes', value: stats?.minutes ?? 0 },
-    { label: 'Goals', value: stats?.goals ?? 0 },
-    { label: 'Assists', value: stats?.assists ?? 0 },
+    { label: 'Minutes',     value: stats?.minutes     ?? 0 },
+    { label: 'Goals',       value: stats?.goals       ?? 0 },
+    { label: 'Assists',     value: stats?.assists     ?? 0 },
   ];
 
   const radarData = CATEGORIES.map((cat) => ({
-    subject: cat.charAt(0).toUpperCase() + cat.slice(1),
-    current: snapshots[0]?.scores ? categoryAverages(snapshots[0].scores, defs)[cat] : 0,
+    subject:  cat.charAt(0).toUpperCase() + cat.slice(1),
+    current:  snapshots[0]?.scores ? categoryAverages(snapshots[0].scores, defs)[cat] : 0,
     previous: snapshots[1]?.scores ? categoryAverages(snapshots[1].scores, defs)[cat] : 0,
   }));
 
@@ -252,20 +237,14 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
         {matRecord ? (
           <div className="space-y-4">
             <MaturationBar bioAge={matRecord.bio_age_estimate} ca={ca} />
-            <button
-              onClick={() => setShowMatCalc(true)}
-              className="text-xs text-white/40 hover:text-white/70 transition-colors"
-            >
+            <button onClick={() => setShowMatCalc(true)} className="text-xs text-white/40 hover:text-white/70 transition-colors">
               Update measurement
             </button>
           </div>
         ) : (
           <div className="space-y-3">
             <p className="text-white/40 text-sm">No maturation record — add one</p>
-            <button
-              onClick={() => setShowMatCalc(true)}
-              className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors"
-            >
+            <button onClick={() => setShowMatCalc(true)} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
               Add maturation record
             </button>
           </div>
@@ -295,13 +274,7 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
                 <PolarGrid stroke="rgba(255,255,255,0.1)" />
                 <PolarAngleAxis dataKey="subject" tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11 }} />
                 {snapshots.length >= 2 && (
-                  <Radar
-                    name="Previous"
-                    dataKey="previous"
-                    stroke="rgba(148,163,184,0.6)"
-                    fill="rgba(148,163,184,0.1)"
-                    strokeDasharray="4 2"
-                  />
+                  <Radar name="Previous" dataKey="previous" stroke="rgba(148,163,184,0.6)" fill="rgba(148,163,184,0.1)" strokeDasharray="4 2" />
                 )}
                 <Radar name="Current" dataKey="current" stroke="#8b5cf6" fill="rgba(139,92,246,0.25)" />
               </RadarChart>
@@ -318,11 +291,7 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
           <div className="space-y-3">
             {(milestones as any[]).map((m) => (
               <div key={m.id} className={`flex gap-3 ${m.is_upcoming ? 'opacity-55' : ''}`}>
-                <div
-                  className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
-                    m.is_upcoming ? 'bg-white/20 border border-white/30' : 'bg-violet-400'
-                  }`}
-                />
+                <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${m.is_upcoming ? 'bg-white/20 border border-white/30' : 'bg-violet-400'}`} />
                 <div>
                   <p className="text-white text-sm">{m.title}</p>
                   {m.description && <p className="text-white/40 text-xs mt-0.5">{m.description}</p>}
@@ -339,7 +308,7 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
   );
 }
 
-// ── Attributes Tab ───────────────────────────────────────────────────────────────
+// ── Attributes Tab ────────────────────────────────────────────────────────────
 
 function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
   const qc = useQueryClient();
@@ -360,7 +329,7 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
     },
   });
 
-  const current = snapshots[0]?.scores ?? {};
+  const current  = snapshots[0]?.scores ?? {};
   const previous = snapshots[1]?.scores ?? {};
 
   function handleSuccess() {
@@ -379,22 +348,15 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
           onSuccess={handleSuccess}
         />
       )}
-
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <p className="text-white/40 text-sm">
-            {snapshots[0]
-              ? `Latest: ${new Date(snapshots[0].snapshot_date).toLocaleDateString()}`
-              : 'No snapshots'}
+            {snapshots[0] ? `Latest: ${new Date(snapshots[0].snapshot_date).toLocaleDateString()}` : 'No snapshots'}
           </p>
-          <button
-            onClick={() => setShowModal(true)}
-            className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors"
-          >
+          <button onClick={() => setShowModal(true)} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
             New Snapshot
           </button>
         </div>
-
         {CATEGORIES.map((cat) => {
           const catDefs = defs.filter((d) => d.category === cat);
           if (!catDefs.length) return null;
@@ -403,9 +365,9 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
               <h3 className="text-white font-medium mb-4 capitalize">{cat}</h3>
               <div className="space-y-3">
                 {catDefs.map((def) => {
-                  const score = current[def.id] ?? 0;
-                  const prev = previous[def.id] ?? null;
-                  const pct = (score / def.max_value) * 100;
+                  const score = current[def.id]  ?? 0;
+                  const prev  = previous[def.id] ?? null;
+                  const pct   = (score / def.max_value) * 100;
                   const delta = prev !== null ? Math.round((score - prev) * 10) / 10 : null;
                   return (
                     <div key={def.id}>
@@ -417,16 +379,11 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
                               {delta > 0 ? '+' : ''}{delta}
                             </span>
                           )}
-                          <span className="text-white font-medium text-sm w-12 text-right">
-                            {score}/{def.max_value}
-                          </span>
+                          <span className="text-white font-medium text-sm w-12 text-right">{score}/{def.max_value}</span>
                         </div>
                       </div>
                       <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{ width: `${pct}%`, backgroundColor: CAT_COLORS[cat] }}
-                        />
+                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: CAT_COLORS[cat] }} />
                       </div>
                     </div>
                   );
@@ -440,7 +397,7 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
   );
 }
 
-// ── History Tab ──────────────────────────────────────────────────────────────────
+// ── History Tab ───────────────────────────────────────────────────────────────
 
 function HistoryTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
   const { data: allSnapshots = [] } = useQuery({
@@ -471,7 +428,7 @@ function HistoryTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
   });
 
   const lineData = allSnapshots.map((s) => ({
-    date: s.snapshot_date,
+    date:   s.snapshot_date,
     rating: snapshotAverage(s.scores, defs),
   }));
 
@@ -485,23 +442,10 @@ function HistoryTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={lineData}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis
-                dataKey="date"
-                tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
-                tickFormatter={(v) => v.slice(0, 7)}
-              />
+              <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={(v) => v.slice(0, 7)} />
               <YAxis domain={[0, 10]} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{ background: '#1e1b4b', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }}
-              />
-              <Line
-                type="monotone"
-                dataKey="rating"
-                stroke="#8b5cf6"
-                strokeWidth={2}
-                dot={{ fill: '#8b5cf6', r: 4 }}
-                activeDot={{ r: 6 }}
-              />
+              <Tooltip contentStyle={{ background: '#1e1b4b', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }} />
+              <Line type="monotone" dataKey="rating" stroke="#8b5cf6" strokeWidth={2} dot={{ fill: '#8b5cf6', r: 4 }} activeDot={{ r: 6 }} />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -538,7 +482,7 @@ function HistoryTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
   );
 }
 
-// ── Medical Tab ──────────────────────────────────────────────────────────────────
+// ── Medical Tab ───────────────────────────────────────────────────────────────
 
 function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
   const qc = useQueryClient();
@@ -572,7 +516,7 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
     },
   });
 
-  const active = (injuries as any[]).find((i) => !i.resolved_at) ?? null;
+  const active   = (injuries as any[]).find((i) => !i.resolved_at) ?? null;
   const resolved = (injuries as any[]).filter((i) => !!i.resolved_at);
 
   const recurrenceIds = new Set<string>();
@@ -587,23 +531,19 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
   const loadChartData = (loads as any[]).map((l) => ({
     date: (l.session_date as string).slice(5),
     load: l.load_au,
+    acwr: l.acwr_at_time ?? null,
   }));
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <span
-          className={`px-3 py-1 rounded-full text-sm font-medium ${
-            active ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/20 text-emerald-300'
-          }`}
-        >
+        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+          active ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/20 text-emerald-300'
+        }`}>
           {active ? 'Injured' : 'Available'}
         </span>
         {dob && (
-          <button
-            onClick={() => setShowMatCalc(true)}
-            className="ml-auto text-sm text-white/40 hover:text-white/70 transition-colors"
-          >
+          <button onClick={() => setShowMatCalc(true)} className="ml-auto text-sm text-white/40 hover:text-white/70 transition-colors">
             Update maturation record
           </button>
         )}
@@ -630,29 +570,35 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
             <div><p className="text-white/40 text-xs mb-0.5">Since</p><p className="text-white">{new Date(active.injury_date).toLocaleDateString()}</p></div>
             <div>
               <p className="text-white/40 text-xs mb-0.5">RTP phase</p>
-              <p className="text-white">
-                {active.rtp_phase ? `${active.rtp_phase} — ${RTP_LABELS[active.rtp_phase] ?? ''}` : 'Not started'}
-              </p>
+              <p className="text-white">{active.rtp_phase ? `${active.rtp_phase} — ${RTP_LABELS[active.rtp_phase] ?? ''}` : 'Not started'}</p>
             </div>
           </div>
         </div>
       )}
 
       <div className="bg-white/5 rounded-2xl p-5">
-        <h3 className="text-white font-medium mb-4">8-week Load (AU)</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-medium">8-week Load</h3>
+          <div className="flex items-center gap-4 text-xs text-white/40">
+            <span className="flex items-center gap-1"><span className="w-3 h-1.5 rounded bg-violet-500 inline-block" /> Load (AU)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-amber-400 inline-block" /> ACWR</span>
+          </div>
+        </div>
         {loadChartData.length === 0 ? (
           <p className="text-white/40 text-sm text-center py-8">No load data in the last 8 weeks.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={loadChartData}>
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={loadChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} />
-              <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{ background: '#1e1b4b', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }}
-              />
-              <Bar dataKey="load" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
-            </BarChart>
+              <YAxis yAxisId="left" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+              <YAxis yAxisId="right" orientation="right" domain={[0, 2.5]} tickCount={6} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+              <Tooltip contentStyle={{ background: '#1e1b4b', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }} />
+              <Bar yAxisId="left" dataKey="load" name="Load (AU)" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="acwr" name="ACWR" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls />
+              <ReferenceLine yAxisId="right" y={1.5} stroke="rgba(239,68,68,0.5)"  strokeDasharray="4 2" />
+              <ReferenceLine yAxisId="right" y={1.3} stroke="rgba(245,158,11,0.4)" strokeDasharray="4 2" />
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
@@ -694,7 +640,7 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
   );
 }
 
-// ── Reviews Tab ──────────────────────────────────────────────────────────────────
+// ── Reviews Tab ───────────────────────────────────────────────────────────────
 
 function ReviewsTab({ playerId }: { playerId: string }) {
   const qc = useQueryClient();
@@ -718,11 +664,11 @@ function ReviewsTab({ playerId }: { playerId: string }) {
     if (!form.notes.trim()) return;
     setSaving(true);
     await sb.from('coach_observation').insert({
-      player_id: playerId,
+      player_id:        playerId,
       observation_type: form.type,
-      notes: form.notes.trim(),
-      tags: form.tags ? form.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
-      observed_at: new Date().toISOString(),
+      notes:            form.notes.trim(),
+      tags:             form.tags ? form.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
+      observed_at:      new Date().toISOString(),
     });
     qc.invalidateQueries({ queryKey: ['player-reviews', playerId] });
     setForm({ type: 'general', notes: '', tags: '' });
@@ -734,34 +680,17 @@ function ReviewsTab({ playerId }: { playerId: string }) {
       <div className="bg-white/5 rounded-2xl p-5 space-y-3">
         <h3 className="text-white font-medium">Add Review</h3>
         <div className="flex gap-3">
-          <select
-            value={form.type}
-            onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
-          >
-            {REVIEW_TYPES.map((t) => (
-              <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
-            ))}
+          <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500">
+            {REVIEW_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
           </select>
-          <input
-            placeholder="Tags (comma-separated)"
-            value={form.tags}
-            onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
-          />
+          <input placeholder="Tags (comma-separated)" value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500" />
         </div>
-        <textarea
-          placeholder="Observation notes…"
-          value={form.notes}
-          onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-          rows={3}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500 resize-none"
-        />
-        <button
-          onClick={addReview}
-          disabled={saving || !form.notes.trim()}
-          className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
-        >
+        <textarea placeholder="Observation notes…" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+          rows={3} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500 resize-none" />
+        <button onClick={addReview} disabled={saving || !form.notes.trim()}
+          className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors">
           {saving ? 'Saving…' : 'Add review'}
         </button>
       </div>
@@ -773,13 +702,8 @@ function ReviewsTab({ playerId }: { playerId: string }) {
           {(reviews as any[]).map((r) => (
             <div key={r.id} className="bg-white/5 rounded-2xl p-4">
               <div className="flex items-center gap-3 mb-2 flex-wrap">
-                <span className={`text-xs px-2 py-0.5 rounded-full ${REVIEW_BADGE[r.observation_type] ?? REVIEW_BADGE.general}`}>
-                  {r.observation_type}
-                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${REVIEW_BADGE[r.observation_type] ?? REVIEW_BADGE.general}`}>{r.observation_type}</span>
                 <span className="text-white/30 text-xs">{new Date(r.observed_at).toLocaleDateString()}</span>
-                {r.coach_id && (
-                  <span className="text-white/25 text-xs font-mono">{String(r.coach_id).slice(0, 8)}…</span>
-                )}
               </div>
               <p className="text-white/80 text-sm">{r.notes}</p>
               {Array.isArray(r.tags) && r.tags.length > 0 && (
@@ -797,7 +721,7 @@ function ReviewsTab({ playerId }: { playerId: string }) {
   );
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────────
+// ── Main export ───────────────────────────────────────────────────────────────
 
 export default function PlayerProfile() {
   const { id: playerId } = useParams<{ id: string }>();
@@ -845,27 +769,20 @@ export default function PlayerProfile() {
     },
   });
 
-  const overallRating =
-    latestSnaps[0] && defs.length ? snapshotAverage(latestSnaps[0].scores, defs) : null;
-  const prevRating =
-    latestSnaps[1] && defs.length ? snapshotAverage(latestSnaps[1].scores, defs) : null;
-  const delta =
-    overallRating !== null && prevRating !== null
-      ? Math.round((overallRating - prevRating) * 10) / 10
-      : null;
+  const overallRating = latestSnaps[0] && defs.length ? snapshotAverage(latestSnaps[0].scores, defs) : null;
+  const prevRating    = latestSnaps[1] && defs.length ? snapshotAverage(latestSnaps[1].scores, defs) : null;
+  const delta = overallRating !== null && prevRating !== null ? Math.round((overallRating - prevRating) * 10) / 10 : null;
 
   const initials = player?.name
     ? player.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
     : '?';
 
   const tabContent: Record<Tab, React.ReactNode> = {
-    overview: player ? (
-      <OverviewTab playerId={playerId!} dob={player.date_of_birth} defs={defs} />
-    ) : null,
+    overview:   player ? <OverviewTab  playerId={playerId!} dob={player.date_of_birth} defs={defs} /> : null,
     attributes: <AttributesTab playerId={playerId!} defs={defs} />,
-    history: <HistoryTab playerId={playerId!} defs={defs} />,
-    medical: <MedicalTab playerId={playerId!} dob={player?.date_of_birth} />,
-    reviews: <ReviewsTab playerId={playerId!} />,
+    history:    <HistoryTab    playerId={playerId!} defs={defs} />,
+    medical:    <MedicalTab    playerId={playerId!} dob={player?.date_of_birth} />,
+    reviews:    <ReviewsTab    playerId={playerId!} />,
   };
 
   return (
@@ -881,12 +798,8 @@ export default function PlayerProfile() {
         <div className="flex-1 min-w-0">
           <h1 className="text-white text-2xl font-bold leading-tight">{player?.name ?? 'Loading…'}</h1>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-white/50">
-            {player?.date_of_birth && (
-              <span>DOB: {new Date(player.date_of_birth).toLocaleDateString()}</span>
-            )}
-            {player?.teams?.name && (
-              <span>{player.teams.name}{player.teams.age_group ? ` · ${player.teams.age_group}` : ''}</span>
-            )}
+            {player?.date_of_birth && <span>DOB: {new Date(player.date_of_birth).toLocaleDateString()}</span>}
+            {player?.teams?.name && <span>{player.teams.name}{player.teams.age_group ? ` · ${player.teams.age_group}` : ''}</span>}
             {player?.dominant_foot && <span>Foot: {player.dominant_foot}</span>}
             {player?.position && <span>{player.position}</span>}
           </div>
@@ -906,15 +819,10 @@ export default function PlayerProfile() {
 
       <div className="flex gap-0 border-b border-white/10">
         {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setActiveTab(t.id)}
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              activeTab === t.id
-                ? 'border-violet-500 text-white'
-                : 'border-transparent text-white/50 hover:text-white/80'
-            }`}
-          >
+              activeTab === t.id ? 'border-violet-500 text-white' : 'border-transparent text-white/50 hover:text-white/80'
+            }`}>
             {t.label}
           </button>
         ))}
