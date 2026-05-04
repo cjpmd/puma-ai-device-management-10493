@@ -17,8 +17,8 @@ import {
   Bar,
 } from 'recharts';
 import { supabase } from '../lib/supabaseClient';
-import { AttributeSnapshotModal } from '../components/players/AttributeSnapshotModal';
-import { MaturationCalculator } from '../components/players/MaturationCalculator';
+import AttributeSnapshotModal from '../components/players/AttributeSnapshotModal';
+import MaturationCalculator from '../components/players/MaturationCalculator';
 
 const sb = supabase as any;
 
@@ -53,13 +53,6 @@ const REVIEW_BADGE: Record<string, string> = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function currentSeason(): string {
-  const d = new Date();
-  const cutoff = new Date(d.getFullYear(), 7, 1); // Aug 1
-  const startYear = d >= cutoff ? d.getFullYear() : d.getFullYear() - 1;
-  return `${startYear}-${String(startYear + 1).slice(2)}`;
-}
 
 function seasonStart(): string {
   const d = new Date();
@@ -237,6 +230,12 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
     previous: snapshots[1]?.scores ? categoryAverages(snapshots[1].scores, defs)[cat] : 0,
   }));
 
+  function handleMatSuccess() {
+    refetchMat();
+    qc.invalidateQueries({ queryKey: ['player-mat-latest', playerId] });
+    setShowMatCalc(false);
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -254,30 +253,33 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
           <div className="space-y-4">
             <MaturationBar bioAge={matRecord.bio_age_estimate} ca={ca} />
             <button
-              onClick={() => setShowMatCalc((v) => !v)}
+              onClick={() => setShowMatCalc(true)}
               className="text-xs text-white/40 hover:text-white/70 transition-colors"
             >
-              {showMatCalc ? 'Hide calculator' : 'Update measurement'}
+              Update measurement
             </button>
-            {showMatCalc && (
-              <MaturationCalculator
-                playerId={playerId}
-                dob={dob}
-                onSaved={() => { refetchMat(); setShowMatCalc(false); }}
-              />
-            )}
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <p className="text-white/40 text-sm">No maturation record — add one</p>
-            <MaturationCalculator
-              playerId={playerId}
-              dob={dob}
-              onSaved={() => { refetchMat(); qc.invalidateQueries({ queryKey: ['player-mat-latest', playerId] }); }}
-            />
+            <button
+              onClick={() => setShowMatCalc(true)}
+              className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+            >
+              Add maturation record
+            </button>
           </div>
         )}
       </div>
+
+      {showMatCalc && (
+        <MaturationCalculator
+          playerId={playerId}
+          playerDob={dob}
+          onClose={() => setShowMatCalc(false)}
+          onSuccess={handleMatSuccess}
+        />
+      )}
 
       <div className="bg-white/5 rounded-2xl p-5">
         <h3 className="text-white font-medium mb-4">Attribute Radar</h3>
@@ -342,7 +344,6 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
 function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
-  const season = currentSeason();
 
   const { data: snapshots = [], refetch } = useQuery({
     queryKey: ['player-snapshots-attrs', playerId],
@@ -362,7 +363,7 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
   const current = snapshots[0]?.scores ?? {};
   const previous = snapshots[1]?.scores ?? {};
 
-  function handleSaved() {
+  function handleSuccess() {
     setShowModal(false);
     refetch();
     qc.invalidateQueries({ queryKey: ['player-snapshots-radar', playerId] });
@@ -374,9 +375,8 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
       {showModal && (
         <AttributeSnapshotModal
           playerId={playerId}
-          season={season}
           onClose={() => setShowModal(false)}
-          onSaved={handleSaved}
+          onSuccess={handleSuccess}
         />
       )}
 
@@ -599,19 +599,22 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
         >
           {active ? 'Injured' : 'Available'}
         </span>
-        <button
-          onClick={() => setShowMatCalc((v) => !v)}
-          className="ml-auto text-sm text-white/40 hover:text-white/70 transition-colors"
-        >
-          {showMatCalc ? 'Hide' : 'Update maturation record'}
-        </button>
+        {dob && (
+          <button
+            onClick={() => setShowMatCalc(true)}
+            className="ml-auto text-sm text-white/40 hover:text-white/70 transition-colors"
+          >
+            Update maturation record
+          </button>
+        )}
       </div>
 
-      {showMatCalc && (
+      {showMatCalc && dob && (
         <MaturationCalculator
           playerId={playerId}
-          dob={dob}
-          onSaved={() => {
+          playerDob={dob}
+          onClose={() => setShowMatCalc(false)}
+          onSuccess={() => {
             setShowMatCalc(false);
             qc.invalidateQueries({ queryKey: ['player-mat-latest', playerId] });
           }}
@@ -871,7 +874,6 @@ export default function PlayerProfile() {
         ← Players
       </Link>
 
-      {/* Header */}
       <div className="flex items-start gap-5">
         <div className="w-16 h-16 rounded-2xl bg-violet-600 flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
           {initials}
@@ -902,7 +904,6 @@ export default function PlayerProfile() {
         )}
       </div>
 
-      {/* Tab bar */}
       <div className="flex gap-0 border-b border-white/10">
         {TABS.map((t) => (
           <button
