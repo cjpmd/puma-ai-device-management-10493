@@ -17,8 +17,8 @@ import {
   Bar,
 } from 'recharts';
 import { supabase } from '../lib/supabaseClient';
-
-// TODO: import AttributeSnapshotModal from '../components/players/AttributeSnapshotModal';
+import { AttributeSnapshotModal } from '../components/players/AttributeSnapshotModal';
+import { MaturationCalculator } from '../components/players/MaturationCalculator';
 
 const sb = supabase as any;
 
@@ -43,9 +43,7 @@ const CAT_COLORS: Record<Category, string> = {
 };
 
 const RTP_LABELS = ['', 'Gym only', 'Running', 'Non-contact training', 'Full training', 'Match ready'];
-
 const REVIEW_TYPES = ['general', 'technical', 'physical', 'tactical', 'mental'];
-
 const REVIEW_BADGE: Record<string, string> = {
   technical: 'bg-violet-500/20 text-violet-300',
   physical: 'bg-emerald-500/20 text-emerald-300',
@@ -54,7 +52,14 @@ const REVIEW_BADGE: Record<string, string> = {
   general: 'bg-white/10 text-white/60',
 };
 
-// ── Helpers ─────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function currentSeason(): string {
+  const d = new Date();
+  const cutoff = new Date(d.getFullYear(), 7, 1); // Aug 1
+  const startYear = d >= cutoff ? d.getFullYear() : d.getFullYear() - 1;
+  return `${startYear}-${String(startYear + 1).slice(2)}`;
+}
 
 function seasonStart(): string {
   const d = new Date();
@@ -78,10 +83,7 @@ function snapshotAverage(scores: Record<string, number>, defs: AttrDef[]): numbe
   return Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10;
 }
 
-function categoryAverages(
-  scores: Record<string, number>,
-  defs: AttrDef[],
-): Record<string, number> {
+function categoryAverages(scores: Record<string, number>, defs: AttrDef[]): Record<string, number> {
   const result: Record<string, number> = {};
   for (const cat of CATEGORIES) {
     const catDefs = defs.filter((d) => d.category === cat);
@@ -93,6 +95,7 @@ function categoryAverages(
 }
 
 // ── Maturation Bar ───────────────────────────────────────────────────────────────
+
 function MaturationBar({ bioAge, ca }: { bioAge: number; ca: number }) {
   const MIN = 9, MAX = 18;
   const clamp = (v: number) => Math.max(0, Math.min(100, ((v - MIN) / (MAX - MIN)) * 100));
@@ -112,7 +115,6 @@ function MaturationBar({ bioAge, ca }: { bioAge: number; ca: number }) {
           Maturity offset: {offset >= 0 ? '+' : ''}{offset.toFixed(2)} yrs
         </span>
       </div>
-      {/* Scale bar */}
       <div className="relative h-4 bg-white/10 rounded-full mx-1">
         <div
           className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-sky-400 border-2 border-slate-900 z-10"
@@ -126,9 +128,7 @@ function MaturationBar({ bioAge, ca }: { bioAge: number; ca: number }) {
         />
       </div>
       <div className="flex justify-between text-xs text-white/25 px-1">
-        {[9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((y) => (
-          <span key={y}>{y}</span>
-        ))}
+        {[9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((y) => <span key={y}>{y}</span>)}
       </div>
       <div className="flex gap-4 text-xs text-white/50">
         <span className="flex items-center gap-1">
@@ -152,17 +152,12 @@ function MaturationBar({ bioAge, ca }: { bioAge: number; ca: number }) {
 }
 
 // ── Overview Tab ─────────────────────────────────────────────────────────────────
-function OverviewTab({
-  playerId,
-  dob,
-  defs,
-}: {
-  playerId: string;
-  dob: string;
-  defs: AttrDef[];
-}) {
+
+function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; defs: AttrDef[] }) {
+  const qc = useQueryClient();
   const season = seasonStart();
   const ca = chronoAge(dob);
+  const [showMatCalc, setShowMatCalc] = useState(false);
 
   const { data: stats } = useQuery({
     queryKey: ['player-season-stats', playerId, season],
@@ -186,7 +181,7 @@ function OverviewTab({
     },
   });
 
-  const { data: matRecord } = useQuery({
+  const { data: matRecord, refetch: refetchMat } = useQuery({
     queryKey: ['player-mat-latest', playerId],
     staleTime: 300_000,
     queryFn: async () => {
@@ -236,19 +231,14 @@ function OverviewTab({
     { label: 'Assists', value: stats?.assists ?? 0 },
   ];
 
-  const radarData = CATEGORIES.map((cat) => {
-    const cur = snapshots[0]?.scores ? categoryAverages(snapshots[0].scores, defs)[cat] : 0;
-    const prev = snapshots[1]?.scores ? categoryAverages(snapshots[1].scores, defs)[cat] : 0;
-    return {
-      subject: cat.charAt(0).toUpperCase() + cat.slice(1),
-      current: cur,
-      previous: prev,
-    };
-  });
+  const radarData = CATEGORIES.map((cat) => ({
+    subject: cat.charAt(0).toUpperCase() + cat.slice(1),
+    current: snapshots[0]?.scores ? categoryAverages(snapshots[0].scores, defs)[cat] : 0,
+    previous: snapshots[1]?.scores ? categoryAverages(snapshots[1].scores, defs)[cat] : 0,
+  }));
 
   return (
     <div className="space-y-6">
-      {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {statCards.map((c) => (
           <div key={c.label} className="bg-white/5 rounded-xl p-4 text-center">
@@ -258,23 +248,37 @@ function OverviewTab({
         ))}
       </div>
 
-      {/* Maturation */}
       <div className="bg-white/5 rounded-2xl p-5">
         <h3 className="text-white font-medium mb-4">Maturation</h3>
         {matRecord ? (
-          <MaturationBar bioAge={matRecord.bio_age_estimate} ca={ca} />
-        ) : (
-          <div className="text-center py-6">
-            <p className="text-white/40 text-sm mb-3">No maturation record — add one</p>
-            {/* TODO: open MaturationCalculator modal */}
-            <button className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
-              Add maturation record
+          <div className="space-y-4">
+            <MaturationBar bioAge={matRecord.bio_age_estimate} ca={ca} />
+            <button
+              onClick={() => setShowMatCalc((v) => !v)}
+              className="text-xs text-white/40 hover:text-white/70 transition-colors"
+            >
+              {showMatCalc ? 'Hide calculator' : 'Update measurement'}
             </button>
+            {showMatCalc && (
+              <MaturationCalculator
+                playerId={playerId}
+                dob={dob}
+                onSaved={() => { refetchMat(); setShowMatCalc(false); }}
+              />
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-white/40 text-sm">No maturation record — add one</p>
+            <MaturationCalculator
+              playerId={playerId}
+              dob={dob}
+              onSaved={() => { refetchMat(); qc.invalidateQueries({ queryKey: ['player-mat-latest', playerId] }); }}
+            />
           </div>
         )}
       </div>
 
-      {/* Radar chart */}
       <div className="bg-white/5 rounded-2xl p-5">
         <h3 className="text-white font-medium mb-4">Attribute Radar</h3>
         {snapshots.length === 0 ? (
@@ -287,10 +291,7 @@ function OverviewTab({
             <ResponsiveContainer width="100%" height={260}>
               <RadarChart data={radarData} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
                 <PolarGrid stroke="rgba(255,255,255,0.1)" />
-                <PolarAngleAxis
-                  dataKey="subject"
-                  tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11 }}
-                />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11 }} />
                 {snapshots.length >= 2 && (
                   <Radar
                     name="Previous"
@@ -300,22 +301,16 @@ function OverviewTab({
                     strokeDasharray="4 2"
                   />
                 )}
-                <Radar
-                  name="Current"
-                  dataKey="current"
-                  stroke="#8b5cf6"
-                  fill="rgba(139,92,246,0.25)"
-                />
+                <Radar name="Current" dataKey="current" stroke="#8b5cf6" fill="rgba(139,92,246,0.25)" />
               </RadarChart>
             </ResponsiveContainer>
           </>
         )}
       </div>
 
-      {/* Milestones */}
       <div className="bg-white/5 rounded-2xl p-5">
         <h3 className="text-white font-medium mb-4">Milestones</h3>
-        {milestones.length === 0 ? (
+        {(milestones as any[]).length === 0 ? (
           <p className="text-white/40 text-sm">No milestones recorded.</p>
         ) : (
           <div className="space-y-3">
@@ -328,15 +323,9 @@ function OverviewTab({
                 />
                 <div>
                   <p className="text-white text-sm">{m.title}</p>
-                  {m.description && (
-                    <p className="text-white/40 text-xs mt-0.5">{m.description}</p>
-                  )}
+                  {m.description && <p className="text-white/40 text-xs mt-0.5">{m.description}</p>}
                   <p className="text-white/30 text-xs mt-0.5">
-                    {m.is_upcoming
-                      ? 'Upcoming'
-                      : m.achieved_date
-                      ? new Date(m.achieved_date).toLocaleDateString()
-                      : ''}
+                    {m.is_upcoming ? 'Upcoming' : m.achieved_date ? new Date(m.achieved_date).toLocaleDateString() : ''}
                   </p>
                 </div>
               </div>
@@ -349,14 +338,13 @@ function OverviewTab({
 }
 
 // ── Attributes Tab ───────────────────────────────────────────────────────────────
-function AttributesTab({
-  playerId,
-  defs,
-}: {
-  playerId: string;
-  defs: AttrDef[];
-}) {
-  const { data: snapshots = [] } = useQuery({
+
+function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
+  const qc = useQueryClient();
+  const [showModal, setShowModal] = useState(false);
+  const season = currentSeason();
+
+  const { data: snapshots = [], refetch } = useQuery({
     queryKey: ['player-snapshots-attrs', playerId],
     staleTime: 120_000,
     queryFn: async () => {
@@ -374,78 +362,87 @@ function AttributesTab({
   const current = snapshots[0]?.scores ?? {};
   const previous = snapshots[1]?.scores ?? {};
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-white/40 text-sm">
-          {snapshots[0] ? `Latest: ${new Date(snapshots[0].snapshot_date).toLocaleDateString()}` : 'No snapshots'}
-        </p>
-        {/* TODO: wire AttributeSnapshotModal — import from ../components/players/AttributeSnapshotModal */}
-        <button className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
-          New Snapshot
-        </button>
-      </div>
+  function handleSaved() {
+    setShowModal(false);
+    refetch();
+    qc.invalidateQueries({ queryKey: ['player-snapshots-radar', playerId] });
+    qc.invalidateQueries({ queryKey: ['player-snapshot-latest', playerId] });
+  }
 
-      {CATEGORIES.map((cat) => {
-        const catDefs = defs.filter((d) => d.category === cat);
-        if (!catDefs.length) return null;
-        return (
-          <div key={cat} className="bg-white/5 rounded-2xl p-5">
-            <h3 className="text-white font-medium mb-4 capitalize">{cat}</h3>
-            <div className="space-y-3">
-              {catDefs.map((def) => {
-                const score = current[def.id] ?? 0;
-                const prev = previous[def.id] ?? null;
-                const pct = (score / def.max_value) * 100;
-                const delta =
-                  prev !== null ? Math.round((score - prev) * 10) / 10 : null;
-                return (
-                  <div key={def.id}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-white/70 text-sm">{def.name}</span>
-                      <div className="flex items-center gap-2">
-                        {delta !== null && delta !== 0 && (
-                          <span
-                            className={`text-xs font-medium ${
-                              delta > 0 ? 'text-emerald-400' : 'text-red-400'
-                            }`}
-                          >
-                            {delta > 0 ? '+' : ''}{delta}
+  return (
+    <>
+      {showModal && (
+        <AttributeSnapshotModal
+          playerId={playerId}
+          season={season}
+          onClose={() => setShowModal(false)}
+          onSaved={handleSaved}
+        />
+      )}
+
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <p className="text-white/40 text-sm">
+            {snapshots[0]
+              ? `Latest: ${new Date(snapshots[0].snapshot_date).toLocaleDateString()}`
+              : 'No snapshots'}
+          </p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+          >
+            New Snapshot
+          </button>
+        </div>
+
+        {CATEGORIES.map((cat) => {
+          const catDefs = defs.filter((d) => d.category === cat);
+          if (!catDefs.length) return null;
+          return (
+            <div key={cat} className="bg-white/5 rounded-2xl p-5">
+              <h3 className="text-white font-medium mb-4 capitalize">{cat}</h3>
+              <div className="space-y-3">
+                {catDefs.map((def) => {
+                  const score = current[def.id] ?? 0;
+                  const prev = previous[def.id] ?? null;
+                  const pct = (score / def.max_value) * 100;
+                  const delta = prev !== null ? Math.round((score - prev) * 10) / 10 : null;
+                  return (
+                    <div key={def.id}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-white/70 text-sm">{def.name}</span>
+                        <div className="flex items-center gap-2">
+                          {delta !== null && delta !== 0 && (
+                            <span className={`text-xs font-medium ${delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {delta > 0 ? '+' : ''}{delta}
+                            </span>
+                          )}
+                          <span className="text-white font-medium text-sm w-12 text-right">
+                            {score}/{def.max_value}
                           </span>
-                        )}
-                        <span className="text-white font-medium text-sm w-8 text-right">
-                          {score}/{def.max_value}
-                        </span>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${pct}%`, backgroundColor: CAT_COLORS[cat] }}
+                        />
                       </div>
                     </div>
-                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all duration-500"
-                        style={{
-                          width: `${pct}%`,
-                          backgroundColor: CAT_COLORS[cat],
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
 // ── History Tab ──────────────────────────────────────────────────────────────────
-function HistoryTab({
-  playerId,
-  defs,
-}: {
-  playerId: string;
-  defs: AttrDef[];
-}) {
+
+function HistoryTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
   const { data: allSnapshots = [] } = useQuery({
     queryKey: ['player-snapshots-history', playerId],
     staleTime: 300_000,
@@ -483,9 +480,7 @@ function HistoryTab({
       <div className="bg-white/5 rounded-2xl p-5">
         <h3 className="text-white font-medium mb-4">Rating Over Time</h3>
         {lineData.length < 2 ? (
-          <p className="text-white/40 text-sm text-center py-8">
-            Need at least 2 snapshots to show trend.
-          </p>
+          <p className="text-white/40 text-sm text-center py-8">Need at least 2 snapshots to show trend.</p>
         ) : (
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={lineData}>
@@ -495,18 +490,9 @@ function HistoryTab({
                 tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
                 tickFormatter={(v) => v.slice(0, 7)}
               />
-              <YAxis
-                domain={[0, 10]}
-                tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
-              />
+              <YAxis domain={[0, 10]} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
               <Tooltip
-                contentStyle={{
-                  background: '#1e1b4b',
-                  border: 'none',
-                  borderRadius: 8,
-                  color: '#fff',
-                  fontSize: 12,
-                }}
+                contentStyle={{ background: '#1e1b4b', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }}
               />
               <Line
                 type="monotone"
@@ -538,9 +524,7 @@ function HistoryTab({
             <tbody className="divide-y divide-white/5">
               {(seasonHistory as any[]).map((r, i) => (
                 <tr key={i}>
-                  <td className="py-2 text-white">
-                    {r.season_start ? String(r.season_start).slice(0, 4) : '—'}
-                  </td>
+                  <td className="py-2 text-white">{r.season_start ? String(r.season_start).slice(0, 4) : '—'}</td>
                   <td className="py-2 text-white/60">{r.age_group ?? '—'}</td>
                   <td className="py-2 text-white text-right">{r.appearances ?? 0}</td>
                   <td className="py-2 text-white/60 text-right">{r.minutes_played ?? 0}</td>
@@ -555,10 +539,11 @@ function HistoryTab({
 }
 
 // ── Medical Tab ──────────────────────────────────────────────────────────────────
-function MedicalTab({ playerId }: { playerId: string }) {
-  const eightWeeksAgo = new Date(Date.now() - 56 * 86_400_000)
-    .toISOString()
-    .split('T')[0];
+
+function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
+  const qc = useQueryClient();
+  const [showMatCalc, setShowMatCalc] = useState(false);
+  const eightWeeksAgo = new Date(Date.now() - 56 * 86_400_000).toISOString().split('T')[0];
 
   const { data: injuries = [] } = useQuery({
     queryKey: ['player-injuries', playerId],
@@ -590,14 +575,11 @@ function MedicalTab({ playerId }: { playerId: string }) {
   const active = (injuries as any[]).find((i) => !i.resolved_at) ?? null;
   const resolved = (injuries as any[]).filter((i) => !!i.resolved_at);
 
-  // Recurrence: same body_part returning within 56 days of a previous resolve
   const recurrenceIds = new Set<string>();
   for (const inj of resolved) {
     for (const prev of resolved) {
       if (prev.id === inj.id || prev.body_part !== inj.body_part || !prev.resolved_at) continue;
-      const gap =
-        (new Date(inj.injury_date).getTime() - new Date(prev.resolved_at).getTime()) /
-        86_400_000;
+      const gap = (new Date(inj.injury_date).getTime() - new Date(prev.resolved_at).getTime()) / 86_400_000;
       if (gap >= 0 && gap <= 56) recurrenceIds.add(inj.id);
     }
   }
@@ -609,76 +591,62 @@ function MedicalTab({ playerId }: { playerId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Status */}
       <div className="flex items-center gap-3">
         <span
           className={`px-3 py-1 rounded-full text-sm font-medium ${
-            active
-              ? 'bg-red-500/20 text-red-300'
-              : 'bg-emerald-500/20 text-emerald-300'
+            active ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/20 text-emerald-300'
           }`}
         >
           {active ? 'Injured' : 'Available'}
         </span>
-        {/* TODO: open MaturationCalculator modal */}
-        <button className="ml-auto text-sm text-white/40 hover:text-white/70 transition-colors">
-          Update maturation record
+        <button
+          onClick={() => setShowMatCalc((v) => !v)}
+          className="ml-auto text-sm text-white/40 hover:text-white/70 transition-colors"
+        >
+          {showMatCalc ? 'Hide' : 'Update maturation record'}
         </button>
       </div>
 
-      {/* Active injury */}
+      {showMatCalc && (
+        <MaturationCalculator
+          playerId={playerId}
+          dob={dob}
+          onSaved={() => {
+            setShowMatCalc(false);
+            qc.invalidateQueries({ queryKey: ['player-mat-latest', playerId] });
+          }}
+        />
+      )}
+
       {active && (
         <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
           <h3 className="text-white font-medium mb-3">Active Injury</h3>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <p className="text-white/40 text-xs mb-0.5">Type</p>
-              <p className="text-white">{active.injury_type ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-white/40 text-xs mb-0.5">Body part</p>
-              <p className="text-white">{active.body_part ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-white/40 text-xs mb-0.5">Since</p>
-              <p className="text-white">{new Date(active.injury_date).toLocaleDateString()}</p>
-            </div>
+            <div><p className="text-white/40 text-xs mb-0.5">Type</p><p className="text-white">{active.injury_type ?? '—'}</p></div>
+            <div><p className="text-white/40 text-xs mb-0.5">Body part</p><p className="text-white">{active.body_part ?? '—'}</p></div>
+            <div><p className="text-white/40 text-xs mb-0.5">Since</p><p className="text-white">{new Date(active.injury_date).toLocaleDateString()}</p></div>
             <div>
               <p className="text-white/40 text-xs mb-0.5">RTP phase</p>
               <p className="text-white">
-                {active.rtp_phase
-                  ? `${active.rtp_phase} — ${RTP_LABELS[active.rtp_phase] ?? ''}`
-                  : 'Not started'}
+                {active.rtp_phase ? `${active.rtp_phase} — ${RTP_LABELS[active.rtp_phase] ?? ''}` : 'Not started'}
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* 8-week load chart */}
       <div className="bg-white/5 rounded-2xl p-5">
         <h3 className="text-white font-medium mb-4">8-week Load (AU)</h3>
         {loadChartData.length === 0 ? (
-          <p className="text-white/40 text-sm text-center py-8">
-            No load data in the last 8 weeks.
-          </p>
+          <p className="text-white/40 text-sm text-center py-8">No load data in the last 8 weeks.</p>
         ) : (
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={loadChartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis
-                dataKey="date"
-                tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }}
-              />
+              <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} />
               <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
               <Tooltip
-                contentStyle={{
-                  background: '#1e1b4b',
-                  border: 'none',
-                  borderRadius: 8,
-                  color: '#fff',
-                  fontSize: 12,
-                }}
+                contentStyle={{ background: '#1e1b4b', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }}
               />
               <Bar dataKey="load" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
             </BarChart>
@@ -686,7 +654,6 @@ function MedicalTab({ playerId }: { playerId: string }) {
         )}
       </div>
 
-      {/* Injury history */}
       <div className="bg-white/5 rounded-2xl p-5">
         <h3 className="text-white font-medium mb-4">Injury History</h3>
         {resolved.length === 0 ? (
@@ -705,21 +672,13 @@ function MedicalTab({ playerId }: { playerId: string }) {
             <tbody className="divide-y divide-white/5">
               {resolved.map((inj: any) => (
                 <tr key={inj.id}>
-                  <td className="py-2 text-white/60">
-                    {new Date(inj.injury_date).toLocaleDateString()}
-                  </td>
+                  <td className="py-2 text-white/60">{new Date(inj.injury_date).toLocaleDateString()}</td>
                   <td className="py-2 text-white">{inj.injury_type ?? '—'}</td>
                   <td className="py-2 text-white/60">{inj.body_part ?? '—'}</td>
-                  <td className="py-2 text-white/60">
-                    {inj.resolved_at
-                      ? new Date(inj.resolved_at).toLocaleDateString()
-                      : '—'}
-                  </td>
+                  <td className="py-2 text-white/60">{inj.resolved_at ? new Date(inj.resolved_at).toLocaleDateString() : '—'}</td>
                   <td className="py-2">
                     {recurrenceIds.has(inj.id) && (
-                      <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">
-                        Recurrence
-                      </span>
+                      <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">Recurrence</span>
                     )}
                   </td>
                 </tr>
@@ -733,6 +692,7 @@ function MedicalTab({ playerId }: { playerId: string }) {
 }
 
 // ── Reviews Tab ──────────────────────────────────────────────────────────────────
+
 function ReviewsTab({ playerId }: { playerId: string }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({ type: 'general', notes: '', tags: '' });
@@ -758,9 +718,7 @@ function ReviewsTab({ playerId }: { playerId: string }) {
       player_id: playerId,
       observation_type: form.type,
       notes: form.notes.trim(),
-      tags: form.tags
-        ? form.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
-        : [],
+      tags: form.tags ? form.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
       observed_at: new Date().toISOString(),
     });
     qc.invalidateQueries({ queryKey: ['player-reviews', playerId] });
@@ -770,7 +728,6 @@ function ReviewsTab({ playerId }: { playerId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Add review form */}
       <div className="bg-white/5 rounded-2xl p-5 space-y-3">
         <h3 className="text-white font-medium">Add Review</h3>
         <div className="flex gap-3">
@@ -780,9 +737,7 @@ function ReviewsTab({ playerId }: { playerId: string }) {
             className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
           >
             {REVIEW_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-              </option>
+              <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
             ))}
           </select>
           <input
@@ -808,7 +763,6 @@ function ReviewsTab({ playerId }: { playerId: string }) {
         </button>
       </div>
 
-      {/* Review list */}
       {(reviews as any[]).length === 0 ? (
         <p className="text-white/40 text-sm">No reviews yet.</p>
       ) : (
@@ -816,32 +770,19 @@ function ReviewsTab({ playerId }: { playerId: string }) {
           {(reviews as any[]).map((r) => (
             <div key={r.id} className="bg-white/5 rounded-2xl p-4">
               <div className="flex items-center gap-3 mb-2 flex-wrap">
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full ${
-                    REVIEW_BADGE[r.observation_type] ?? REVIEW_BADGE.general
-                  }`}
-                >
+                <span className={`text-xs px-2 py-0.5 rounded-full ${REVIEW_BADGE[r.observation_type] ?? REVIEW_BADGE.general}`}>
                   {r.observation_type}
                 </span>
-                <span className="text-white/30 text-xs">
-                  {new Date(r.observed_at).toLocaleDateString()}
-                </span>
+                <span className="text-white/30 text-xs">{new Date(r.observed_at).toLocaleDateString()}</span>
                 {r.coach_id && (
-                  <span className="text-white/25 text-xs font-mono">
-                    {String(r.coach_id).slice(0, 8)}…
-                  </span>
+                  <span className="text-white/25 text-xs font-mono">{String(r.coach_id).slice(0, 8)}…</span>
                 )}
               </div>
               <p className="text-white/80 text-sm">{r.notes}</p>
               {Array.isArray(r.tags) && r.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
                   {(r.tags as string[]).map((tag) => (
-                    <span
-                      key={tag}
-                      className="text-xs bg-white/5 text-white/40 px-2 py-0.5 rounded-full"
-                    >
-                      {tag}
-                    </span>
+                    <span key={tag} className="text-xs bg-white/5 text-white/40 px-2 py-0.5 rounded-full">{tag}</span>
                   ))}
                 </div>
               )}
@@ -854,6 +795,7 @@ function ReviewsTab({ playerId }: { playerId: string }) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────────
+
 export default function PlayerProfile() {
   const { id: playerId } = useParams<{ id: string }>();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -910,12 +852,7 @@ export default function PlayerProfile() {
       : null;
 
   const initials = player?.name
-    ? player.name
-        .split(' ')
-        .map((w: string) => w[0])
-        .join('')
-        .slice(0, 2)
-        .toUpperCase()
+    ? player.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
     : '?';
 
   const tabContent: Record<Tab, React.ReactNode> = {
@@ -924,17 +861,13 @@ export default function PlayerProfile() {
     ) : null,
     attributes: <AttributesTab playerId={playerId!} defs={defs} />,
     history: <HistoryTab playerId={playerId!} defs={defs} />,
-    medical: <MedicalTab playerId={playerId!} />,
+    medical: <MedicalTab playerId={playerId!} dob={player?.date_of_birth} />,
     reviews: <ReviewsTab playerId={playerId!} />,
   };
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
-      {/* Back */}
-      <Link
-        to="/players"
-        className="inline-block text-white/40 hover:text-white/70 text-sm transition-colors"
-      >
+      <Link to="/players" className="inline-block text-white/40 hover:text-white/70 text-sm transition-colors">
         ← Players
       </Link>
 
@@ -944,36 +877,23 @@ export default function PlayerProfile() {
           {initials}
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-white text-2xl font-bold leading-tight">
-            {player?.name ?? 'Loading…'}
-          </h1>
+          <h1 className="text-white text-2xl font-bold leading-tight">{player?.name ?? 'Loading…'}</h1>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-white/50">
             {player?.date_of_birth && (
               <span>DOB: {new Date(player.date_of_birth).toLocaleDateString()}</span>
             )}
             {player?.teams?.name && (
-              <span>
-                {player.teams.name}
-                {player.teams.age_group ? ` · ${player.teams.age_group}` : ''}
-              </span>
+              <span>{player.teams.name}{player.teams.age_group ? ` · ${player.teams.age_group}` : ''}</span>
             )}
-            {player?.dominant_foot && (
-              <span>Foot: {player.dominant_foot}</span>
-            )}
-            {player?.position && (
-              <span>{player.position}</span>
-            )}
+            {player?.dominant_foot && <span>Foot: {player.dominant_foot}</span>}
+            {player?.position && <span>{player.position}</span>}
           </div>
         </div>
         {overallRating !== null && (
           <div className="text-right flex-shrink-0">
             <p className="text-5xl font-bold text-white tabular-nums">{overallRating}</p>
             {delta !== null && (
-              <p
-                className={`text-sm font-medium mt-1 ${
-                  delta >= 0 ? 'text-emerald-400' : 'text-red-400'
-                }`}
-              >
+              <p className={`text-sm font-medium mt-1 ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                 {delta >= 0 ? '+' : ''}{delta} season
               </p>
             )}
@@ -999,7 +919,6 @@ export default function PlayerProfile() {
         ))}
       </div>
 
-      {/* Active tab */}
       <div>{tabContent[activeTab]}</div>
     </div>
   );
