@@ -1,526 +1,925 @@
-import React, { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { RadarChart } from '@/components/players/RadarChart';
-import { AttributeSnapshotModal } from '@/components/players/AttributeSnapshotModal';
-import { MaturationCalculator } from '@/components/players/MaturationCalculator';
+import {
+  RadarChart,
+  Radar,
+  PolarGrid,
+  PolarAngleAxis,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  BarChart,
+  Bar,
+} from 'recharts';
+import { supabase } from '../lib/supabaseClient';
+import { AttributeSnapshotModal } from '../components/players/AttributeSnapshotModal';
+import { MaturationCalculator } from '../components/players/MaturationCalculator';
 
-const TABS = ['Overview', 'Attributes', 'History', 'Medical', 'Reviews'] as const;
-type Tab = typeof TABS[number];
+const sb = supabase as any;
 
-const currentSeason = (() => {
-  const y = new Date().getFullYear();
-  return `${y}/${String(y + 1).slice(2)}`;
-})();
+type Tab = 'overview' | 'attributes' | 'history' | 'medical' | 'reviews';
 
-function calcAge(dob?: string): string {
-  if (!dob) return '—';
-  return String(Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000)));
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'attributes', label: 'Attributes' },
+  { id: 'history', label: 'History' },
+  { id: 'medical', label: 'Medical' },
+  { id: 'reviews', label: 'Reviews' },
+];
+
+const CATEGORIES = ['technical', 'physical', 'tactical', 'mental'] as const;
+type Category = typeof CATEGORIES[number];
+
+const CAT_COLORS: Record<Category, string> = {
+  technical: '#8b5cf6',
+  physical: '#10b981',
+  tactical: '#3b82f6',
+  mental: '#f59e0b',
+};
+
+const RTP_LABELS = ['', 'Gym only', 'Running', 'Non-contact training', 'Full training', 'Match ready'];
+const REVIEW_TYPES = ['general', 'technical', 'physical', 'tactical', 'mental'];
+const REVIEW_BADGE: Record<string, string> = {
+  technical: 'bg-violet-500/20 text-violet-300',
+  physical: 'bg-emerald-500/20 text-emerald-300',
+  tactical: 'bg-blue-500/20 text-blue-300',
+  mental: 'bg-amber-500/20 text-amber-300',
+  general: 'bg-white/10 text-white/60',
+};
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function currentSeason(): string {
+  const d = new Date();
+  const cutoff = new Date(d.getFullYear(), 7, 1); // Aug 1
+  const startYear = d >= cutoff ? d.getFullYear() : d.getFullYear() - 1;
+  return `${startYear}-${String(startYear + 1).slice(2)}`;
 }
 
-function posStyle(pos?: string): string {
-  if (!pos) return 'bg-slate-100 text-slate-500';
-  if (pos === 'GK') return 'bg-amber-100 text-amber-700';
-  if (['CB','RB','LB','RWB','LWB'].includes(pos)) return 'bg-sky-100 text-sky-700';
-  if (['CDM','CM','CAM'].includes(pos)) return 'bg-emerald-100 text-emerald-700';
-  if (['RM','LM','RW','LW'].includes(pos)) return 'bg-violet-100 text-violet-700';
-  if (['ST','CF'].includes(pos)) return 'bg-rose-100 text-rose-700';
-  return 'bg-slate-100 text-slate-500';
+function seasonStart(): string {
+  const d = new Date();
+  d.setMonth(7, 1);
+  if (d > new Date()) d.setFullYear(d.getFullYear() - 1);
+  return d.toISOString().split('T')[0];
 }
 
-function ACWRSparkline({ rows }: { rows: Array<{ session_date: string; acwr_at_time: number | null; load_au: number }> }) {
-  if (!rows.length) return <p className="text-xs text-slate-400">No training load data.</p>;
-  const W = 340, H = 80;
-  const vals = rows.map(r => r.acwr_at_time ?? 0);
-  const top  = Math.max(...vals, 2);
-  const xOf  = (i: number) => (i / Math.max(rows.length - 1, 1)) * (W - 20) + 10;
-  const yOf  = (v: number) => H - 10 - (v / top) * (H - 20);
-  const pts  = rows.map((r, i) => `${xOf(i)},${yOf(r.acwr_at_time ?? 0)}`).join(' ');
-  const line = (v: number, stroke: string) => (
-    <line x1="0" y1={yOf(v)} x2={W} y2={yOf(v)} stroke={stroke} strokeDasharray="4 2" strokeWidth="1" />
-  );
+function chronoAge(dob: string): number {
+  return (Date.now() - new Date(dob).getTime()) / (365.25 * 86_400_000);
+}
+
+type AttrDef = { id: string; name: string; category: string; max_value: number };
+
+function snapshotAverage(scores: Record<string, number>, defs: AttrDef[]): number {
+  const defMap = new Map(defs.map((d) => [d.id, d.max_value]));
+  const vals = Object.entries(scores)
+    .filter(([id]) => defMap.has(id))
+    .map(([id, v]) => (v / (defMap.get(id) ?? 10)) * 10);
+  if (!vals.length) return 0;
+  return Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10;
+}
+
+function categoryAverages(scores: Record<string, number>, defs: AttrDef[]): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const cat of CATEGORIES) {
+    const catDefs = defs.filter((d) => d.category === cat);
+    if (!catDefs.length) { result[cat] = 0; continue; }
+    const vals = catDefs.map((d) => ((scores[d.id] ?? 0) / d.max_value) * 10);
+    result[cat] = Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10;
+  }
+  return result;
+}
+
+// ── Maturation Bar ───────────────────────────────────────────────────────────────
+
+function MaturationBar({ bioAge, ca }: { bioAge: number; ca: number }) {
+  const MIN = 9, MAX = 18;
+  const clamp = (v: number) => Math.max(0, Math.min(100, ((v - MIN) / (MAX - MIN)) * 100));
+  const offset = bioAge - ca;
+  const badge =
+    offset > 1.0
+      ? { label: 'Early', cls: 'bg-orange-500/20 text-orange-300' }
+      : offset < -1.0
+      ? { label: 'Late', cls: 'bg-sky-500/20 text-sky-300' }
+      : { label: 'On time', cls: 'bg-emerald-500/20 text-emerald-300' };
+
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full">
-      {line(1.5, '#fca5a5')} {line(1.3, '#fcd34d')}
-      <polyline points={pts} fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinejoin="round" />
-      {rows.map((r, i) => {
-        const a = r.acwr_at_time ?? 0;
-        const fill = a >= 1.5 ? '#ef4444' : a >= 1.3 ? '#f59e0b' : '#7c3aed';
-        return <circle key={i} cx={xOf(i)} cy={yOf(a)} r="3" fill={fill} />;
-      })}
-    </svg>
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className={`text-xs px-2 py-0.5 rounded-full ${badge.cls}`}>{badge.label}</span>
+        <span className="text-white/50 text-xs">
+          Maturity offset: {offset >= 0 ? '+' : ''}{offset.toFixed(2)} yrs
+        </span>
+      </div>
+      <div className="relative h-4 bg-white/10 rounded-full mx-1">
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-sky-400 border-2 border-slate-900 z-10"
+          style={{ left: `calc(${clamp(ca)}% - 6px)` }}
+          title={`Chrono: ${ca.toFixed(1)}`}
+        />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-orange-400 border-2 border-slate-900 z-10"
+          style={{ left: `calc(${clamp(bioAge)}% - 6px)` }}
+          title={`Bio: ${bioAge.toFixed(1)}`}
+        />
+      </div>
+      <div className="flex justify-between text-xs text-white/25 px-1">
+        {[9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((y) => <span key={y}>{y}</span>)}
+      </div>
+      <div className="flex gap-4 text-xs text-white/50">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-sky-400 inline-block" />
+          Chrono {ca.toFixed(1)}
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" />
+          Bio {bioAge.toFixed(1)}
+        </span>
+      </div>
+      <p className="text-white/40 text-xs">
+        {offset > 1.0
+          ? 'Biologically advanced — consider relative age when interpreting performance metrics.'
+          : offset < -1.0
+          ? 'Late developer — potential likely to emerge post-PHV. Monitor training load carefully.'
+          : 'Developing in line with chronological age.'}
+      </p>
+    </div>
   );
 }
+
+// ── Overview Tab ─────────────────────────────────────────────────────────────────
+
+function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; defs: AttrDef[] }) {
+  const qc = useQueryClient();
+  const season = seasonStart();
+  const ca = chronoAge(dob);
+  const [showMatCalc, setShowMatCalc] = useState(false);
+
+  const { data: stats } = useQuery({
+    queryKey: ['player-season-stats', playerId, season],
+    staleTime: 120_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('team_event_player_stats')
+        .select('appearances, minutes_played, goals, assists')
+        .eq('player_id', playerId)
+        .gte('season_start', season);
+      if (!data?.length) return { appearances: 0, minutes: 0, goals: 0, assists: 0 };
+      return data.reduce(
+        (acc: any, r: any) => ({
+          appearances: acc.appearances + (r.appearances ?? 0),
+          minutes: acc.minutes + (r.minutes_played ?? 0),
+          goals: acc.goals + (r.goals ?? 0),
+          assists: acc.assists + (r.assists ?? 0),
+        }),
+        { appearances: 0, minutes: 0, goals: 0, assists: 0 },
+      );
+    },
+  });
+
+  const { data: matRecord, refetch: refetchMat } = useQuery({
+    queryKey: ['player-mat-latest', playerId],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('maturation_record')
+        .select('bio_age_estimate, recorded_date')
+        .eq('player_id', playerId)
+        .order('recorded_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data ?? null;
+    },
+  });
+
+  const { data: snapshots = [] } = useQuery({
+    queryKey: ['player-snapshots-radar', playerId],
+    staleTime: 120_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('attribute_snapshot')
+        .select('scores, snapshot_date')
+        .eq('player_id', playerId)
+        .eq('is_final', true)
+        .order('snapshot_date', { ascending: false })
+        .limit(2);
+      return (data ?? []) as { scores: Record<string, number>; snapshot_date: string }[];
+    },
+  });
+
+  const { data: milestones = [] } = useQuery({
+    queryKey: ['player-milestones', playerId],
+    staleTime: 120_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('milestones')
+        .select('id, title, description, achieved_date, is_upcoming')
+        .eq('player_id', playerId)
+        .order('achieved_date', { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  const statCards = [
+    { label: 'Appearances', value: stats?.appearances ?? 0 },
+    { label: 'Minutes', value: stats?.minutes ?? 0 },
+    { label: 'Goals', value: stats?.goals ?? 0 },
+    { label: 'Assists', value: stats?.assists ?? 0 },
+  ];
+
+  const radarData = CATEGORIES.map((cat) => ({
+    subject: cat.charAt(0).toUpperCase() + cat.slice(1),
+    current: snapshots[0]?.scores ? categoryAverages(snapshots[0].scores, defs)[cat] : 0,
+    previous: snapshots[1]?.scores ? categoryAverages(snapshots[1].scores, defs)[cat] : 0,
+  }));
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {statCards.map((c) => (
+          <div key={c.label} className="bg-white/5 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-white">{c.value.toLocaleString()}</p>
+            <p className="text-white/50 text-xs mt-1">{c.label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white/5 rounded-2xl p-5">
+        <h3 className="text-white font-medium mb-4">Maturation</h3>
+        {matRecord ? (
+          <div className="space-y-4">
+            <MaturationBar bioAge={matRecord.bio_age_estimate} ca={ca} />
+            <button
+              onClick={() => setShowMatCalc((v) => !v)}
+              className="text-xs text-white/40 hover:text-white/70 transition-colors"
+            >
+              {showMatCalc ? 'Hide calculator' : 'Update measurement'}
+            </button>
+            {showMatCalc && (
+              <MaturationCalculator
+                playerId={playerId}
+                dob={dob}
+                onSaved={() => { refetchMat(); setShowMatCalc(false); }}
+              />
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-white/40 text-sm">No maturation record — add one</p>
+            <MaturationCalculator
+              playerId={playerId}
+              dob={dob}
+              onSaved={() => { refetchMat(); qc.invalidateQueries({ queryKey: ['player-mat-latest', playerId] }); }}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white/5 rounded-2xl p-5">
+        <h3 className="text-white font-medium mb-4">Attribute Radar</h3>
+        {snapshots.length === 0 ? (
+          <p className="text-white/40 text-sm text-center py-8">No attribute snapshots recorded yet.</p>
+        ) : (
+          <>
+            {snapshots.length < 2 && (
+              <p className="text-white/40 text-xs mb-3">Only one snapshot — add another to see progression.</p>
+            )}
+            <ResponsiveContainer width="100%" height={260}>
+              <RadarChart data={radarData} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
+                <PolarGrid stroke="rgba(255,255,255,0.1)" />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 11 }} />
+                {snapshots.length >= 2 && (
+                  <Radar
+                    name="Previous"
+                    dataKey="previous"
+                    stroke="rgba(148,163,184,0.6)"
+                    fill="rgba(148,163,184,0.1)"
+                    strokeDasharray="4 2"
+                  />
+                )}
+                <Radar name="Current" dataKey="current" stroke="#8b5cf6" fill="rgba(139,92,246,0.25)" />
+              </RadarChart>
+            </ResponsiveContainer>
+          </>
+        )}
+      </div>
+
+      <div className="bg-white/5 rounded-2xl p-5">
+        <h3 className="text-white font-medium mb-4">Milestones</h3>
+        {(milestones as any[]).length === 0 ? (
+          <p className="text-white/40 text-sm">No milestones recorded.</p>
+        ) : (
+          <div className="space-y-3">
+            {(milestones as any[]).map((m) => (
+              <div key={m.id} className={`flex gap-3 ${m.is_upcoming ? 'opacity-55' : ''}`}>
+                <div
+                  className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${
+                    m.is_upcoming ? 'bg-white/20 border border-white/30' : 'bg-violet-400'
+                  }`}
+                />
+                <div>
+                  <p className="text-white text-sm">{m.title}</p>
+                  {m.description && <p className="text-white/40 text-xs mt-0.5">{m.description}</p>}
+                  <p className="text-white/30 text-xs mt-0.5">
+                    {m.is_upcoming ? 'Upcoming' : m.achieved_date ? new Date(m.achieved_date).toLocaleDateString() : ''}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Attributes Tab ───────────────────────────────────────────────────────────────
+
+function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
+  const qc = useQueryClient();
+  const [showModal, setShowModal] = useState(false);
+  const season = currentSeason();
+
+  const { data: snapshots = [], refetch } = useQuery({
+    queryKey: ['player-snapshots-attrs', playerId],
+    staleTime: 120_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('attribute_snapshot')
+        .select('id, scores, snapshot_date')
+        .eq('player_id', playerId)
+        .eq('is_final', true)
+        .order('snapshot_date', { ascending: false })
+        .limit(2);
+      return (data ?? []) as { id: string; scores: Record<string, number>; snapshot_date: string }[];
+    },
+  });
+
+  const current = snapshots[0]?.scores ?? {};
+  const previous = snapshots[1]?.scores ?? {};
+
+  function handleSaved() {
+    setShowModal(false);
+    refetch();
+    qc.invalidateQueries({ queryKey: ['player-snapshots-radar', playerId] });
+    qc.invalidateQueries({ queryKey: ['player-snapshot-latest', playerId] });
+  }
+
+  return (
+    <>
+      {showModal && (
+        <AttributeSnapshotModal
+          playerId={playerId}
+          season={season}
+          onClose={() => setShowModal(false)}
+          onSaved={handleSaved}
+        />
+      )}
+
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <p className="text-white/40 text-sm">
+            {snapshots[0]
+              ? `Latest: ${new Date(snapshots[0].snapshot_date).toLocaleDateString()}`
+              : 'No snapshots'}
+          </p>
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+          >
+            New Snapshot
+          </button>
+        </div>
+
+        {CATEGORIES.map((cat) => {
+          const catDefs = defs.filter((d) => d.category === cat);
+          if (!catDefs.length) return null;
+          return (
+            <div key={cat} className="bg-white/5 rounded-2xl p-5">
+              <h3 className="text-white font-medium mb-4 capitalize">{cat}</h3>
+              <div className="space-y-3">
+                {catDefs.map((def) => {
+                  const score = current[def.id] ?? 0;
+                  const prev = previous[def.id] ?? null;
+                  const pct = (score / def.max_value) * 100;
+                  const delta = prev !== null ? Math.round((score - prev) * 10) / 10 : null;
+                  return (
+                    <div key={def.id}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-white/70 text-sm">{def.name}</span>
+                        <div className="flex items-center gap-2">
+                          {delta !== null && delta !== 0 && (
+                            <span className={`text-xs font-medium ${delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {delta > 0 ? '+' : ''}{delta}
+                            </span>
+                          )}
+                          <span className="text-white font-medium text-sm w-12 text-right">
+                            {score}/{def.max_value}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${pct}%`, backgroundColor: CAT_COLORS[cat] }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// ── History Tab ──────────────────────────────────────────────────────────────────
+
+function HistoryTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
+  const { data: allSnapshots = [] } = useQuery({
+    queryKey: ['player-snapshots-history', playerId],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('attribute_snapshot')
+        .select('scores, snapshot_date')
+        .eq('player_id', playerId)
+        .eq('is_final', true)
+        .order('snapshot_date', { ascending: true });
+      return (data ?? []) as { scores: Record<string, number>; snapshot_date: string }[];
+    },
+  });
+
+  const { data: seasonHistory = [] } = useQuery({
+    queryKey: ['player-season-history', playerId],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('team_event_player_stats')
+        .select('season_start, age_group, appearances, minutes_played')
+        .eq('player_id', playerId)
+        .order('season_start', { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  const lineData = allSnapshots.map((s) => ({
+    date: s.snapshot_date,
+    rating: snapshotAverage(s.scores, defs),
+  }));
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white/5 rounded-2xl p-5">
+        <h3 className="text-white font-medium mb-4">Rating Over Time</h3>
+        {lineData.length < 2 ? (
+          <p className="text-white/40 text-sm text-center py-8">Need at least 2 snapshots to show trend.</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={lineData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis
+                dataKey="date"
+                tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
+                tickFormatter={(v) => v.slice(0, 7)}
+              />
+              <YAxis domain={[0, 10]} tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+              <Tooltip
+                contentStyle={{ background: '#1e1b4b', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="rating"
+                stroke="#8b5cf6"
+                strokeWidth={2}
+                dot={{ fill: '#8b5cf6', r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      <div className="bg-white/5 rounded-2xl p-5">
+        <h3 className="text-white font-medium mb-4">Season History</h3>
+        {(seasonHistory as any[]).length === 0 ? (
+          <p className="text-white/40 text-sm">No season data recorded.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-white/40 text-left border-b border-white/10">
+                <th className="pb-2 font-medium">Season</th>
+                <th className="pb-2 font-medium">Age Group</th>
+                <th className="pb-2 font-medium text-right">Apps</th>
+                <th className="pb-2 font-medium text-right">Minutes</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {(seasonHistory as any[]).map((r, i) => (
+                <tr key={i}>
+                  <td className="py-2 text-white">{r.season_start ? String(r.season_start).slice(0, 4) : '—'}</td>
+                  <td className="py-2 text-white/60">{r.age_group ?? '—'}</td>
+                  <td className="py-2 text-white text-right">{r.appearances ?? 0}</td>
+                  <td className="py-2 text-white/60 text-right">{r.minutes_played ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Medical Tab ──────────────────────────────────────────────────────────────────
+
+function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
+  const qc = useQueryClient();
+  const [showMatCalc, setShowMatCalc] = useState(false);
+  const eightWeeksAgo = new Date(Date.now() - 56 * 86_400_000).toISOString().split('T')[0];
+
+  const { data: injuries = [] } = useQuery({
+    queryKey: ['player-injuries', playerId],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('injury_record')
+        .select('*')
+        .eq('player_id', playerId)
+        .order('injury_date', { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  const { data: loads = [] } = useQuery({
+    queryKey: ['player-loads-8w', playerId],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('training_load')
+        .select('session_date, load_au, acwr_at_time')
+        .eq('player_id', playerId)
+        .gte('session_date', eightWeeksAgo)
+        .order('session_date', { ascending: true });
+      return data ?? [];
+    },
+  });
+
+  const active = (injuries as any[]).find((i) => !i.resolved_at) ?? null;
+  const resolved = (injuries as any[]).filter((i) => !!i.resolved_at);
+
+  const recurrenceIds = new Set<string>();
+  for (const inj of resolved) {
+    for (const prev of resolved) {
+      if (prev.id === inj.id || prev.body_part !== inj.body_part || !prev.resolved_at) continue;
+      const gap = (new Date(inj.injury_date).getTime() - new Date(prev.resolved_at).getTime()) / 86_400_000;
+      if (gap >= 0 && gap <= 56) recurrenceIds.add(inj.id);
+    }
+  }
+
+  const loadChartData = (loads as any[]).map((l) => ({
+    date: (l.session_date as string).slice(5),
+    load: l.load_au,
+  }));
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <span
+          className={`px-3 py-1 rounded-full text-sm font-medium ${
+            active ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/20 text-emerald-300'
+          }`}
+        >
+          {active ? 'Injured' : 'Available'}
+        </span>
+        <button
+          onClick={() => setShowMatCalc((v) => !v)}
+          className="ml-auto text-sm text-white/40 hover:text-white/70 transition-colors"
+        >
+          {showMatCalc ? 'Hide' : 'Update maturation record'}
+        </button>
+      </div>
+
+      {showMatCalc && (
+        <MaturationCalculator
+          playerId={playerId}
+          dob={dob}
+          onSaved={() => {
+            setShowMatCalc(false);
+            qc.invalidateQueries({ queryKey: ['player-mat-latest', playerId] });
+          }}
+        />
+      )}
+
+      {active && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
+          <h3 className="text-white font-medium mb-3">Active Injury</h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div><p className="text-white/40 text-xs mb-0.5">Type</p><p className="text-white">{active.injury_type ?? '—'}</p></div>
+            <div><p className="text-white/40 text-xs mb-0.5">Body part</p><p className="text-white">{active.body_part ?? '—'}</p></div>
+            <div><p className="text-white/40 text-xs mb-0.5">Since</p><p className="text-white">{new Date(active.injury_date).toLocaleDateString()}</p></div>
+            <div>
+              <p className="text-white/40 text-xs mb-0.5">RTP phase</p>
+              <p className="text-white">
+                {active.rtp_phase ? `${active.rtp_phase} — ${RTP_LABELS[active.rtp_phase] ?? ''}` : 'Not started'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white/5 rounded-2xl p-5">
+        <h3 className="text-white font-medium mb-4">8-week Load (AU)</h3>
+        {loadChartData.length === 0 ? (
+          <p className="text-white/40 text-sm text-center py-8">No load data in the last 8 weeks.</p>
+        ) : (
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={loadChartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} />
+              <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+              <Tooltip
+                contentStyle={{ background: '#1e1b4b', border: 'none', borderRadius: 8, color: '#fff', fontSize: 12 }}
+              />
+              <Bar dataKey="load" fill="#8b5cf6" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      <div className="bg-white/5 rounded-2xl p-5">
+        <h3 className="text-white font-medium mb-4">Injury History</h3>
+        {resolved.length === 0 ? (
+          <p className="text-white/40 text-sm">No resolved injuries.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-white/40 text-left border-b border-white/10">
+                <th className="pb-2 font-medium">Date</th>
+                <th className="pb-2 font-medium">Type</th>
+                <th className="pb-2 font-medium">Body part</th>
+                <th className="pb-2 font-medium">Resolved</th>
+                <th className="pb-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {resolved.map((inj: any) => (
+                <tr key={inj.id}>
+                  <td className="py-2 text-white/60">{new Date(inj.injury_date).toLocaleDateString()}</td>
+                  <td className="py-2 text-white">{inj.injury_type ?? '—'}</td>
+                  <td className="py-2 text-white/60">{inj.body_part ?? '—'}</td>
+                  <td className="py-2 text-white/60">{inj.resolved_at ? new Date(inj.resolved_at).toLocaleDateString() : '—'}</td>
+                  <td className="py-2">
+                    {recurrenceIds.has(inj.id) && (
+                      <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">Recurrence</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Reviews Tab ──────────────────────────────────────────────────────────────────
+
+function ReviewsTab({ playerId }: { playerId: string }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ type: 'general', notes: '', tags: '' });
+  const [saving, setSaving] = useState(false);
+
+  const { data: reviews = [] } = useQuery({
+    queryKey: ['player-reviews', playerId],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await sb
+        .from('coach_observation')
+        .select('*')
+        .eq('player_id', playerId)
+        .order('observed_at', { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  async function addReview() {
+    if (!form.notes.trim()) return;
+    setSaving(true);
+    await sb.from('coach_observation').insert({
+      player_id: playerId,
+      observation_type: form.type,
+      notes: form.notes.trim(),
+      tags: form.tags ? form.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : [],
+      observed_at: new Date().toISOString(),
+    });
+    qc.invalidateQueries({ queryKey: ['player-reviews', playerId] });
+    setForm({ type: 'general', notes: '', tags: '' });
+    setSaving(false);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white/5 rounded-2xl p-5 space-y-3">
+        <h3 className="text-white font-medium">Add Review</h3>
+        <div className="flex gap-3">
+          <select
+            value={form.type}
+            onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+          >
+            {REVIEW_TYPES.map((t) => (
+              <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+            ))}
+          </select>
+          <input
+            placeholder="Tags (comma-separated)"
+            value={form.tags}
+            onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+          />
+        </div>
+        <textarea
+          placeholder="Observation notes…"
+          value={form.notes}
+          onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+          rows={3}
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500 resize-none"
+        />
+        <button
+          onClick={addReview}
+          disabled={saving || !form.notes.trim()}
+          className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+        >
+          {saving ? 'Saving…' : 'Add review'}
+        </button>
+      </div>
+
+      {(reviews as any[]).length === 0 ? (
+        <p className="text-white/40 text-sm">No reviews yet.</p>
+      ) : (
+        <div className="space-y-3">
+          {(reviews as any[]).map((r) => (
+            <div key={r.id} className="bg-white/5 rounded-2xl p-4">
+              <div className="flex items-center gap-3 mb-2 flex-wrap">
+                <span className={`text-xs px-2 py-0.5 rounded-full ${REVIEW_BADGE[r.observation_type] ?? REVIEW_BADGE.general}`}>
+                  {r.observation_type}
+                </span>
+                <span className="text-white/30 text-xs">{new Date(r.observed_at).toLocaleDateString()}</span>
+                {r.coach_id && (
+                  <span className="text-white/25 text-xs font-mono">{String(r.coach_id).slice(0, 8)}…</span>
+                )}
+              </div>
+              <p className="text-white/80 text-sm">{r.notes}</p>
+              {Array.isArray(r.tags) && r.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {(r.tags as string[]).map((tag) => (
+                    <span key={tag} className="text-xs bg-white/5 text-white/40 px-2 py-0.5 rounded-full">{tag}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main export ───────────────────────────────────────────────────────────────────
 
 export default function PlayerProfile() {
-  const { id }    = useParams<{ id: string }>();
-  const navigate  = useNavigate();
-  const qc        = useQueryClient();
-  const [tab, setTab]           = useState<Tab>('Overview');
-  const [showModal, setShowModal] = useState(false);
+  const { id: playerId } = useParams<{ id: string }>();
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
 
-  // ── data queries ────────────────────────────────────────────────────────────
-  const { data: player, isLoading } = useQuery({
-    queryKey: ['player', id],
-    enabled: !!id,
+  const { data: player } = useQuery({
+    queryKey: ['player-detail', playerId],
+    staleTime: 300_000,
     queryFn: async () => {
-      const { data } = await (supabase as any)
+      const { data } = await sb
         .from('players')
-        .select('id, name, position, date_of_birth, team_id, teams(name, age_group), performance_summary')
-        .eq('id', id!)
+        .select('id, name, date_of_birth, dominant_foot, position, team_id, teams(name, age_group)')
+        .eq('id', playerId)
         .single();
       return data;
     },
   });
 
-  const { data: snapshots = [] } = useQuery({
-    queryKey: ['player-snapshots', id],
-    enabled: !!id,
+  const { data: defs = [] } = useQuery<AttrDef[]>({
+    queryKey: ['attribute-defs'],
+    staleTime: 600_000,
     queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from('attribute_snapshot')
-        .select('id, scores, snapshot_date, season, is_final')
-        .eq('player_id', id!)
-        .eq('is_final', true)
-        .order('snapshot_date', { ascending: false });
-      return data ?? [];
-    },
-  });
-
-  const { data: attrDefs = [] } = useQuery({
-    queryKey: ['attr-defs'],
-    enabled: !!player,
-    queryFn: async () => {
-      const { data } = await (supabase as any)
+      const { data } = await sb
         .from('attribute_definition')
         .select('id, name, category, max_value')
         .eq('is_active', true)
-        .order('category');
-      return data ?? [];
+        .order('category')
+        .order('name');
+      return (data ?? []) as AttrDef[];
     },
   });
 
-  const { data: matRecords = [] } = useQuery({
-    queryKey: ['player-mat', id],
-    enabled: !!id,
+  const { data: latestSnaps = [] } = useQuery({
+    queryKey: ['player-snapshot-latest', playerId],
+    staleTime: 120_000,
     queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from('maturation_record')
-        .select('id, recorded_date, height_cm, weight_kg, seated_height_cm, bio_age_estimate, method_used')
-        .eq('player_id', id!)
-        .order('recorded_date', { ascending: false });
-      return data ?? [];
+      const { data } = await sb
+        .from('attribute_snapshot')
+        .select('scores, snapshot_date')
+        .eq('player_id', playerId)
+        .eq('is_final', true)
+        .order('snapshot_date', { ascending: false })
+        .limit(2);
+      return (data ?? []) as { scores: Record<string, number>; snapshot_date: string }[];
     },
   });
 
-  const { data: injuries = [] } = useQuery({
-    queryKey: ['player-injuries', id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from('injury_record')
-        .select('id, injury_type, body_part, severity, date_of_injury, expected_return_date, rtp_phase, is_resolved')
-        .eq('player_id', id!)
-        .order('date_of_injury', { ascending: false });
-      return data ?? [];
-    },
-  });
+  const overallRating =
+    latestSnaps[0] && defs.length ? snapshotAverage(latestSnaps[0].scores, defs) : null;
+  const prevRating =
+    latestSnaps[1] && defs.length ? snapshotAverage(latestSnaps[1].scores, defs) : null;
+  const delta =
+    overallRating !== null && prevRating !== null
+      ? Math.round((overallRating - prevRating) * 10) / 10
+      : null;
 
-  const { data: trainingLoad = [] } = useQuery({
-    queryKey: ['player-load', id],
-    enabled: !!id,
-    queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - 56);
-      const { data } = await (supabase as any)
-        .from('training_load')
-        .select('session_date, load_au, acwr_at_time, session_type')
-        .eq('player_id', id!)
-        .gte('session_date', since.toISOString().split('T')[0])
-        .order('session_date');
-      return data ?? [];
-    },
-  });
+  const initials = player?.name
+    ? player.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+    : '?';
 
-  const { data: milestones = [] } = useQuery({
-    queryKey: ['player-milestones', id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from('milestones')
-        .select('id, milestone_date, category, title, is_upcoming')
-        .eq('player_id', id!)
-        .order('milestone_date', { ascending: false })
-        .limit(12);
-      return data ?? [];
-    },
-  });
-
-  const { data: observations = [] } = useQuery({
-    queryKey: ['player-obs', id],
-    enabled: !!id,
-    queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from('coach_observation')
-        .select('id, observation_date, notes')
-        .eq('player_id', id!)
-        .order('observation_date', { ascending: false })
-        .limit(20);
-      return data ?? [];
-    },
-  });
-
-  // ── derived values ───────────────────────────────────────────────────────────
-  if (isLoading) return <div className="p-6 text-slate-400 text-sm">Loading…</div>;
-  if (!player)   return <div className="p-6 text-sm text-red-500">Player not found.</div>;
-
-  const latestSnap = snapshots[0] ?? null;
-  const prevSnap   = snapshots[1] ?? null;
-  const latestMat  = matRecords[0] ?? null;
-  const initials   = (player.name ?? '??').split(' ').map((w: string) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
-  const activeInj  = injuries.filter((i: any) => !i.is_resolved);
-  const latestACWR = trainingLoad.length ? (trainingLoad[trainingLoad.length - 1] as any).acwr_at_time : null;
-
-  // Radar: average normalised score per category
-  const radarData = (() => {
-    if (!latestSnap?.scores || !attrDefs.length) return [];
-    const cats: Record<string, number[]> = {};
-    for (const def of attrDefs as any[]) {
-      const score = latestSnap.scores[def.id];
-      if (score == null) continue;
-      (cats[def.category] ??= []).push(score / def.max_value);
-    }
-    return Object.entries(cats).map(([cat, vals]) => ({
-      label: cat.charAt(0).toUpperCase() + cat.slice(1),
-      value: vals.reduce((a, b) => a + b, 0) / vals.length,
-      max: 1,
-    }));
-  })();
-
-  const delta = (defId: string): number | null => {
-    const curr = latestSnap?.scores?.[defId];
-    const prev = prevSnap?.scores?.[defId];
-    if (curr == null || prev == null) return null;
-    return Math.round((curr - prev) * 10) / 10;
+  const tabContent: Record<Tab, React.ReactNode> = {
+    overview: player ? (
+      <OverviewTab playerId={playerId!} dob={player.date_of_birth} defs={defs} />
+    ) : null,
+    attributes: <AttributesTab playerId={playerId!} defs={defs} />,
+    history: <HistoryTab playerId={playerId!} defs={defs} />,
+    medical: <MedicalTab playerId={playerId!} dob={player?.date_of_birth} />,
+    reviews: <ReviewsTab playerId={playerId!} />,
   };
 
-  const rtp_labels = ['N/A', 'Gym only', 'Running', 'Training (non-contact)', 'Full training', 'Match ready'];
-
-  // ── render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <button
-        onClick={() => navigate('/players')}
-        className="text-xs text-slate-400 hover:text-slate-600 mb-4 inline-flex items-center gap-1 transition-colors"
-      >
+    <div className="p-6 space-y-6 max-w-4xl">
+      <Link to="/players" className="inline-block text-white/40 hover:text-white/70 text-sm transition-colors">
         ← Players
-      </button>
+      </Link>
 
-      {/* Player header */}
-      <div className="flex items-center gap-4 mb-6">
-        <div className={`w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0 ${posStyle(player.position)}`}>
+      {/* Header */}
+      <div className="flex items-start gap-5">
+        <div className="w-16 h-16 rounded-2xl bg-violet-600 flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
           {initials}
         </div>
         <div className="flex-1 min-w-0">
-          <PageHeader
-            title={player.name}
-            subtitle={[player.teams?.age_group, player.position, `Age ${calcAge(player.date_of_birth)}`].filter(Boolean).join(' · ')}
-          />
+          <h1 className="text-white text-2xl font-bold leading-tight">{player?.name ?? 'Loading…'}</h1>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-white/50">
+            {player?.date_of_birth && (
+              <span>DOB: {new Date(player.date_of_birth).toLocaleDateString()}</span>
+            )}
+            {player?.teams?.name && (
+              <span>{player.teams.name}{player.teams.age_group ? ` · ${player.teams.age_group}` : ''}</span>
+            )}
+            {player?.dominant_foot && <span>Foot: {player.dominant_foot}</span>}
+            {player?.position && <span>{player.position}</span>}
+          </div>
         </div>
-        {activeInj.length > 0 && (
-          <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-700 text-xs font-semibold flex-shrink-0">
-            {activeInj.length} open {activeInj.length === 1 ? 'injury' : 'injuries'}
-          </span>
+        {overallRating !== null && (
+          <div className="text-right flex-shrink-0">
+            <p className="text-5xl font-bold text-white tabular-nums">{overallRating}</p>
+            {delta !== null && (
+              <p className={`text-sm font-medium mt-1 ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {delta >= 0 ? '+' : ''}{delta} season
+              </p>
+            )}
+            <p className="text-white/30 text-xs mt-0.5">Overall</p>
+          </div>
         )}
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-0 border-b border-slate-200 mb-6 overflow-x-auto">
-        {TABS.map(t => (
+      <div className="flex gap-0 border-b border-white/10">
+        {TABS.map((t) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
-              tab === t
-                ? 'border-violet-600 text-violet-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+              activeTab === t.id
+                ? 'border-violet-500 text-white'
+                : 'border-transparent text-white/50 hover:text-white/80'
             }`}
           >
-            {t}
+            {t.label}
           </button>
         ))}
       </div>
 
-      {/* ════ OVERVIEW ════ */}
-      {tab === 'Overview' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {/* Radar */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Latest snapshot</div>
-              {radarData.length
-                ? <div className="flex justify-center"><RadarChart data={radarData} size={200} /></div>
-                : <div className="py-10 text-center text-sm text-slate-400">No snapshot yet</div>}
-            </div>
-
-            {/* Maturation */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Maturation</div>
-              {latestMat ? (
-                <>
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl font-bold text-slate-900">
-                      {latestMat.bio_age_estimate > 0 ? '+' : ''}{latestMat.bio_age_estimate}
-                    </span>
-                    <span className="text-sm text-slate-400">yrs from PHV</span>
-                    <span className={`ml-auto text-xs font-semibold border rounded px-2 py-0.5 ${
-                      latestMat.bio_age_estimate > 1  ? 'bg-orange-50 text-orange-700 border-orange-200'
-                      : latestMat.bio_age_estimate < -1 ? 'bg-sky-50 text-sky-700 border-sky-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    }`}>
-                      {latestMat.bio_age_estimate > 1 ? 'Early' : latestMat.bio_age_estimate < -1 ? 'Late' : 'On time'}
-                    </span>
-                  </div>
-                  {/* PHV slider bar */}
-                  <div className="relative h-3 bg-slate-100 rounded-full">
-                    <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-300" />
-                    <div
-                      className={`absolute top-1 bottom-1 w-2 rounded-full ${
-                        latestMat.bio_age_estimate > 1 ? 'bg-orange-400' : latestMat.bio_age_estimate < -1 ? 'bg-sky-400' : 'bg-emerald-400'
-                      }`}
-                      style={{ left: `calc(${Math.max(5, Math.min(95, 50 + (latestMat.bio_age_estimate / 3) * 45))}% - 4px)` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[9px] text-slate-300">
-                    <span>−3 yrs</span><span>PHV</span><span>+3 yrs</span>
-                  </div>
-                  <div className="text-xs text-slate-400">
-                    {latestMat.height_cm}cm · {latestMat.weight_kg}kg · {latestMat.method_used} · {latestMat.recorded_date}
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-slate-400">No maturation record yet.</p>
-              )}
-              <MaturationCalculator
-                playerId={player.id}
-                dob={player.date_of_birth}
-                onSaved={() => qc.invalidateQueries({ queryKey: ['player-mat', id] })}
-              />
-            </div>
-          </div>
-
-          {/* Milestone timeline */}
-          {milestones.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Milestone timeline</div>
-              <div className="space-y-2">
-                {(milestones as any[]).map(m => (
-                  <div key={m.id} className="flex items-start gap-3 text-sm">
-                    <span className="w-24 flex-shrink-0 text-xs text-slate-400 pt-0.5">{m.milestone_date}</span>
-                    <span className={`flex-shrink-0 text-xs rounded px-1.5 py-0.5 ${
-                      m.is_upcoming ? 'bg-violet-50 text-violet-600' : 'bg-slate-100 text-slate-500'
-                    }`}>{m.category}</span>
-                    <span className="text-slate-700">{m.title}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ════ ATTRIBUTES ════ */}
-      {tab === 'Attributes' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              {latestSnap
-                ? `Latest: ${latestSnap.snapshot_date} · ${latestSnap.season ?? ''}`
-                : 'No finalised snapshots yet'}
-            </p>
-            <button
-              onClick={() => setShowModal(true)}
-              className="px-3 py-1.5 rounded-lg text-sm font-medium bg-violet-600 text-white hover:bg-violet-700 transition-colors"
-            >
-              + New snapshot
-            </button>
-          </div>
-
-          {attrDefs.length === 0 ? (
-            <p className="text-sm text-slate-400 py-10 text-center">No attribute definitions configured.</p>
-          ) : (
-            ['technical','physical','tactical','mental'].map(cat => {
-              const defs = (attrDefs as any[]).filter(d => d.category === cat);
-              if (!defs.length) return null;
-              return (
-                <div key={cat} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                  <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-xs font-semibold uppercase tracking-wider text-slate-400 capitalize">
-                    {cat}
-                  </div>
-                  <div className="divide-y divide-slate-100">
-                    {defs.map((def: any) => {
-                      const score = latestSnap?.scores?.[def.id];
-                      const d     = delta(def.id);
-                      return (
-                        <div key={def.id} className="flex items-center gap-3 px-4 py-2.5">
-                          <span className="flex-1 text-sm text-slate-700">{def.name}</span>
-                          <div className="w-28 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            {score != null && (
-                              <div className="h-full bg-violet-500 rounded-full"
-                                style={{ width: `${(score / def.max_value) * 100}%` }} />
-                            )}
-                          </div>
-                          <span className="w-8 text-right text-sm font-semibold text-slate-700">
-                            {score ?? '—'}
-                          </span>
-                          {d != null && (
-                            <span className={`w-9 text-right text-xs font-medium ${
-                              d > 0 ? 'text-emerald-600' : d < 0 ? 'text-red-500' : 'text-slate-400'
-                            }`}>
-                              {d > 0 ? `+${d}` : d}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })
-          )}
-
-          {showModal && (
-            <AttributeSnapshotModal
-              playerId={player.id}
-              season={currentSeason}
-              onClose={() => setShowModal(false)}
-              onSaved={() => {
-                qc.invalidateQueries({ queryKey: ['player-snapshots', id] });
-                setShowModal(false);
-              }}
-            />
-          )}
-        </div>
-      )}
-
-      {/* ════ HISTORY ════ */}
-      {tab === 'History' && (
-        <div>
-          {snapshots.length === 0 ? (
-            <p className="text-sm text-slate-400 py-10 text-center">No snapshot history yet.</p>
-          ) : (
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs uppercase text-slate-400">
-                  <tr>
-                    <th className="text-left px-4 py-3">Date</th>
-                    <th className="text-left px-4 py-3">Season</th>
-                    <th className="text-right px-4 py-3">Avg rating</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {(snapshots as any[]).map(s => {
-                    const vals = s.scores
-                      ? Object.values(s.scores as Record<string, number>).filter((v): v is number => typeof v === 'number')
-                      : [];
-                    const avg  = vals.length
-                      ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10
-                      : null;
-                    return (
-                      <tr key={s.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-2.5 text-slate-700">{s.snapshot_date}</td>
-                        <td className="px-4 py-2.5 text-slate-500">{s.season ?? '—'}</td>
-                        <td className="px-4 py-2.5 text-right font-semibold text-slate-700">
-                          {avg != null ? `${avg}/10` : '—'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ════ MEDICAL ════ */}
-      {tab === 'Medical' && (
-        <div className="space-y-5">
-          {/* ACWR chart */}
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">ACWR — last 8 weeks</div>
-              {latestACWR != null && (
-                <span className={`text-xs font-semibold border rounded px-2 py-0.5 ${
-                  latestACWR >= 1.5 ? 'bg-red-50 text-red-700 border-red-200'
-                  : latestACWR >= 1.3 ? 'bg-amber-50 text-amber-700 border-amber-200'
-                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                }`}>
-                  Current: {latestACWR}
-                </span>
-              )}
-            </div>
-            <ACWRSparkline rows={trainingLoad as any[]} />
-            <div className="mt-1 flex gap-4 text-[10px] text-slate-400">
-              <span className="flex items-center gap-1"><span className="w-3 border-t border-dashed border-red-300 inline-block" /> 1.5 danger</span>
-              <span className="flex items-center gap-1"><span className="w-3 border-t border-dashed border-yellow-300 inline-block" /> 1.3 caution</span>
-            </div>
-          </div>
-
-          {/* Injury list */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Injury records</div>
-              <span className="text-xs text-slate-400">{injuries.length} total · {activeInj.length} open</span>
-            </div>
-            {injuries.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-slate-400 text-center">No injuries recorded.</p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {(injuries as any[]).map(inj => (
-                  <div key={inj.id} className="px-4 py-3 flex items-start gap-3">
-                    <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${inj.is_resolved ? 'bg-slate-300' : 'bg-red-400'}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-slate-700">{inj.body_part} — {inj.injury_type}</div>
-                      <div className="text-xs text-slate-400 mt-0.5">
-                        {inj.date_of_injury}
-                        {inj.expected_return_date ? ` · exp. return ${inj.expected_return_date}` : ''}
-                        {' · '}{rtp_labels[inj.rtp_phase] ?? `Phase ${inj.rtp_phase}`}
-                      </div>
-                    </div>
-                    <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${
-                      inj.is_resolved ? 'bg-slate-100 text-slate-500'
-                      : inj.severity >= 3 ? 'bg-red-100 text-red-700'
-                      : inj.severity === 2 ? 'bg-amber-100 text-amber-700'
-                      : 'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {inj.is_resolved ? 'Resolved' : `Sev ${inj.severity}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ════ REVIEWS ════ */}
-      {tab === 'Reviews' && (
-        <div className="space-y-3">
-          {observations.length === 0 ? (
-            <p className="text-sm text-slate-400 py-10 text-center">No coach observations yet.</p>
-          ) : (
-            (observations as any[]).map(obs => (
-              <div key={obs.id} className="bg-white rounded-xl border border-slate-200 p-4">
-                <div className="text-xs text-slate-400 mb-2">{obs.observation_date}</div>
-                <p className="text-sm text-slate-700 whitespace-pre-wrap">{obs.notes || 'No notes.'}</p>
-              </div>
-            ))
-          )}
-        </div>
-      )}
+      <div>{tabContent[activeTab]}</div>
     </div>
   );
 }
