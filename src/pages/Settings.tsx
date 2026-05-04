@@ -1,0 +1,529 @@
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../lib/supabaseClient';
+import PageHeader from '../components/layout/PageHeader';
+
+const sb = supabase as any;
+
+type Tab = 'academy' | 'staff' | 'attributes' | 'curriculum' | 'eppp' | 'integrations' | 'notifications';
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'academy', label: 'Academy Profile' },
+  { id: 'staff', label: 'Staff' },
+  { id: 'attributes', label: 'Attribute Framework' },
+  { id: 'curriculum', label: 'Curriculum Outcomes' },
+  { id: 'eppp', label: 'EPPP Config' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'notifications', label: 'Notifications' },
+];
+
+const ATTRIBUTE_CATEGORIES = ['technical', 'physical', 'tactical', 'mental'];
+
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+        active ? 'bg-violet-600 text-white' : 'text-white/50 hover:text-white hover:bg-white/10'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white/5 rounded-2xl p-6 space-y-4">
+      <h3 className="text-white font-medium">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function InputRow({ label, value, onChange, type = 'text', placeholder = '' }: {
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <label className="text-white/50 text-sm w-44 flex-shrink-0">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+      />
+    </div>
+  );
+}
+
+// ---- Academy Profile Tab ----
+function AcademyProfileTab() {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['academy-settings'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await sb.from('academy_settings').select('*').limit(1).maybeSingle();
+      return data ?? {};
+    },
+  });
+
+  const [form, setForm] = useState<Record<string, string>>({});
+  const merged = { ...settings, ...form };
+
+  async function save() {
+    await sb.from('academy_settings').upsert({ id: settings?.id ?? undefined, ...merged });
+    qc.invalidateQueries({ queryKey: ['academy-settings'] });
+    setForm({});
+  }
+
+  return (
+    <div className="space-y-4">
+      <SectionCard title="Basic Information">
+        <InputRow label="Academy name" value={merged.name ?? ''} onChange={(v) => setForm((f) => ({ ...f, name: v }))} />
+        <InputRow label="FA affiliation number" value={merged.fa_affiliation_number ?? ''} onChange={(v) => setForm((f) => ({ ...f, fa_affiliation_number: v }))} />
+        <InputRow label="Academy tier" value={merged.academy_tier ?? ''} onChange={(v) => setForm((f) => ({ ...f, academy_tier: v }))} placeholder="1–3" />
+        <InputRow label="License expiry" value={merged.license_expiry ?? ''} type="date" onChange={(v) => setForm((f) => ({ ...f, license_expiry: v }))} />
+      </SectionCard>
+      <SectionCard title="Contact">
+        <InputRow label="Head of Academy email" value={merged.hoa_email ?? ''} type="email" onChange={(v) => setForm((f) => ({ ...f, hoa_email: v }))} />
+        <InputRow label="Address" value={merged.address ?? ''} onChange={(v) => setForm((f) => ({ ...f, address: v }))} />
+      </SectionCard>
+      <button onClick={save} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-6 py-2 rounded-lg transition-colors">
+        Save changes
+      </button>
+    </div>
+  );
+}
+
+// ---- Staff Tab ----
+function StaffTab() {
+  const { data: staff = [] } = useQuery({
+    queryKey: ['staff-list'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await sb.from('user_academies').select('user_id, role, created_at');
+      return (data ?? []) as { user_id: string; role: string; created_at: string }[];
+    },
+  });
+
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('coach');
+
+  async function invite() {
+    if (!email.trim()) return;
+    // In production this would trigger an invite email via Auth Admin API
+    alert(`Invitation workflow for ${email} (role: ${role}) would be triggered here via Supabase Auth Admin API.`);
+    setEmail('');
+  }
+
+  return (
+    <div className="space-y-4">
+      <SectionCard title="Invite Staff Member">
+        <div className="flex gap-3">
+          <input
+            type="email"
+            placeholder="staff@club.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+          />
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+          >
+            <option value="coach">Coach</option>
+            <option value="head_coach">Head Coach</option>
+            <option value="welfare_officer">Welfare Officer</option>
+            <option value="physio">Physio</option>
+            <option value="scout">Scout</option>
+            <option value="analyst">Analyst</option>
+          </select>
+          <button onClick={invite} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+            Invite
+          </button>
+        </div>
+      </SectionCard>
+      <SectionCard title={`Current Staff (${staff.length})`}>
+        {staff.length === 0 ? (
+          <p className="text-white/40 text-sm">No staff added yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {staff.map((s) => (
+              <div key={s.user_id} className="flex items-center justify-between py-1">
+                <span className="text-white/80 font-mono text-xs">{s.user_id.slice(0, 12)}…</span>
+                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full text-white/60 capitalize">{s.role?.replace(/_/g, ' ')}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+// ---- Attributes Tab ----
+function AttributesTab() {
+  const qc = useQueryClient();
+  const { data: defs = [] } = useQuery({
+    queryKey: ['attribute-defs-settings'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await sb.from('attribute_definition').select('*').order('category').order('name');
+      return (data ?? []) as { id: string; name: string; category: string; max_value: number; is_active: boolean }[];
+    },
+  });
+
+  const [newDef, setNewDef] = useState({ name: '', category: 'technical', max_value: '10' });
+
+  async function addDef() {
+    if (!newDef.name.trim()) return;
+    await sb.from('attribute_definition').insert({
+      name: newDef.name.trim(),
+      category: newDef.category,
+      max_value: parseInt(newDef.max_value) || 10,
+      is_active: true,
+    });
+    qc.invalidateQueries({ queryKey: ['attribute-defs-settings'] });
+    setNewDef({ name: '', category: 'technical', max_value: '10' });
+  }
+
+  async function toggleActive(id: string, current: boolean) {
+    await sb.from('attribute_definition').update({ is_active: !current }).eq('id', id);
+    qc.invalidateQueries({ queryKey: ['attribute-defs-settings'] });
+  }
+
+  const byCategory = ATTRIBUTE_CATEGORIES.map((cat) => ({
+    cat,
+    items: defs.filter((d) => d.category === cat),
+  }));
+
+  return (
+    <div className="space-y-4">
+      <SectionCard title="Add Attribute">
+        <div className="flex gap-3">
+          <input
+            placeholder="Attribute name"
+            value={newDef.name}
+            onChange={(e) => setNewDef((f) => ({ ...f, name: e.target.value }))}
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+          />
+          <select
+            value={newDef.category}
+            onChange={(e) => setNewDef((f) => ({ ...f, category: e.target.value }))}
+            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+          >
+            {ATTRIBUTE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <input
+            type="number"
+            min={1} max={100}
+            value={newDef.max_value}
+            onChange={(e) => setNewDef((f) => ({ ...f, max_value: e.target.value }))}
+            className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+            placeholder="Max"
+          />
+          <button onClick={addDef} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+            Add
+          </button>
+        </div>
+      </SectionCard>
+
+      {byCategory.map(({ cat, items }) => (
+        <SectionCard key={cat} title={`${cat.charAt(0).toUpperCase() + cat.slice(1)} (${items.length})`}>
+          {items.length === 0 ? (
+            <p className="text-white/30 text-sm">No attributes in this category.</p>
+          ) : (
+            <div className="space-y-1">
+              {items.map((def) => (
+                <div key={def.id} className="flex items-center gap-3 py-1">
+                  <span className={`flex-1 text-sm ${def.is_active ? 'text-white' : 'text-white/30 line-through'}`}>{def.name}</span>
+                  <span className="text-xs text-white/30">max {def.max_value}</span>
+                  <button
+                    onClick={() => toggleActive(def.id, def.is_active)}
+                    className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
+                      def.is_active
+                        ? 'bg-emerald-500/20 text-emerald-400 hover:bg-red-500/20 hover:text-red-400'
+                        : 'bg-white/10 text-white/40 hover:bg-emerald-500/20 hover:text-emerald-400'
+                    }`}
+                  >
+                    {def.is_active ? 'Active' : 'Inactive'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      ))}
+    </div>
+  );
+}
+
+// ---- Curriculum Tab ----
+function CurriculumTab() {
+  const qc = useQueryClient();
+  const { data: outcomes = [] } = useQuery({
+    queryKey: ['curriculum-outcomes'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await sb.from('curriculum_outcome').select('*').order('age_group').order('title');
+      return (data ?? []) as { id: string; title: string; age_group: string; description: string | null }[];
+    },
+  });
+
+  const [form, setForm] = useState({ title: '', age_group: 'U9', description: '' });
+
+  async function add() {
+    if (!form.title.trim()) return;
+    await sb.from('curriculum_outcome').insert({ ...form, title: form.title.trim() });
+    qc.invalidateQueries({ queryKey: ['curriculum-outcomes'] });
+    setForm({ title: '', age_group: 'U9', description: '' });
+  }
+
+  const ageGroups = [...new Set(outcomes.map((o) => o.age_group))].sort();
+
+  return (
+    <div className="space-y-4">
+      <SectionCard title="Add Outcome">
+        <div className="space-y-3">
+          <div className="flex gap-3">
+            <input
+              placeholder="Outcome title"
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+            />
+            <select
+              value={form.age_group}
+              onChange={(e) => setForm((f) => ({ ...f, age_group: e.target.value }))}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+            >
+              {['U7','U8','U9','U10','U11','U12','U13','U14','U15','U16','U18','U21'].map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+          <textarea
+            placeholder="Description (optional)"
+            value={form.description}
+            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            rows={2}
+            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500 resize-none"
+          />
+          <button onClick={add} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+            Add outcome
+          </button>
+        </div>
+      </SectionCard>
+
+      {ageGroups.map((ag) => (
+        <SectionCard key={ag} title={ag}>
+          <div className="space-y-2">
+            {outcomes.filter((o) => o.age_group === ag).map((o) => (
+              <div key={o.id}>
+                <p className="text-white text-sm">{o.title}</p>
+                {o.description && <p className="text-white/40 text-xs mt-0.5">{o.description}</p>}
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      ))}
+    </div>
+  );
+}
+
+// ---- EPPP Config Tab ----
+function EPPPConfigTab() {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['academy-settings'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await sb.from('academy_settings').select('*').limit(1).maybeSingle();
+      return data ?? {};
+    },
+  });
+
+  const [form, setForm] = useState<Record<string, string>>({});
+  const merged = { ...settings, ...form };
+
+  async function save() {
+    await sb.from('academy_settings').upsert({ id: settings?.id ?? undefined, ...merged });
+    qc.invalidateQueries({ queryKey: ['academy-settings'] });
+    setForm({});
+  }
+
+  return (
+    <div className="space-y-4">
+      <SectionCard title="EPPP Category & Tier">
+        <InputRow label="Category" value={merged.eppp_category ?? ''} onChange={(v) => setForm((f) => ({ ...f, eppp_category: v }))} placeholder="e.g. Category 1" />
+        <InputRow label="PDC target" value={merged.pdc_target ?? ''} onChange={(v) => setForm((f) => ({ ...f, pdc_target: v }))} placeholder="e.g. 800 hours" />
+        <InputRow label="Assessor name" value={merged.eppp_assessor ?? ''} onChange={(v) => setForm((f) => ({ ...f, eppp_assessor: v }))} />
+        <InputRow label="Next review date" value={merged.eppp_next_review ?? ''} type="date" onChange={(v) => setForm((f) => ({ ...f, eppp_next_review: v }))} />
+      </SectionCard>
+      <SectionCard title="KPI Thresholds">
+        <InputRow label="Min attribute snapshots / season" value={merged.min_snapshots ?? '2'} onChange={(v) => setForm((f) => ({ ...f, min_snapshots: v }))} type="number" />
+        <InputRow label="Min RPE sessions / month" value={merged.min_rpe_sessions ?? '8'} onChange={(v) => setForm((f) => ({ ...f, min_rpe_sessions: v }))} type="number" />
+        <InputRow label="ACWR amber threshold" value={merged.acwr_amber ?? '1.3'} onChange={(v) => setForm((f) => ({ ...f, acwr_amber: v }))} type="number" />
+        <InputRow label="ACWR red threshold" value={merged.acwr_red ?? '1.5'} onChange={(v) => setForm((f) => ({ ...f, acwr_red: v }))} type="number" />
+      </SectionCard>
+      <button onClick={save} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-6 py-2 rounded-lg transition-colors">
+        Save
+      </button>
+    </div>
+  );
+}
+
+// ---- Integrations Tab ----
+function IntegrationsTab() {
+  return (
+    <div className="space-y-4">
+      {[
+        {
+          name: 'Catapult / STATSports GPS',
+          description: 'Upload CSV exports from Catapult or STATSports to enrich training load records with GPS metrics.',
+          status: 'active',
+          action: 'Upload CSV',
+          href: '#gps-upload',
+        },
+        {
+          name: 'Hudl (read-only)',
+          description: 'Link Hudl clip URLs to player video records. Uses the gps-import Edge Function.',
+          status: 'active',
+          action: 'Configure',
+          href: '#hudl',
+        },
+        {
+          name: 'Football Central Sync',
+          description: 'Weekly sync of overall_rating, availability_status, and maturation_badge to Football Central player records.',
+          status: 'active',
+          action: 'Run now',
+          href: '#fc-sync',
+        },
+        {
+          name: 'Wyscout / InStat',
+          description: 'Import scouting data from Wyscout or InStat (coming soon).',
+          status: 'coming_soon',
+          action: null,
+          href: null,
+        },
+      ].map((int) => (
+        <div key={int.name} className="bg-white/5 rounded-2xl p-5 flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-white font-medium">{int.name}</h3>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full ${
+                  int.status === 'active'
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : 'bg-white/10 text-white/40'
+                }`}
+              >
+                {int.status === 'active' ? 'Active' : 'Coming soon'}
+              </span>
+            </div>
+            <p className="text-white/50 text-sm">{int.description}</p>
+          </div>
+          {int.action && (
+            <button className="flex-shrink-0 bg-white/10 hover:bg-white/20 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+              {int.action}
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---- Notifications Tab ----
+function NotificationsTab() {
+  const qc = useQueryClient();
+  const { data: settings } = useQuery({
+    queryKey: ['academy-settings'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data } = await sb.from('academy_settings').select('*').limit(1).maybeSingle();
+      return data ?? {};
+    },
+  });
+
+  const [prefs, setPrefs] = useState<Record<string, boolean>>({});
+  const merged = { ...settings, ...prefs };
+
+  const toggles = [
+    { key: 'notify_acwr_red', label: 'ACWR red alert (≥1.5)' },
+    { key: 'notify_acwr_amber', label: 'ACWR amber alert (≥1.3)' },
+    { key: 'notify_injury_rtp', label: 'RTP phase advances' },
+    { key: 'notify_welfare_restricted', label: 'New restricted welfare entry' },
+    { key: 'notify_safeguarding', label: 'Safeguarding referral logged' },
+    { key: 'notify_eppp_expiry', label: 'EPPP compliance below 80%' },
+    { key: 'notify_qualification_expiry', label: 'Staff qualification expiring within 30 days' },
+    { key: 'notify_fc_sync_fail', label: 'FC sync failure' },
+  ];
+
+  async function save() {
+    await sb.from('academy_settings').upsert({ id: settings?.id ?? undefined, ...merged });
+    qc.invalidateQueries({ queryKey: ['academy-settings'] });
+    setPrefs({});
+  }
+
+  return (
+    <div className="space-y-4">
+      <SectionCard title="In-app & email notifications">
+        <div className="space-y-3">
+          {toggles.map(({ key, label }) => (
+            <div key={key} className="flex items-center justify-between">
+              <span className="text-sm text-white/80">{label}</span>
+              <button
+                onClick={() => setPrefs((p) => ({ ...p, [key]: !(merged[key] ?? true) }))}
+                className={`w-11 h-6 rounded-full transition-colors relative ${
+                  (merged[key] ?? true) ? 'bg-violet-600' : 'bg-white/10'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                    (merged[key] ?? true) ? 'translate-x-5' : 'translate-x-0.5'
+                  }`}
+                />
+              </button>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+      <button onClick={save} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-6 py-2 rounded-lg transition-colors">
+        Save preferences
+      </button>
+    </div>
+  );
+}
+
+export default function Settings() {
+  const [activeTab, setActiveTab] = useState<Tab>('academy');
+
+  const panels: Record<Tab, React.ReactNode> = {
+    academy: <AcademyProfileTab />,
+    staff: <StaffTab />,
+    attributes: <AttributesTab />,
+    curriculum: <CurriculumTab />,
+    eppp: <EPPPConfigTab />,
+    integrations: <IntegrationsTab />,
+    notifications: <NotificationsTab />,
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <PageHeader title="Settings" subtitle="Academy configuration, staff & integrations" />
+
+      <div className="flex flex-wrap gap-2">
+        {TABS.map((t) => (
+          <TabButton key={t.id} active={activeTab === t.id} onClick={() => setActiveTab(t.id)}>
+            {t.label}
+          </TabButton>
+        ))}
+      </div>
+
+      <div>{panels[activeTab]}</div>
+    </div>
+  );
+}
