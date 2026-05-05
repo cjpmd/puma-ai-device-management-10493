@@ -113,7 +113,7 @@ function MaturationBar({ bioAge, ca }: { bioAge: number; ca: number }) {
         <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-orange-400 border-2 border-slate-900 z-10"
           style={{ left: `calc(${clamp(bioAge)}% - 6px)` }} title={`Bio: ${bioAge.toFixed(1)}`} />
       </div>
-      <div className="flex justify-between text-xs text-white/25 px-1">
+      <div className="flex justify-between text-xs text-slate-400 px-1">
         {[9,10,11,12,13,14,15,16,17,18].map((y) => <span key={y}>{y}</span>)}
       </div>
       <div className="flex gap-4 text-xs text-slate-500">
@@ -681,14 +681,14 @@ function ReviewsTab({ playerId }: { playerId: string }) {
         <h3 className="text-slate-900 font-medium">Add Review</h3>
         <div className="flex gap-3">
           <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-            className="bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-violet-500">
+            className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-violet-500">
             {REVIEW_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
           </select>
           <input placeholder="Tags (comma-separated)" value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
-            className="flex-1 bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500" />
+            className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500" />
         </div>
         <textarea placeholder="Observation notes…" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-          rows={3} className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500 resize-none" />
+          rows={3} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500 resize-none" />
         <button onClick={addReview} disabled={saving || !form.notes.trim()}
           className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors">
           {saving ? 'Saving…' : 'Add review'}

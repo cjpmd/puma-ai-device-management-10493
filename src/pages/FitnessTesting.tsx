@@ -121,7 +121,7 @@ export default function FitnessTesting() {
                 const bioAge = bioAgeMap.get(player.id) ??
                   (player.date_of_birth ? Math.round((Date.now() - new Date(player.date_of_birth).getTime()) / (365.25*86400000) * 10) / 10 : null);
                 return (
-                  <tr key={player.id} className="hover:bg-white/3 transition-colors">
+                  <tr key={player.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="text-slate-900 font-medium">{player.name}</div>
                       {player.position && <div className="text-slate-500 text-xs">{player.position}</div>}

@@ -142,7 +142,7 @@ export default function MaturationCalculator({
               <div key={label}>
                 <label className="text-slate-500 text-xs block mb-1">
                   {label}{' '}
-                  <span className="text-white/25">({unit})</span>
+                  <span className="text-slate-400">({unit})</span>
                 </label>
                 <input
                   type="number"
@@ -151,7 +151,7 @@ export default function MaturationCalculator({
                   value={value}
                   onChange={(e) => set(e.target.value)}
                   placeholder={placeholder}
-                  className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-white/20 focus:outline-none focus:border-violet-500 [appearance:textfield]"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500 [appearance:textfield]"
                 />
               </div>
             ))}
@@ -196,7 +196,7 @@ export default function MaturationCalculator({
                   title={`Biological age: ${result.bioAge.toFixed(2)} yr`}
                 />
               </div>
-              <div className="flex justify-between text-[10px] text-white/25 px-0.5">
+              <div className="flex justify-between text-[10px] text-slate-400 px-0.5">
                 {[9, 10, 11, 12, 13, 14, 15, 16, 17, 18].map((y) => (
                   <span key={y}>{y}</span>
                 ))}

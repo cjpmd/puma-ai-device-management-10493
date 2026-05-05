@@ -159,7 +159,7 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
               value={scorer1}
               onChange={(e) => setScorer1(e.target.value)}
               placeholder="e.g. James Smith"
-              className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
             />
           </div>
           <div>
@@ -168,7 +168,7 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
               value={scorer2}
               onChange={(e) => setScorer2(e.target.value)}
               placeholder="e.g. Alex Jones"
-              className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
             />
           </div>
         </div>
@@ -243,7 +243,7 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
                               className={`flex-1 h-6 rounded-full text-[9px] font-bold transition-colors ${
                                 s1 != null && n <= s1
                                   ? 'bg-violet-500 text-white'
-                                  : 'bg-white border border-slate-200 text-white/25 hover:bg-violet-400/30 hover:text-slate-900/60'
+                                  : 'bg-white border border-slate-200 text-slate-400 hover:bg-violet-400/30 hover:text-slate-700'
                               }`}
                             >
                               {n}
@@ -268,7 +268,7 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
                               className={`flex-1 h-6 rounded-full text-[9px] font-bold transition-colors ${
                                 s2 != null && n <= s2
                                   ? 'bg-emerald-500 text-white'
-                                  : 'bg-white border border-slate-200 text-white/25 hover:bg-emerald-400/30 hover:text-slate-900/60'
+                                  : 'bg-white border border-slate-200 text-slate-400 hover:bg-emerald-400/30 hover:text-slate-700'
                               }`}
                             >
                               {n}
