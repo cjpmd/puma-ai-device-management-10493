@@ -15,9 +15,9 @@ interface PerformanceChartProps {
 
 const PerformanceChart = ({ title, data, dataKey, color }: PerformanceChartProps) => {
   return (
-    <Card className="bg-white/5 border border-white/10 backdrop-blur-md text-white shadow-none">
+    <Card className="bg-white border border-slate-200 border border-slate-200 backdrop-blur-md text-slate-900 shadow-none">
       <CardHeader>
-        <CardTitle className="text-sm font-medium text-white/60">{title}</CardTitle>
+        <CardTitle className="text-sm font-medium text-slate-600">{title}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="h-[200px]">

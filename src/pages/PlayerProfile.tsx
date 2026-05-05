@@ -50,7 +50,7 @@ const REVIEW_BADGE: Record<string, string> = {
   physical:  'bg-emerald-500/20 text-emerald-300',
   tactical:  'bg-blue-500/20 text-blue-300',
   mental:    'bg-amber-500/20 text-amber-300',
-  general:   'bg-white/10 text-white/60',
+  general:   'bg-white border border-slate-200 text-slate-600',
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -103,24 +103,24 @@ function MaturationBar({ bioAge, ca }: { bioAge: number; ca: number }) {
     <div className="space-y-3">
       <div className="flex items-center gap-3 flex-wrap">
         <span className={`text-xs px-2 py-0.5 rounded-full ${badge.cls}`}>{badge.label}</span>
-        <span className="text-white/50 text-xs">
+        <span className="text-slate-500 text-xs">
           Maturity offset: {offset >= 0 ? '+' : ''}{offset.toFixed(2)} yrs
         </span>
       </div>
-      <div className="relative h-4 bg-white/10 rounded-full mx-1">
+      <div className="relative h-4 bg-white border border-slate-200 rounded-full mx-1">
         <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-sky-400 border-2 border-slate-900 z-10"
           style={{ left: `calc(${clamp(ca)}% - 6px)` }} title={`Chrono: ${ca.toFixed(1)}`} />
         <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-orange-400 border-2 border-slate-900 z-10"
           style={{ left: `calc(${clamp(bioAge)}% - 6px)` }} title={`Bio: ${bioAge.toFixed(1)}`} />
       </div>
-      <div className="flex justify-between text-xs text-white/25 px-1">
+      <div className="flex justify-between text-xs text-slate-400 px-1">
         {[9,10,11,12,13,14,15,16,17,18].map((y) => <span key={y}>{y}</span>)}
       </div>
-      <div className="flex gap-4 text-xs text-white/50">
+      <div className="flex gap-4 text-xs text-slate-500">
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-sky-400 inline-block" /> Chrono {ca.toFixed(1)}</span>
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-400 inline-block" /> Bio {bioAge.toFixed(1)}</span>
       </div>
-      <p className="text-white/40 text-xs">
+      <p className="text-slate-400 text-xs">
         {offset > 1.0  ? 'Biologically advanced — consider relative age when interpreting performance metrics.' :
          offset < -1.0 ? 'Late developer — potential likely to emerge post-PHV. Monitor training load carefully.' :
                           'Developing in line with chronological age.'}
@@ -225,25 +225,25 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {statCards.map((c) => (
-          <div key={c.label} className="bg-white/5 rounded-xl p-4 text-center">
-            <p className="text-2xl font-bold text-white">{c.value.toLocaleString()}</p>
-            <p className="text-white/50 text-xs mt-1">{c.label}</p>
+          <div key={c.label} className="bg-white border border-slate-200 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-slate-900">{c.value.toLocaleString()}</p>
+            <p className="text-slate-500 text-xs mt-1">{c.label}</p>
           </div>
         ))}
       </div>
 
-      <div className="bg-white/5 rounded-2xl p-5">
-        <h3 className="text-white font-medium mb-4">Maturation</h3>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <h3 className="text-slate-900 font-medium mb-4">Maturation</h3>
         {matRecord ? (
           <div className="space-y-4">
             <MaturationBar bioAge={matRecord.bio_age_estimate} ca={ca} />
-            <button onClick={() => setShowMatCalc(true)} className="text-xs text-white/40 hover:text-white/70 transition-colors">
+            <button onClick={() => setShowMatCalc(true)} className="text-xs text-slate-400 hover:text-slate-900/70 transition-colors">
               Update measurement
             </button>
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-white/40 text-sm">No maturation record — add one</p>
+            <p className="text-slate-400 text-sm">No maturation record — add one</p>
             <button onClick={() => setShowMatCalc(true)} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
               Add maturation record
             </button>
@@ -260,14 +260,14 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
         />
       )}
 
-      <div className="bg-white/5 rounded-2xl p-5">
-        <h3 className="text-white font-medium mb-4">Attribute Radar</h3>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <h3 className="text-slate-900 font-medium mb-4">Attribute Radar</h3>
         {snapshots.length === 0 ? (
-          <p className="text-white/40 text-sm text-center py-8">No attribute snapshots recorded yet.</p>
+          <p className="text-slate-400 text-sm text-center py-8">No attribute snapshots recorded yet.</p>
         ) : (
           <>
             {snapshots.length < 2 && (
-              <p className="text-white/40 text-xs mb-3">Only one snapshot — add another to see progression.</p>
+              <p className="text-slate-400 text-xs mb-3">Only one snapshot — add another to see progression.</p>
             )}
             <ResponsiveContainer width="100%" height={260}>
               <RadarChart data={radarData} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
@@ -283,19 +283,19 @@ function OverviewTab({ playerId, dob, defs }: { playerId: string; dob: string; d
         )}
       </div>
 
-      <div className="bg-white/5 rounded-2xl p-5">
-        <h3 className="text-white font-medium mb-4">Milestones</h3>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <h3 className="text-slate-900 font-medium mb-4">Milestones</h3>
         {(milestones as any[]).length === 0 ? (
-          <p className="text-white/40 text-sm">No milestones recorded.</p>
+          <p className="text-slate-400 text-sm">No milestones recorded.</p>
         ) : (
           <div className="space-y-3">
             {(milestones as any[]).map((m) => (
               <div key={m.id} className={`flex gap-3 ${m.is_upcoming ? 'opacity-55' : ''}`}>
-                <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${m.is_upcoming ? 'bg-white/20 border border-white/30' : 'bg-violet-400'}`} />
+                <div className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${m.is_upcoming ? 'bg-slate-200 border border-slate-300' : 'bg-violet-400'}`} />
                 <div>
-                  <p className="text-white text-sm">{m.title}</p>
-                  {m.description && <p className="text-white/40 text-xs mt-0.5">{m.description}</p>}
-                  <p className="text-white/30 text-xs mt-0.5">
+                  <p className="text-slate-900 text-sm">{m.title}</p>
+                  {m.description && <p className="text-slate-400 text-xs mt-0.5">{m.description}</p>}
+                  <p className="text-slate-400 text-xs mt-0.5">
                     {m.is_upcoming ? 'Upcoming' : m.achieved_date ? new Date(m.achieved_date).toLocaleDateString() : ''}
                   </p>
                 </div>
@@ -350,7 +350,7 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
       )}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <p className="text-white/40 text-sm">
+          <p className="text-slate-400 text-sm">
             {snapshots[0] ? `Latest: ${new Date(snapshots[0].snapshot_date).toLocaleDateString()}` : 'No snapshots'}
           </p>
           <button onClick={() => setShowModal(true)} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
@@ -361,8 +361,8 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
           const catDefs = defs.filter((d) => d.category === cat);
           if (!catDefs.length) return null;
           return (
-            <div key={cat} className="bg-white/5 rounded-2xl p-5">
-              <h3 className="text-white font-medium mb-4 capitalize">{cat}</h3>
+            <div key={cat} className="bg-white border border-slate-200 rounded-2xl p-5">
+              <h3 className="text-slate-900 font-medium mb-4 capitalize">{cat}</h3>
               <div className="space-y-3">
                 {catDefs.map((def) => {
                   const score = current[def.id]  ?? 0;
@@ -372,17 +372,17 @@ function AttributesTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }
                   return (
                     <div key={def.id}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-white/70 text-sm">{def.name}</span>
+                        <span className="text-slate-600 text-sm">{def.name}</span>
                         <div className="flex items-center gap-2">
                           {delta !== null && delta !== 0 && (
                             <span className={`text-xs font-medium ${delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                               {delta > 0 ? '+' : ''}{delta}
                             </span>
                           )}
-                          <span className="text-white font-medium text-sm w-12 text-right">{score}/{def.max_value}</span>
+                          <span className="text-slate-900 font-medium text-sm w-12 text-right">{score}/{def.max_value}</span>
                         </div>
                       </div>
-                      <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-2 bg-white border border-slate-200 rounded-full overflow-hidden">
                         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: CAT_COLORS[cat] }} />
                       </div>
                     </div>
@@ -434,10 +434,10 @@ function HistoryTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white/5 rounded-2xl p-5">
-        <h3 className="text-white font-medium mb-4">Rating Over Time</h3>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <h3 className="text-slate-900 font-medium mb-4">Rating Over Time</h3>
         {lineData.length < 2 ? (
-          <p className="text-white/40 text-sm text-center py-8">Need at least 2 snapshots to show trend.</p>
+          <p className="text-slate-400 text-sm text-center py-8">Need at least 2 snapshots to show trend.</p>
         ) : (
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={lineData}>
@@ -451,27 +451,27 @@ function HistoryTab({ playerId, defs }: { playerId: string; defs: AttrDef[] }) {
         )}
       </div>
 
-      <div className="bg-white/5 rounded-2xl p-5">
-        <h3 className="text-white font-medium mb-4">Season History</h3>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <h3 className="text-slate-900 font-medium mb-4">Season History</h3>
         {(seasonHistory as any[]).length === 0 ? (
-          <p className="text-white/40 text-sm">No season data recorded.</p>
+          <p className="text-slate-400 text-sm">No season data recorded.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-white/40 text-left border-b border-white/10">
+              <tr className="text-slate-400 text-left border-b border-slate-200">
                 <th className="pb-2 font-medium">Season</th>
                 <th className="pb-2 font-medium">Age Group</th>
                 <th className="pb-2 font-medium text-right">Apps</th>
                 <th className="pb-2 font-medium text-right">Minutes</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-slate-200">
               {(seasonHistory as any[]).map((r, i) => (
                 <tr key={i}>
-                  <td className="py-2 text-white">{r.season_start ? String(r.season_start).slice(0, 4) : '—'}</td>
-                  <td className="py-2 text-white/60">{r.age_group ?? '—'}</td>
-                  <td className="py-2 text-white text-right">{r.appearances ?? 0}</td>
-                  <td className="py-2 text-white/60 text-right">{r.minutes_played ?? 0}</td>
+                  <td className="py-2 text-slate-900">{r.season_start ? String(r.season_start).slice(0, 4) : '—'}</td>
+                  <td className="py-2 text-slate-600">{r.age_group ?? '—'}</td>
+                  <td className="py-2 text-slate-900 text-right">{r.appearances ?? 0}</td>
+                  <td className="py-2 text-slate-600 text-right">{r.minutes_played ?? 0}</td>
                 </tr>
               ))}
             </tbody>
@@ -543,7 +543,7 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
           {active ? 'Injured' : 'Available'}
         </span>
         {dob && (
-          <button onClick={() => setShowMatCalc(true)} className="ml-auto text-sm text-white/40 hover:text-white/70 transition-colors">
+          <button onClick={() => setShowMatCalc(true)} className="ml-auto text-sm text-slate-400 hover:text-slate-900/70 transition-colors">
             Update maturation record
           </button>
         )}
@@ -563,29 +563,29 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
 
       {active && (
         <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-5">
-          <h3 className="text-white font-medium mb-3">Active Injury</h3>
+          <h3 className="text-slate-900 font-medium mb-3">Active Injury</h3>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div><p className="text-white/40 text-xs mb-0.5">Type</p><p className="text-white">{active.injury_type ?? '—'}</p></div>
-            <div><p className="text-white/40 text-xs mb-0.5">Body part</p><p className="text-white">{active.body_part ?? '—'}</p></div>
-            <div><p className="text-white/40 text-xs mb-0.5">Since</p><p className="text-white">{new Date(active.injury_date).toLocaleDateString()}</p></div>
+            <div><p className="text-slate-400 text-xs mb-0.5">Type</p><p className="text-slate-900">{active.injury_type ?? '—'}</p></div>
+            <div><p className="text-slate-400 text-xs mb-0.5">Body part</p><p className="text-slate-900">{active.body_part ?? '—'}</p></div>
+            <div><p className="text-slate-400 text-xs mb-0.5">Since</p><p className="text-slate-900">{new Date(active.injury_date).toLocaleDateString()}</p></div>
             <div>
-              <p className="text-white/40 text-xs mb-0.5">RTP phase</p>
-              <p className="text-white">{active.rtp_phase ? `${active.rtp_phase} — ${RTP_LABELS[active.rtp_phase] ?? ''}` : 'Not started'}</p>
+              <p className="text-slate-400 text-xs mb-0.5">RTP phase</p>
+              <p className="text-slate-900">{active.rtp_phase ? `${active.rtp_phase} — ${RTP_LABELS[active.rtp_phase] ?? ''}` : 'Not started'}</p>
             </div>
           </div>
         </div>
       )}
 
-      <div className="bg-white/5 rounded-2xl p-5">
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white font-medium">8-week Load</h3>
-          <div className="flex items-center gap-4 text-xs text-white/40">
+          <h3 className="text-slate-900 font-medium">8-week Load</h3>
+          <div className="flex items-center gap-4 text-xs text-slate-400">
             <span className="flex items-center gap-1"><span className="w-3 h-1.5 rounded bg-violet-500 inline-block" /> Load (AU)</span>
             <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-amber-400 inline-block" /> ACWR</span>
           </div>
         </div>
         {loadChartData.length === 0 ? (
-          <p className="text-white/40 text-sm text-center py-8">No load data in the last 8 weeks.</p>
+          <p className="text-slate-400 text-sm text-center py-8">No load data in the last 8 weeks.</p>
         ) : (
           <ResponsiveContainer width="100%" height={200}>
             <ComposedChart data={loadChartData}>
@@ -603,14 +603,14 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
         )}
       </div>
 
-      <div className="bg-white/5 rounded-2xl p-5">
-        <h3 className="text-white font-medium mb-4">Injury History</h3>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5">
+        <h3 className="text-slate-900 font-medium mb-4">Injury History</h3>
         {resolved.length === 0 ? (
-          <p className="text-white/40 text-sm">No resolved injuries.</p>
+          <p className="text-slate-400 text-sm">No resolved injuries.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-white/40 text-left border-b border-white/10">
+              <tr className="text-slate-400 text-left border-b border-slate-200">
                 <th className="pb-2 font-medium">Date</th>
                 <th className="pb-2 font-medium">Type</th>
                 <th className="pb-2 font-medium">Body part</th>
@@ -618,13 +618,13 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
                 <th className="pb-2" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-slate-200">
               {resolved.map((inj: any) => (
                 <tr key={inj.id}>
-                  <td className="py-2 text-white/60">{new Date(inj.injury_date).toLocaleDateString()}</td>
-                  <td className="py-2 text-white">{inj.injury_type ?? '—'}</td>
-                  <td className="py-2 text-white/60">{inj.body_part ?? '—'}</td>
-                  <td className="py-2 text-white/60">{inj.resolved_at ? new Date(inj.resolved_at).toLocaleDateString() : '—'}</td>
+                  <td className="py-2 text-slate-600">{new Date(inj.injury_date).toLocaleDateString()}</td>
+                  <td className="py-2 text-slate-900">{inj.injury_type ?? '—'}</td>
+                  <td className="py-2 text-slate-600">{inj.body_part ?? '—'}</td>
+                  <td className="py-2 text-slate-600">{inj.resolved_at ? new Date(inj.resolved_at).toLocaleDateString() : '—'}</td>
                   <td className="py-2">
                     {recurrenceIds.has(inj.id) && (
                       <span className="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">Recurrence</span>
@@ -677,18 +677,18 @@ function ReviewsTab({ playerId }: { playerId: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white/5 rounded-2xl p-5 space-y-3">
-        <h3 className="text-white font-medium">Add Review</h3>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">
+        <h3 className="text-slate-900 font-medium">Add Review</h3>
         <div className="flex gap-3">
           <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500">
+            className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-violet-500">
             {REVIEW_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
           </select>
           <input placeholder="Tags (comma-separated)" value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500" />
+            className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500" />
         </div>
         <textarea placeholder="Observation notes…" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-          rows={3} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500 resize-none" />
+          rows={3} className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500 resize-none" />
         <button onClick={addReview} disabled={saving || !form.notes.trim()}
           className="bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors">
           {saving ? 'Saving…' : 'Add review'}
@@ -696,20 +696,20 @@ function ReviewsTab({ playerId }: { playerId: string }) {
       </div>
 
       {(reviews as any[]).length === 0 ? (
-        <p className="text-white/40 text-sm">No reviews yet.</p>
+        <p className="text-slate-400 text-sm">No reviews yet.</p>
       ) : (
         <div className="space-y-3">
           {(reviews as any[]).map((r) => (
-            <div key={r.id} className="bg-white/5 rounded-2xl p-4">
+            <div key={r.id} className="bg-white border border-slate-200 rounded-2xl p-4">
               <div className="flex items-center gap-3 mb-2 flex-wrap">
                 <span className={`text-xs px-2 py-0.5 rounded-full ${REVIEW_BADGE[r.observation_type] ?? REVIEW_BADGE.general}`}>{r.observation_type}</span>
-                <span className="text-white/30 text-xs">{new Date(r.observed_at).toLocaleDateString()}</span>
+                <span className="text-slate-400 text-xs">{new Date(r.observed_at).toLocaleDateString()}</span>
               </div>
-              <p className="text-white/80 text-sm">{r.notes}</p>
+              <p className="text-slate-700 text-sm">{r.notes}</p>
               {Array.isArray(r.tags) && r.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
                   {(r.tags as string[]).map((tag) => (
-                    <span key={tag} className="text-xs bg-white/5 text-white/40 px-2 py-0.5 rounded-full">{tag}</span>
+                    <span key={tag} className="text-xs bg-white border border-slate-200 text-slate-400 px-2 py-0.5 rounded-full">{tag}</span>
                   ))}
                 </div>
               )}
@@ -787,7 +787,7 @@ export default function PlayerProfile() {
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
-      <Link to="/players" className="inline-block text-white/40 hover:text-white/70 text-sm transition-colors">
+      <Link to="/players" className="inline-block text-slate-400 hover:text-slate-900/70 text-sm transition-colors">
         ← Players
       </Link>
 
@@ -796,8 +796,8 @@ export default function PlayerProfile() {
           {initials}
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-white text-2xl font-bold leading-tight">{player?.name ?? 'Loading…'}</h1>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-white/50">
+          <h1 className="text-slate-900 text-2xl font-bold leading-tight">{player?.name ?? 'Loading…'}</h1>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-slate-500">
             {player?.date_of_birth && <span>DOB: {new Date(player.date_of_birth).toLocaleDateString()}</span>}
             {player?.teams?.name && <span>{player.teams.name}{player.teams.age_group ? ` · ${player.teams.age_group}` : ''}</span>}
             {player?.dominant_foot && <span>Foot: {player.dominant_foot}</span>}
@@ -806,22 +806,22 @@ export default function PlayerProfile() {
         </div>
         {overallRating !== null && (
           <div className="text-right flex-shrink-0">
-            <p className="text-5xl font-bold text-white tabular-nums">{overallRating}</p>
+            <p className="text-5xl font-bold text-slate-900 tabular-nums">{overallRating}</p>
             {delta !== null && (
               <p className={`text-sm font-medium mt-1 ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                 {delta >= 0 ? '+' : ''}{delta} season
               </p>
             )}
-            <p className="text-white/30 text-xs mt-0.5">Overall</p>
+            <p className="text-slate-400 text-xs mt-0.5">Overall</p>
           </div>
         )}
       </div>
 
-      <div className="flex gap-0 border-b border-white/10">
+      <div className="flex gap-0 border-b border-slate-200">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              activeTab === t.id ? 'border-violet-500 text-white' : 'border-transparent text-white/50 hover:text-white/80'
+              activeTab === t.id ? 'border-violet-500 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-900/80'
             }`}>
             {t.label}
           </button>

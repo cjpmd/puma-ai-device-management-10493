@@ -77,7 +77,7 @@ export default function FitnessTesting() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Fitness Testing</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Fitness Testing</h1>
         <button onClick={() => setShowModal(true)} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors">
           + Log Test Result
         </button>
@@ -91,10 +91,10 @@ export default function FitnessTesting() {
 
       {testNames.length > 1 && (
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setActiveTest(null)} className={`px-3 py-1 rounded-full text-xs transition-colors ${!activeTest ? 'bg-indigo-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>All</button>
+          <button onClick={() => setActiveTest(null)} className={`px-3 py-1 rounded-full text-xs transition-colors ${!activeTest ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-100'}`}>All</button>
           {testNames.map(t => (
             <button key={t} onClick={() => setActiveTest(activeTest === t ? null : t)}
-              className={`px-3 py-1 rounded-full text-xs transition-colors ${activeTest === t ? 'bg-indigo-600 text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
+              className={`px-3 py-1 rounded-full text-xs transition-colors ${activeTest === t ? 'bg-indigo-600 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-100'}`}>
               {t}
             </button>
           ))}
@@ -102,10 +102,10 @@ export default function FitnessTesting() {
       )}
 
       {displayTests.length > 0 ? (
-        <div className="rounded-xl border border-white/10 overflow-x-auto">
+        <div className="rounded-xl border border-slate-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10">
+              <tr className="border-b border-slate-200">
                 <th className="text-left px-4 py-3 text-slate-400 font-medium">Player</th>
                 <th className="text-center px-3 py-3 text-slate-400 font-medium">Bio Age</th>
                 {displayTests.map(t => (
@@ -116,14 +116,14 @@ export default function FitnessTesting() {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-slate-200">
               {players.map(player => {
                 const bioAge = bioAgeMap.get(player.id) ??
                   (player.date_of_birth ? Math.round((Date.now() - new Date(player.date_of_birth).getTime()) / (365.25*86400000) * 10) / 10 : null);
                 return (
-                  <tr key={player.id} className="hover:bg-white/3 transition-colors">
+                  <tr key={player.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
-                      <div className="text-white font-medium">{player.name}</div>
+                      <div className="text-slate-900 font-medium">{player.name}</div>
                       {player.position && <div className="text-slate-500 text-xs">{player.position}</div>}
                     </td>
                     <td className="px-3 py-3 text-center text-slate-300 text-xs">{bioAge != null ? `${bioAge}y` : '—'}</td>
@@ -147,7 +147,7 @@ export default function FitnessTesting() {
           {players.length === 0 && <div className="px-4 py-10 text-center text-slate-500 text-sm">No players found</div>}
         </div>
       ) : (
-        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-14 text-center text-slate-500 text-sm">
+        <div className="rounded-xl border border-slate-200 bg-white border border-slate-200 px-4 py-14 text-center text-slate-500 text-sm">
           No fitness test results yet. Click "+ Log Test Result" to get started.
         </div>
       )}

@@ -127,7 +127,7 @@ export default function Medical() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Medical &amp; Load</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Medical &amp; Load</h1>
         <button
           onClick={() => openInjuryModal()}
           className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-sm font-medium transition-colors"
@@ -145,7 +145,7 @@ export default function Medical() {
             className={`p-4 rounded-xl border text-left transition-all ${
               statusFilter === key
                 ? `${STATUS_CONFIG[key].bg} border-current/30`
-                : 'border-white/10 bg-white/5 hover:bg-white/10'
+                : 'border-slate-200 bg-white border border-slate-200 hover:bg-slate-100'
             }`}
           >
             <div className={`text-3xl font-bold ${STATUS_CONFIG[key].text}`}>{count}</div>
@@ -156,16 +156,16 @@ export default function Medical() {
 
       {/* ACWR Alerts */}
       {acwrAlerts.length > 0 && (
-        <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
+        <div className="rounded-xl border border-slate-200 bg-white border border-slate-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-red-400 inline-block animate-pulse" />
-            <h2 className="font-semibold text-white text-sm">ACWR Alerts</h2>
+            <h2 className="font-semibold text-slate-900 text-sm">ACWR Alerts</h2>
           </div>
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-slate-200">
             {acwrAlerts.map(alert => (
               <div key={alert.player_id} className="px-4 py-3 flex items-center justify-between">
                 <div>
-                  <Link to={`/players/${alert.player_id}`} className="text-white font-medium hover:text-violet-300 transition-colors">
+                  <Link to={`/players/${alert.player_id}`} className="text-slate-900 font-medium hover:text-violet-300 transition-colors">
                     {alert.player_name}
                   </Link>
                   <span className="text-slate-500 text-xs ml-2">last: {alert.session_date}</span>
@@ -182,17 +182,17 @@ export default function Medical() {
       )}
 
       {/* Player list */}
-      <div className="rounded-xl border border-white/10 bg-white/5 overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/10 flex items-center gap-3">
-          <h2 className="font-semibold text-white text-sm">Squad Status</h2>
+      <div className="rounded-xl border border-slate-200 bg-white border border-slate-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-3">
+          <h2 className="font-semibold text-slate-900 text-sm">Squad Status</h2>
           <span className="text-slate-500 text-xs">{filteredPlayers.length} players</span>
           {statusFilter !== 'all' && (
-            <button onClick={() => setStatusFilter('all')} className="text-xs text-slate-500 hover:text-white ml-auto transition-colors">
+            <button onClick={() => setStatusFilter('all')} className="text-xs text-slate-500 hover:text-slate-900 ml-auto transition-colors">
               Clear filter ✕
             </button>
           )}
         </div>
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-slate-200">
           {filteredPlayers.length === 0 ? (
             <div className="px-4 py-8 text-center text-slate-500 text-sm">No players in this category</div>
           ) : (
@@ -203,7 +203,7 @@ export default function Medical() {
               return (
                 <div key={player.id} className="px-4 py-3 flex items-center gap-3 flex-wrap sm:flex-nowrap">
                   <Link to={`/players/${player.id}`} className="flex-1 min-w-0">
-                    <div className="text-white font-medium truncate">{player.name}</div>
+                    <div className="text-slate-900 font-medium truncate">{player.name}</div>
                     {player.position && <div className="text-slate-500 text-xs">{player.position}</div>}
                   </Link>
 
@@ -225,7 +225,7 @@ export default function Medical() {
 
                   <button
                     onClick={() => openInjuryModal(player.id)}
-                    className="text-xs text-slate-500 hover:text-white px-2 py-1 rounded border border-white/10 hover:border-white/30 transition-colors flex-shrink-0"
+                    className="text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded border border-slate-200 hover:border-slate-300 transition-colors flex-shrink-0"
                   >
                     Log injury
                   </button>
