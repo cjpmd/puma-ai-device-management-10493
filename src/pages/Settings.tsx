@@ -24,7 +24,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
     <button
       onClick={onClick}
       className={`px-4 py-2 text-sm rounded-lg transition-colors ${
-        active ? 'bg-violet-600 text-white' : 'text-white/50 hover:text-white hover:bg-white/10'
+        active ? 'bg-violet-600 text-white' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
       }`}
     >
       {children}
@@ -34,8 +34,8 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white/5 rounded-2xl p-6 space-y-4">
-      <h3 className="text-white font-medium">{title}</h3>
+    <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
+      <h3 className="text-slate-900 font-medium">{title}</h3>
       {children}
     </div>
   );
@@ -46,13 +46,13 @@ function InputRow({ label, value, onChange, type = 'text', placeholder = '' }: {
 }) {
   return (
     <div className="flex items-center gap-4">
-      <label className="text-white/50 text-sm w-44 flex-shrink-0">{label}</label>
+      <label className="text-slate-500 text-sm w-44 flex-shrink-0">{label}</label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+        className="flex-1 bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
       />
     </div>
   );
@@ -128,12 +128,12 @@ function StaffTab() {
             placeholder="staff@club.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+            className="flex-1 bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
           />
           <select
             value={role}
             onChange={(e) => setRole(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+            className="bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-violet-500"
           >
             <option value="coach">Coach</option>
             <option value="head_coach">Head Coach</option>
@@ -149,13 +149,13 @@ function StaffTab() {
       </SectionCard>
       <SectionCard title={`Current Staff (${staff.length})`}>
         {staff.length === 0 ? (
-          <p className="text-white/40 text-sm">No staff added yet.</p>
+          <p className="text-slate-400 text-sm">No staff added yet.</p>
         ) : (
           <div className="space-y-2">
             {staff.map((s) => (
               <div key={s.user_id} className="flex items-center justify-between py-1">
-                <span className="text-white/80 font-mono text-xs">{s.user_id.slice(0, 12)}…</span>
-                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full text-white/60 capitalize">{s.role?.replace(/_/g, ' ')}</span>
+                <span className="text-slate-700 font-mono text-xs">{s.user_id.slice(0, 12)}…</span>
+                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full text-slate-600 capitalize">{s.role?.replace(/_/g, ' ')}</span>
               </div>
             ))}
           </div>
@@ -209,12 +209,12 @@ function AttributesTab() {
             placeholder="Attribute name"
             value={newDef.name}
             onChange={(e) => setNewDef((f) => ({ ...f, name: e.target.value }))}
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+            className="flex-1 bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
           />
           <select
             value={newDef.category}
             onChange={(e) => setNewDef((f) => ({ ...f, category: e.target.value }))}
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+            className="bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-violet-500"
           >
             {ATTRIBUTE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
@@ -223,7 +223,7 @@ function AttributesTab() {
             min={1} max={100}
             value={newDef.max_value}
             onChange={(e) => setNewDef((f) => ({ ...f, max_value: e.target.value }))}
-            className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+            className="w-20 bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-violet-500"
             placeholder="Max"
           />
           <button onClick={addDef} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
@@ -235,19 +235,19 @@ function AttributesTab() {
       {byCategory.map(({ cat, items }) => (
         <SectionCard key={cat} title={`${cat.charAt(0).toUpperCase() + cat.slice(1)} (${items.length})`}>
           {items.length === 0 ? (
-            <p className="text-white/30 text-sm">No attributes in this category.</p>
+            <p className="text-slate-900/30 text-sm">No attributes in this category.</p>
           ) : (
             <div className="space-y-1">
               {items.map((def) => (
                 <div key={def.id} className="flex items-center gap-3 py-1">
-                  <span className={`flex-1 text-sm ${def.is_active ? 'text-white' : 'text-white/30 line-through'}`}>{def.name}</span>
-                  <span className="text-xs text-white/30">max {def.max_value}</span>
+                  <span className={`flex-1 text-sm ${def.is_active ? 'text-slate-900' : 'text-slate-900/30 line-through'}`}>{def.name}</span>
+                  <span className="text-xs text-slate-900/30">max {def.max_value}</span>
                   <button
                     onClick={() => toggleActive(def.id, def.is_active)}
                     className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
                       def.is_active
                         ? 'bg-emerald-500/20 text-emerald-400 hover:bg-red-500/20 hover:text-red-400'
-                        : 'bg-white/10 text-white/40 hover:bg-emerald-500/20 hover:text-emerald-400'
+                        : 'bg-white/10 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400'
                     }`}
                   >
                     {def.is_active ? 'Active' : 'Inactive'}
@@ -294,12 +294,12 @@ function CurriculumTab() {
               placeholder="Outcome title"
               value={form.title}
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+              className="flex-1 bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
             />
             <select
               value={form.age_group}
               onChange={(e) => setForm((f) => ({ ...f, age_group: e.target.value }))}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500"
+              className="bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-violet-500"
             >
               {['U7','U8','U9','U10','U11','U12','U13','U14','U15','U16','U18','U21'].map((g) => <option key={g} value={g}>{g}</option>)}
             </select>
@@ -309,7 +309,7 @@ function CurriculumTab() {
             value={form.description}
             onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             rows={2}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500 resize-none"
+            className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500 resize-none"
           />
           <button onClick={add} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
             Add outcome
@@ -322,8 +322,8 @@ function CurriculumTab() {
           <div className="space-y-2">
             {outcomes.filter((o) => o.age_group === ag).map((o) => (
               <div key={o.id}>
-                <p className="text-white text-sm">{o.title}</p>
-                {o.description && <p className="text-white/40 text-xs mt-0.5">{o.description}</p>}
+                <p className="text-slate-900 text-sm">{o.title}</p>
+                {o.description && <p className="text-slate-400 text-xs mt-0.5">{o.description}</p>}
               </div>
             ))}
           </div>
@@ -409,24 +409,24 @@ function IntegrationsTab() {
           href: null,
         },
       ].map((int) => (
-        <div key={int.name} className="bg-white/5 rounded-2xl p-5 flex items-start justify-between gap-4">
+        <div key={int.name} className="bg-white border border-slate-200 rounded-2xl p-5 flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-white font-medium">{int.name}</h3>
+              <h3 className="text-slate-900 font-medium">{int.name}</h3>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full ${
                   int.status === 'active'
                     ? 'bg-emerald-500/20 text-emerald-400'
-                    : 'bg-white/10 text-white/40'
+                    : 'bg-white/10 text-slate-400'
                 }`}
               >
                 {int.status === 'active' ? 'Active' : 'Coming soon'}
               </span>
             </div>
-            <p className="text-white/50 text-sm">{int.description}</p>
+            <p className="text-slate-500 text-sm">{int.description}</p>
           </div>
           {int.action && (
-            <button className="flex-shrink-0 bg-white/10 hover:bg-white/20 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+            <button className="flex-shrink-0 bg-white/10 hover:bg-white/20 text-slate-900 text-sm px-4 py-2 rounded-lg transition-colors">
               {int.action}
             </button>
           )}
@@ -474,7 +474,7 @@ function NotificationsTab() {
         <div className="space-y-3">
           {toggles.map(({ key, label }) => (
             <div key={key} className="flex items-center justify-between">
-              <span className="text-sm text-white/80">{label}</span>
+              <span className="text-sm text-slate-700">{label}</span>
               <button
                 onClick={() => setPrefs((p) => ({ ...p, [key]: !(merged[key] ?? true) }))}
                 className={`w-11 h-6 rounded-full transition-colors relative ${
