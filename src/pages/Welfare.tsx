@@ -162,7 +162,7 @@ export default function Welfare() {
             <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">Player</span>
               <select value={form.player_id} onChange={f('player_id')}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+                className="rounded-lg border border-slate-200 bg-white text-slate-900 placeholder-slate-400 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
                 <option value="">Select…</option>
                 {(players as any[]).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
@@ -170,14 +170,14 @@ export default function Welfare() {
             <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">Type</span>
               <select value={form.log_type} onChange={f('log_type')}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+                className="rounded-lg border border-slate-200 bg-white text-slate-900 placeholder-slate-400 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
                 {LOG_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </label>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">Status</span>
               <select value={form.status} onChange={f('status')}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
+                className="rounded-lg border border-slate-200 bg-white text-slate-900 placeholder-slate-400 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300">
                 <option value="open">Open</option>
                 <option value="monitoring">Monitoring</option>
                 <option value="resolved">Resolved</option>
@@ -186,12 +186,12 @@ export default function Welfare() {
             <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">Tags (comma-separated)</span>
               <input value={form.tags} onChange={f('tags')} placeholder="e.g. exam, family"
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                className="rounded-lg border border-slate-200 bg-white text-slate-900 placeholder-slate-400 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
             </label>
             <label className="flex flex-col gap-1 col-span-2">
               <span className="text-xs text-slate-500">Notes</span>
               <textarea value={form.notes} onChange={f('notes')} rows={3}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 resize-none" />
+                className="rounded-lg border border-slate-200 bg-white text-slate-900 placeholder-slate-400 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 resize-none" />
             </label>
           </div>
           {form.log_type === 'Safeguarding' && (
