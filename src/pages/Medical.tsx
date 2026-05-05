@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '@/integrations/supabase/client';
 import InjuryLogModal from '../components/medical/InjuryLogModal';
 
 const sb = supabase as any;

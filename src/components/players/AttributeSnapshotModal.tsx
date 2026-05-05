@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase } from '@/integrations/supabase/client';
 
 const sb = supabase as any;
 

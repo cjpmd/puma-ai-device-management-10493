@@ -17,7 +17,7 @@ import {
   Bar,
   ReferenceLine,
 } from 'recharts';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '@/integrations/supabase/client';
 import AttributeSnapshotModal from '../components/players/AttributeSnapshotModal';
 import MaturationCalculator from '../components/players/MaturationCalculator';
 
