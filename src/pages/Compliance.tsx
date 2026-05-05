@@ -46,7 +46,7 @@ function daysUntil(dateStr: string | null): number | null {
 
 function ExpiryBadge({ date }: { date: string | null }) {
   const days = daysUntil(date);
-  if (days === null) return <span className="text-xs text-white/40">Not recorded</span>;
+  if (days === null) return <span className="text-xs text-slate-400">Not recorded</span>;
   if (days < 0) return <span className="text-xs font-medium text-red-400">Expired {Math.abs(days)}d ago</span>;
   if (days <= WARNING_DAYS) return <span className="text-xs font-medium text-amber-400">Expires in {days}d</span>;
   return <span className="text-xs font-medium text-emerald-400">{new Date(date!).toLocaleDateString()}</span>;
@@ -151,18 +151,18 @@ export default function Compliance() {
 
       {/* EPPP Readiness */}
       <section>
-        <h2 className="text-white font-semibold mb-4">EPPP Readiness</h2>
-        <div className="bg-white/5 rounded-2xl p-6 space-y-4">
+        <h2 className="text-slate-900 font-semibold mb-4">EPPP Readiness</h2>
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
           <div className="flex items-center gap-4">
             <span className={`text-5xl font-bold ${readinessColor}`}>{readiness}%</span>
             <div className="flex-1">
-              <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${readinessBar}`}
                   style={{ width: `${readiness}%` }}
                 />
               </div>
-              <p className="text-white/50 text-xs mt-1">Overall EPPP compliance score</p>
+              <p className="text-slate-500 text-xs mt-1">Overall EPPP compliance score</p>
             </div>
           </div>
 
@@ -174,16 +174,16 @@ export default function Compliance() {
                 <div key={item.id} className="flex items-center gap-3">
                   <div
                     className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      ok ? 'bg-emerald-500' : 'bg-white/10'
+                      ok ? 'bg-emerald-500' : 'bg-slate-100'
                     }`}
                   >
                     {ok && (
-                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-3 h-3 text-slate-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                       </svg>
                     )}
                   </div>
-                  <span className={`text-sm ${ok ? 'text-white' : 'text-white/50'}`}>{item.label}</span>
+                  <span className={`text-sm ${ok ? 'text-slate-900' : 'text-slate-500'}`}>{item.label}</span>
                   {!ok && score > 0 && (
                     <span className="ml-auto text-xs text-amber-400">{score}%</span>
                   )}
@@ -196,14 +196,14 @@ export default function Compliance() {
 
       {/* Staff Qualifications */}
       <section>
-        <h2 className="text-white font-semibold mb-4">Staff Qualifications</h2>
+        <h2 className="text-slate-900 font-semibold mb-4">Staff Qualifications</h2>
         {staff.length === 0 ? (
-          <p className="text-white/40 text-sm">No staff records found.</p>
+          <p className="text-slate-400 text-sm">No staff records found.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-white/40 text-left">
+                <tr className="text-slate-400 text-left">
                   <th className="pb-2 font-medium">Name</th>
                   <th className="pb-2 font-medium">Role</th>
                   <th className="pb-2 font-medium">UEFA Licence</th>
@@ -215,15 +215,15 @@ export default function Compliance() {
               <tbody className="divide-y divide-white/5">
                 {staff.map((s) => (
                   <tr key={s.id}>
-                    <td className="py-3 text-white">{s.name}</td>
-                    <td className="py-3 text-white/60 capitalize">{s.role?.replace(/_/g, ' ')}</td>
+                    <td className="py-3 text-slate-900">{s.name}</td>
+                    <td className="py-3 text-slate-600 capitalize">{s.role?.replace(/_/g, ' ')}</td>
                     <td className="py-3">
                       {s.uefa_licence ? (
                         <span className="text-xs bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full">
                           {s.uefa_licence}
                         </span>
                       ) : (
-                        <span className="text-xs text-white/30">None</span>
+                        <span className="text-xs text-slate-900/30">None</span>
                       )}
                     </td>
                     <td className="py-3"><ExpiryBadge date={s.fa_safeguarding_expiry} /></td>
@@ -240,14 +240,14 @@ export default function Compliance() {
       {/* Safeguarding Audit Highlight */}
       {safeguardingAudit.length > 0 && (
         <section>
-          <h2 className="text-white font-semibold mb-4">
+          <h2 className="text-slate-900 font-semibold mb-4">
             <span className="inline-block w-2 h-2 bg-red-500 rounded-full mr-2 align-middle" />
             Safeguarding Activity (last 200 entries)
           </h2>
           <div className="bg-red-500/10 border border-red-500/20 rounded-2xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-white/40 text-left border-b border-white/10">
+                <tr className="text-slate-400 text-left border-b border-slate-200">
                   <th className="px-4 py-3 font-medium">When</th>
                   <th className="px-4 py-3 font-medium">Action</th>
                   <th className="px-4 py-3 font-medium">Actor</th>
@@ -256,11 +256,11 @@ export default function Compliance() {
               <tbody className="divide-y divide-white/5">
                 {safeguardingAudit.slice(0, 20).map((e) => (
                   <tr key={e.id}>
-                    <td className="px-4 py-2 text-white/50 whitespace-nowrap">
+                    <td className="px-4 py-2 text-slate-500 whitespace-nowrap">
                       {new Date(e.created_at).toLocaleString()}
                     </td>
-                    <td className="px-4 py-2 text-white font-mono text-xs">{e.action}</td>
-                    <td className="px-4 py-2 text-white/60 font-mono text-xs">{e.actor_id?.slice(0, 8)}…</td>
+                    <td className="px-4 py-2 text-slate-900 font-mono text-xs">{e.action}</td>
+                    <td className="px-4 py-2 text-slate-600 font-mono text-xs">{e.actor_id?.slice(0, 8)}…</td>
                   </tr>
                 ))}
               </tbody>
@@ -272,12 +272,12 @@ export default function Compliance() {
       {/* Full Audit Trail */}
       <section>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-white font-semibold">Audit Trail</h2>
+          <h2 className="text-slate-900 font-semibold">Audit Trail</h2>
           <div className="flex gap-2">
             <select
               value={auditTable}
               onChange={(e) => setAuditTable(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 focus:outline-none focus:border-violet-500"
+              className="bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:border-violet-500"
             >
               <option value="">All tables</option>
               {uniqueTables.map((t) => (
@@ -289,18 +289,18 @@ export default function Compliance() {
               placeholder="Search action…"
               value={auditFilter}
               onChange={(e) => setAuditFilter(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white/80 placeholder-white/30 focus:outline-none focus:border-violet-500 w-48"
+              className="bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-violet-500 w-48"
             />
           </div>
         </div>
 
         {auditEntries.length === 0 ? (
-          <p className="text-white/40 text-sm">No audit entries found.</p>
+          <p className="text-slate-400 text-sm">No audit entries found.</p>
         ) : (
-          <div className="bg-white/5 rounded-2xl overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-white/40 text-left border-b border-white/10">
+                <tr className="text-slate-400 text-left border-b border-slate-200">
                   <th className="px-4 py-3 font-medium">When</th>
                   <th className="px-4 py-3 font-medium">Table</th>
                   <th className="px-4 py-3 font-medium">Action</th>
@@ -316,17 +316,17 @@ export default function Compliance() {
                       e.table_name === 'welfare_log' ? 'bg-red-500/5' : ''
                     }`}
                   >
-                    <td className="px-4 py-2 text-white/50 whitespace-nowrap text-xs">
+                    <td className="px-4 py-2 text-slate-500 whitespace-nowrap text-xs">
                       {new Date(e.created_at).toLocaleString()}
                     </td>
                     <td className="px-4 py-2">
-                      <span className="text-xs font-mono bg-white/5 px-1.5 py-0.5 rounded text-white/70">
+                      <span className="text-xs font-mono bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-600">
                         {e.table_name}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-white text-xs font-mono">{e.action}</td>
-                    <td className="px-4 py-2 text-white/40 text-xs font-mono">{e.record_id?.slice(0, 8)}…</td>
-                    <td className="px-4 py-2 text-white/40 text-xs font-mono">{e.actor_id?.slice(0, 8)}…</td>
+                    <td className="px-4 py-2 text-slate-900 text-xs font-mono">{e.action}</td>
+                    <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.record_id?.slice(0, 8)}…</td>
+                    <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.actor_id?.slice(0, 8)}…</td>
                   </tr>
                 ))}
               </tbody>
