@@ -138,13 +138,13 @@ export default function Scouting() {
               <label key={k} className="flex flex-col gap-1">
                 <span className="text-xs text-slate-500">{label}</span>
                 <input value={form[k]} onChange={f(k)} placeholder={ph}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                  className="rounded-lg border border-slate-200 bg-white text-slate-900 placeholder-slate-400 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
               </label>
             ))}
             <label className="flex flex-col gap-1">
               <span className="text-xs text-slate-500">DOB</span>
               <input type="date" value={form.dob} onChange={f('dob')}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
+                className="rounded-lg border border-slate-200 bg-white text-slate-900 placeholder-slate-400 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
             </label>
           </div>
           <div className="flex gap-2 mt-4 justify-end">
