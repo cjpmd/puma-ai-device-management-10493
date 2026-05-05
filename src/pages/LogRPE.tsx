@@ -113,7 +113,7 @@ export default function LogRPE() {
           <div className="text-slate-400 text-sm">Thanks {player.name} — your session has been recorded.</div>
           <button
             onClick={() => { setDone(false); setRpe(0); setForm(f => ({ ...f, duration: '', notes: '' })); }}
-            className="mt-4 px-5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-colors"
+            className="mt-4 px-5 py-2 bg-white border border-slate-200 hover:bg-slate-200 text-slate-900 rounded-lg text-sm transition-colors"
           >
             Log another
           </button>
@@ -128,12 +128,12 @@ export default function LogRPE() {
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-4">
         <div className="text-center">
-          <div className="text-2xl font-bold text-white">{player.name}</div>
+          <div className="text-2xl font-bold text-slate-900">{player.name}</div>
           {player.position && <div className="text-slate-400 text-sm">{player.position}</div>}
           <div className="text-slate-600 text-xs mt-0.5">Session RPE Log</div>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-slate-900 border border-white/10 rounded-2xl p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-slate-400 mb-1">Date</label>
@@ -141,7 +141,7 @@ export default function LogRPE() {
                 type="date"
                 value={form.session_date}
                 onChange={e => setForm(f => ({ ...f, session_date: e.target.value }))}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+                className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-slate-900 text-sm"
                 required
               />
             </div>
@@ -150,7 +150,7 @@ export default function LogRPE() {
               <select
                 value={form.session_type}
                 onChange={e => setForm(f => ({ ...f, session_type: e.target.value }))}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+                className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-slate-900 text-sm"
               >
                 {SESSION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
@@ -172,7 +172,7 @@ export default function LogRPE() {
                       ? n <= 3 ? 'bg-emerald-500 text-white shadow-lg'
                         : n <= 6 ? 'bg-amber-500 text-white shadow-lg'
                         : 'bg-red-500 text-white shadow-lg'
-                      : 'bg-white/5 text-slate-400 hover:bg-white/10'
+                      : 'bg-white border border-slate-200 text-slate-400 hover:bg-slate-100'
                   }`}
                 >
                   {n}
@@ -190,15 +190,15 @@ export default function LogRPE() {
               value={form.duration}
               onChange={e => setForm(f => ({ ...f, duration: e.target.value }))}
               placeholder="e.g. 90"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+              className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-slate-900 text-sm"
               required
             />
           </div>
 
           {loadPreview !== null && (
-            <div className="text-center py-1.5 bg-white/5 rounded-lg text-sm">
+            <div className="text-center py-1.5 bg-white border border-slate-200 rounded-lg text-sm">
               <span className="text-slate-400">Session load: </span>
-              <span className="text-white font-bold">{loadPreview} AU</span>
+              <span className="text-slate-900 font-bold">{loadPreview} AU</span>
             </div>
           )}
 
@@ -209,7 +209,7 @@ export default function LogRPE() {
               value={form.notes}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
               placeholder="Any comments…"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+              className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-slate-900 text-sm"
             />
           </div>
 

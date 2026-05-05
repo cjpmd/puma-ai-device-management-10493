@@ -133,42 +133,42 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-slate-900 border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92vh] flex flex-col shadow-2xl">
+      <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-2xl max-h-[92vh] flex flex-col shadow-2xl">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0">
           <div>
-            <h2 className="text-white font-semibold">New Attribute Snapshot</h2>
-            <p className="text-white/40 text-xs mt-0.5">
+            <h2 className="text-slate-900 font-semibold">New Attribute Snapshot</h2>
+            <p className="text-slate-400 text-xs mt-0.5">
               {currentSeason()} · both scorers score independently
             </p>
           </div>
           <button
             onClick={onClose}
-            className="text-white/40 hover:text-white transition-colors text-2xl leading-none w-8 h-8 flex items-center justify-center"
+            className="text-slate-400 hover:text-slate-900 transition-colors text-2xl leading-none w-8 h-8 flex items-center justify-center"
           >
             &times;
           </button>
         </div>
 
         {/* Scorer names */}
-        <div className="px-6 py-4 grid grid-cols-2 gap-3 border-b border-white/10 flex-shrink-0">
+        <div className="px-6 py-4 grid grid-cols-2 gap-3 border-b border-slate-200 flex-shrink-0">
           <div>
-            <label className="text-white/50 text-xs block mb-1">Scorer 1 name</label>
+            <label className="text-slate-500 text-xs block mb-1">Scorer 1 name</label>
             <input
               value={scorer1}
               onChange={(e) => setScorer1(e.target.value)}
               placeholder="e.g. James Smith"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+              className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
             />
           </div>
           <div>
-            <label className="text-white/50 text-xs block mb-1">Scorer 2 name</label>
+            <label className="text-slate-500 text-xs block mb-1">Scorer 2 name</label>
             <input
               value={scorer2}
               onChange={(e) => setScorer2(e.target.value)}
               placeholder="e.g. Alex Jones"
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:border-violet-500"
+              className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-violet-500"
             />
           </div>
         </div>
@@ -176,12 +176,12 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
         {/* Attribute list */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {isLoading && (
-            <p className="text-white/40 text-sm text-center py-8">Loading attributes…</p>
+            <p className="text-slate-400 text-sm text-center py-8">Loading attributes…</p>
           )}
 
           {byCategory.map(({ cat, items }) => (
             <div key={cat}>
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-3 capitalize">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3 capitalize">
                 {cat}
               </h3>
               <div className="space-y-4">
@@ -200,23 +200,23 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
                       className={`rounded-xl p-3 ${
                         diverged
                           ? 'bg-red-500/10 border border-red-500/30'
-                          : 'bg-white/5'
+                          : 'bg-white border border-slate-200'
                       }`}
                     >
                       {/* Attribute header */}
                       <div className="flex items-center justify-between mb-2">
                         <span
                           className={`text-sm font-medium ${
-                            diverged ? 'text-red-300' : 'text-white'
+                            diverged ? 'text-red-300' : 'text-slate-900'
                           }`}
                         >
                           {def.name}
                         </span>
                         <div className="flex items-center gap-3 text-xs">
                           {avg !== null && !diverged && (
-                            <span className="text-white/40">
+                            <span className="text-slate-400">
                               avg 
-                              <span className="text-white/70 font-medium">{avg}</span>
+                              <span className="text-slate-600 font-medium">{avg}</span>
                             </span>
                           )}
                           {diverged && (
@@ -229,7 +229,7 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
 
                       {/* Scorer 1 pip row */}
                       <div className="mb-2">
-                        <p className="text-[10px] text-white/30 mb-1">
+                        <p className="text-[10px] text-slate-400 mb-1">
                           {scorer1 || 'Scorer 1'}
                           {s1 != null && (
                             <span className="ml-1 text-violet-400 font-semibold">{s1}</span>
@@ -243,7 +243,7 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
                               className={`flex-1 h-6 rounded-full text-[9px] font-bold transition-colors ${
                                 s1 != null && n <= s1
                                   ? 'bg-violet-500 text-white'
-                                  : 'bg-white/10 text-white/25 hover:bg-violet-400/30 hover:text-white/60'
+                                  : 'bg-white border border-slate-200 text-white/25 hover:bg-violet-400/30 hover:text-slate-900/60'
                               }`}
                             >
                               {n}
@@ -254,7 +254,7 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
 
                       {/* Scorer 2 pip row */}
                       <div>
-                        <p className="text-[10px] text-white/30 mb-1">
+                        <p className="text-[10px] text-slate-400 mb-1">
                           {scorer2 || 'Scorer 2'}
                           {s2 != null && (
                             <span className="ml-1 text-emerald-400 font-semibold">{s2}</span>
@@ -268,7 +268,7 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
                               className={`flex-1 h-6 rounded-full text-[9px] font-bold transition-colors ${
                                 s2 != null && n <= s2
                                   ? 'bg-emerald-500 text-white'
-                                  : 'bg-white/10 text-white/25 hover:bg-emerald-400/30 hover:text-white/60'
+                                  : 'bg-white border border-slate-200 text-white/25 hover:bg-emerald-400/30 hover:text-slate-900/60'
                               }`}
                             >
                               {n}
@@ -286,27 +286,27 @@ export default function AttributeSnapshotModal({ playerId, onClose, onSuccess }:
 
         {/* Descriptor hint — sticky above footer */}
         {activeDesc && (
-          <div className="px-6 py-2 border-t border-white/5 bg-white/[0.02] flex-shrink-0">
-            <p className="text-xs text-white/40 italic">{activeDesc}</p>
+          <div className="px-6 py-2 border-t border-slate-200 bg-white/[0.02] flex-shrink-0">
+            <p className="text-xs text-slate-400 italic">{activeDesc}</p>
           </div>
         )}
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-white/10 flex items-center gap-4 flex-shrink-0">
+        <div className="px-6 py-4 border-t border-slate-200 flex items-center gap-4 flex-shrink-0">
           <p
             className={`text-xs flex-1 ${
               divergentIds.size > 0
                 ? 'text-red-400'
                 : allScored
                 ? 'text-emerald-400'
-                : 'text-white/40'
+                : 'text-slate-400'
             }`}
           >
             {error || footerHint}
           </p>
           <button
             onClick={onClose}
-            className="text-sm text-white/50 hover:text-white transition-colors px-3 py-2"
+            className="text-sm text-slate-500 hover:text-slate-900 transition-colors px-3 py-2"
           >
             Cancel
           </button>

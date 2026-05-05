@@ -74,14 +74,14 @@ export default function FitnessTestModal({ players, benchmarks, bioAgeMap, onClo
     onSuccess();
   }
 
-  const sel = 'w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm';
+  const sel = 'w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-slate-900 text-sm';
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4 overflow-y-auto" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-md my-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">Log Fitness Test</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-lg">✕</button>
+      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md my-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+          <h2 className="text-lg font-semibold text-slate-900">Log Fitness Test</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-900 text-lg">✕</button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
@@ -133,7 +133,7 @@ export default function FitnessTestModal({ players, benchmarks, bioAgeMap, onClo
             <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional" className={sel} />
           </div>
           <div className="flex gap-3 pt-1">
-            <button type="button" onClick={onClose} className="flex-1 py-2 border border-white/10 rounded-lg text-slate-400 hover:text-white text-sm transition-colors">Cancel</button>
+            <button type="button" onClick={onClose} className="flex-1 py-2 border border-slate-200 rounded-lg text-slate-400 hover:text-slate-900 text-sm transition-colors">Cancel</button>
             <button type="submit" disabled={!form.player_id || !testName || !form.value || saving}
               className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
               {saving ? 'Saving…' : 'Save Result'}

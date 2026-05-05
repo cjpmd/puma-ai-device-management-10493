@@ -114,17 +114,17 @@ export default function MaturationCalculator({
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-slate-900 border border-white/10 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl">
+      <div className="bg-white border border-slate-200 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <div>
-            <h2 className="text-white font-semibold">Maturation Assessment</h2>
-            <p className="text-white/40 text-xs mt-0.5">Mirwald 2002 · male equation</p>
+            <h2 className="text-slate-900 font-semibold">Maturation Assessment</h2>
+            <p className="text-slate-400 text-xs mt-0.5">Mirwald 2002 · male equation</p>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center text-white/40 hover:text-white transition-colors text-2xl leading-none"
+            className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-900 transition-colors text-2xl leading-none"
           >
             &times;
           </button>
@@ -140,7 +140,7 @@ export default function MaturationCalculator({
               { label: 'Mass',      unit: 'kg', value: mass,   set: setMass,   placeholder: 'e.g. 54' },
             ] as const).map(({ label, unit, value, set, placeholder }) => (
               <div key={label}>
-                <label className="text-white/50 text-xs block mb-1">
+                <label className="text-slate-500 text-xs block mb-1">
                   {label}{' '}
                   <span className="text-white/25">({unit})</span>
                 </label>
@@ -151,7 +151,7 @@ export default function MaturationCalculator({
                   value={value}
                   onChange={(e) => set(e.target.value)}
                   placeholder={placeholder}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-violet-500 [appearance:textfield]"
+                  className="w-full bg-white border border-slate-200 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder-white/20 focus:outline-none focus:border-violet-500 [appearance:textfield]"
                 />
               </div>
             ))}
@@ -160,29 +160,29 @@ export default function MaturationCalculator({
           {/* Derived stats row */}
           {result ? (
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="bg-white/5 rounded-xl py-3">
-                <p className="text-[11px] text-white/40 mb-1">Leg length</p>
-                <p className="text-white font-semibold text-sm">{result.legLen} cm</p>
+              <div className="bg-white border border-slate-200 rounded-xl py-3">
+                <p className="text-[11px] text-slate-400 mb-1">Leg length</p>
+                <p className="text-slate-900 font-semibold text-sm">{result.legLen} cm</p>
               </div>
-              <div className="bg-white/5 rounded-xl py-3">
-                <p className="text-[11px] text-white/40 mb-1">Chrono age</p>
-                <p className="text-white font-semibold text-sm">{chronoAge.toFixed(2)} yr</p>
+              <div className="bg-white border border-slate-200 rounded-xl py-3">
+                <p className="text-[11px] text-slate-400 mb-1">Chrono age</p>
+                <p className="text-slate-900 font-semibold text-sm">{chronoAge.toFixed(2)} yr</p>
               </div>
-              <div className="bg-white/5 rounded-xl py-3">
-                <p className="text-[11px] text-white/40 mb-1">Bio age</p>
-                <p className="text-white font-semibold text-sm">{result.bioAge.toFixed(2)} yr</p>
+              <div className="bg-white border border-slate-200 rounded-xl py-3">
+                <p className="text-[11px] text-slate-400 mb-1">Bio age</p>
+                <p className="text-slate-900 font-semibold text-sm">{result.bioAge.toFixed(2)} yr</p>
               </div>
             </div>
           ) : (
-            <div className="rounded-xl bg-white/5 border border-dashed border-white/10 py-6 text-center">
-              <p className="text-white/30 text-sm">Enter measurements to calculate</p>
+            <div className="rounded-xl bg-white border border-slate-200 border border-dashed border-slate-200 py-6 text-center">
+              <p className="text-slate-400 text-sm">Enter measurements to calculate</p>
             </div>
           )}
 
           {/* Age bar */}
           {result && (
             <div className="space-y-2">
-              <div className="relative h-5 bg-white/10 rounded-full overflow-visible">
+              <div className="relative h-5 bg-white border border-slate-200 rounded-full overflow-visible">
                 {/* Chrono marker */}
                 <div
                   className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-sky-400 border-2 border-slate-900 shadow z-10"
@@ -201,7 +201,7 @@ export default function MaturationCalculator({
                   <span key={y}>{y}</span>
                 ))}
               </div>
-              <div className="flex items-center gap-4 text-xs text-white/50 flex-wrap">
+              <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-full bg-sky-400 flex-shrink-0" />
                   Chrono {chronoAge.toFixed(2)}
@@ -211,10 +211,10 @@ export default function MaturationCalculator({
                   Bio {result.bioAge.toFixed(2)}
                 </span>
                 <span className="ml-auto flex items-center gap-1">
-                  <span className="text-white/30">offset</span>
+                  <span className="text-slate-400">offset</span>
                   <span
                     className={`font-semibold ${
-                      result.offset > 0 ? 'text-orange-300' : result.offset < 0 ? 'text-sky-300' : 'text-white/60'
+                      result.offset > 0 ? 'text-orange-300' : result.offset < 0 ? 'text-sky-300' : 'text-slate-600'
                     }`}
                   >
                     {result.offset > 0 ? '+' : ''}{result.offset}
@@ -230,7 +230,7 @@ export default function MaturationCalculator({
               <span className={`inline-block text-xs px-3 py-1 rounded-full font-medium ${badge.cls}`}>
                 {badge.label}
               </span>
-              <p className="text-white/50 text-xs leading-relaxed">{interp}</p>
+              <p className="text-slate-500 text-xs leading-relaxed">{interp}</p>
             </div>
           )}
 
@@ -241,7 +241,7 @@ export default function MaturationCalculator({
         <div className="px-6 pb-6 flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-white/50 hover:text-white transition-colors"
+            className="px-4 py-2 text-sm text-slate-500 hover:text-slate-900 transition-colors"
           >
             Cancel
           </button>
