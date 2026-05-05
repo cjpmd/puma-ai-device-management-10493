@@ -155,7 +155,7 @@ function StaffTab() {
             {staff.map((s) => (
               <div key={s.user_id} className="flex items-center justify-between py-1">
                 <span className="text-slate-700 font-mono text-xs">{s.user_id.slice(0, 12)}…</span>
-                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full text-slate-600 capitalize">{s.role?.replace(/_/g, ' ')}</span>
+                <span className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 capitalize">{s.role?.replace(/_/g, ' ')}</span>
               </div>
             ))}
           </div>
@@ -247,7 +247,7 @@ function AttributesTab() {
                     className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
                       def.is_active
                         ? 'bg-emerald-500/20 text-emerald-400 hover:bg-red-500/20 hover:text-red-400'
-                        : 'bg-white/10 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400'
+                        : 'bg-slate-100 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400'
                     }`}
                   >
                     {def.is_active ? 'Active' : 'Inactive'}
@@ -417,7 +417,7 @@ function IntegrationsTab() {
                 className={`text-xs px-2 py-0.5 rounded-full ${
                   int.status === 'active'
                     ? 'bg-emerald-500/20 text-emerald-400'
-                    : 'bg-white/10 text-slate-400'
+                    : 'bg-slate-100 text-slate-400'
                 }`}
               >
                 {int.status === 'active' ? 'Active' : 'Coming soon'}
@@ -426,7 +426,7 @@ function IntegrationsTab() {
             <p className="text-slate-500 text-sm">{int.description}</p>
           </div>
           {int.action && (
-            <button className="flex-shrink-0 bg-white/10 hover:bg-white/20 text-slate-900 text-sm px-4 py-2 rounded-lg transition-colors">
+            <button className="flex-shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-900 text-sm px-4 py-2 rounded-lg transition-colors">
               {int.action}
             </button>
           )}
@@ -478,7 +478,7 @@ function NotificationsTab() {
               <button
                 onClick={() => setPrefs((p) => ({ ...p, [key]: !(merged[key] ?? true) }))}
                 className={`w-11 h-6 rounded-full transition-colors relative ${
-                  (merged[key] ?? true) ? 'bg-violet-600' : 'bg-white/10'
+                  (merged[key] ?? true) ? 'bg-violet-600' : 'bg-slate-100'
                 }`}
               >
                 <span

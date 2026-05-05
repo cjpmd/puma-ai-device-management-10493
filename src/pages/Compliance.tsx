@@ -156,7 +156,7 @@ export default function Compliance() {
           <div className="flex items-center gap-4">
             <span className={`text-5xl font-bold ${readinessColor}`}>{readiness}%</span>
             <div className="flex-1">
-              <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${readinessBar}`}
                   style={{ width: `${readiness}%` }}
@@ -174,7 +174,7 @@ export default function Compliance() {
                 <div key={item.id} className="flex items-center gap-3">
                   <div
                     className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      ok ? 'bg-emerald-500' : 'bg-white/10'
+                      ok ? 'bg-emerald-500' : 'bg-slate-100'
                     }`}
                   >
                     {ok && (
