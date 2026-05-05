@@ -60,6 +60,20 @@
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
+
+  /* Native form controls inherit body color (white) by default, which is unreadable
+     on the light AppShell pages. Force readable defaults; pages with dark surfaces
+     opt back in with explicit text-white utilities. */
+  input, select, textarea {
+    color: hsl(222 47% 11%);
+  }
+  input::placeholder, textarea::placeholder {
+    color: hsl(215 16% 47%);
+  }
+  option {
+    color: hsl(222 47% 11%);
+    background: #ffffff;
+  }
 }
 
 @layer utilities {
