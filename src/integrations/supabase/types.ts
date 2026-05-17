@@ -1678,7 +1678,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      user_can_access_player: {
+        Args: { _player_id: string; _user_id: string }
+        Returns: boolean
+      }
+      user_has_club_access: {
+        Args: { _club_id: string; _user_id: string }
+        Returns: boolean
+      }
+      user_has_team_access: {
+        Args: { _team_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never
