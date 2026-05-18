@@ -6,11 +6,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { TravelOverviewTab  } from '@/components/travel/TravelOverviewTab';
 import { TravelItineraryTab } from '@/components/travel/TravelItineraryTab';
 import { TravelLogisticsTab } from '@/components/travel/TravelLogisticsTab';
+import { TravelParentViewTab } from '@/components/travel/TravelParentView';
 
 // ─── Remaining sub-component imports (uncomment as each file is created) ──────
-// import { TravelParentViewTab } from '@/components/travel/TravelParentViewTab';
-// import { TravelUpdatesTab    } from '@/components/travel/TravelUpdatesTab';
-// import { TravelDocumentsTab  } from '@/components/travel/TravelDocumentsTab';
+// import { TravelUpdatesTab   } from '@/components/travel/TravelUpdatesTab';
+// import { TravelDocumentsTab } from '@/components/travel/TravelDocumentsTab';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,12 +149,12 @@ export default function TravelEventDetail() {
   const n      = nightCount(event.departure_date, event.return_date);
 
   const tabContent: Record<TabId, React.ReactNode> = {
-    overview:  <TravelOverviewTab  event={event} />,
-    itinerary: <TravelItineraryTab event={event} />,
-    logistics: <TravelLogisticsTab event={event} />,
-    parents:   <Placeholder label="Parent view" hint="src/components/travel/TravelParentViewTab.tsx" />,
-    updates:   <Placeholder label="Updates"     hint="src/components/travel/TravelUpdatesTab.tsx"    />,
-    documents: <Placeholder label="Documents"   hint="src/components/travel/TravelDocumentsTab.tsx"  />,
+    overview:  <TravelOverviewTab    event={event} />,
+    itinerary: <TravelItineraryTab   event={event} />,
+    logistics: <TravelLogisticsTab   event={event} />,
+    parents:   <TravelParentViewTab  event={event} />,
+    updates:   <Placeholder label="Updates"   hint="src/components/travel/TravelUpdatesTab.tsx"   />,
+    documents: <Placeholder label="Documents" hint="src/components/travel/TravelDocumentsTab.tsx" />,
   };
 
   return (
@@ -175,7 +175,8 @@ export default function TravelEventDetail() {
             <h1 className="text-xl font-bold text-slate-900 leading-tight">
               {event.title}
             </h1>
-            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${status.bg} ${status.text}`}>
+            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full
+                              ${status.bg} ${status.text}`}>
               {status.label}
             </span>
           </div>
