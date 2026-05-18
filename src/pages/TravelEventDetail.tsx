@@ -7,9 +7,9 @@ import { TravelOverviewTab  } from '@/components/travel/TravelOverviewTab';
 import { TravelItineraryTab } from '@/components/travel/TravelItineraryTab';
 import { TravelLogisticsTab } from '@/components/travel/TravelLogisticsTab';
 import { TravelParentViewTab } from '@/components/travel/TravelParentView';
+import { TravelUpdatesTab   } from '@/components/travel/TravelUpdatesTab';
 
 // ─── Remaining sub-component imports (uncomment as each file is created) ──────
-// import { TravelUpdatesTab   } from '@/components/travel/TravelUpdatesTab';
 // import { TravelDocumentsTab } from '@/components/travel/TravelDocumentsTab';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -149,11 +149,11 @@ export default function TravelEventDetail() {
   const n      = nightCount(event.departure_date, event.return_date);
 
   const tabContent: Record<TabId, React.ReactNode> = {
-    overview:  <TravelOverviewTab    event={event} />,
-    itinerary: <TravelItineraryTab   event={event} />,
-    logistics: <TravelLogisticsTab   event={event} />,
-    parents:   <TravelParentViewTab  event={event} />,
-    updates:   <Placeholder label="Updates"   hint="src/components/travel/TravelUpdatesTab.tsx"   />,
+    overview:  <TravelOverviewTab   event={event} />,
+    itinerary: <TravelItineraryTab  event={event} />,
+    logistics: <TravelLogisticsTab  event={event} />,
+    parents:   <TravelParentViewTab event={event} />,
+    updates:   <TravelUpdatesTab    event={event} />,
     documents: <Placeholder label="Documents" hint="src/components/travel/TravelDocumentsTab.tsx" />,
   };
 
