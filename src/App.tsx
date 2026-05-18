@@ -35,6 +35,8 @@ import Compliance from "./pages/Compliance";
 import Settings from "./pages/Settings";
 import LogRPE from "./pages/LogRPE";
 import FitnessTesting from "./pages/FitnessTesting";
+import TravelEvents from "./pages/TravelEvents";
+import TravelEventDetail from "./pages/TravelEventDetail";
 
 const queryClient = new QueryClient();
 
@@ -86,18 +88,20 @@ const AppRoutes = () => {
       <Route path="/matches/:id"       element={<PrivateRoute><MobileNavShell><MatchDetail /></MobileNavShell></PrivateRoute>} />
 
       {/* Web dashboard */}
-      <Route path="/dashboard" element={<PrivateRoute><AppShell><Dashboard /></AppShell></PrivateRoute>} />
-      <Route path="/players"   element={<PrivateRoute><AppShell><Players /></AppShell></PrivateRoute>} />
-      <Route path="/players/:id" element={<PrivateRoute><AppShell><PlayerProfile /></AppShell></PrivateRoute>} />
-      <Route path="/squads"    element={<PrivateRoute><AppShell><PlaceholderPage module="Squads" /></AppShell></PrivateRoute>} />
-      <Route path="/development" element={<PrivateRoute><AppShell><PlaceholderPage module="Development" /></AppShell></PrivateRoute>} />
-      <Route path="/medical"   element={<PrivateRoute><AppShell><Medical /></AppShell></PrivateRoute>} />
-      <Route path="/welfare"   element={<PrivateRoute><AppShell><Welfare /></AppShell></PrivateRoute>} />
-      <Route path="/scouting"  element={<PrivateRoute><AppShell><Scouting /></AppShell></PrivateRoute>} />
+      <Route path="/dashboard"       element={<PrivateRoute><AppShell><Dashboard /></AppShell></PrivateRoute>} />
+      <Route path="/players"         element={<PrivateRoute><AppShell><Players /></AppShell></PrivateRoute>} />
+      <Route path="/players/:id"     element={<PrivateRoute><AppShell><PlayerProfile /></AppShell></PrivateRoute>} />
+      <Route path="/squads"          element={<PrivateRoute><AppShell><PlaceholderPage module="Squads" /></AppShell></PrivateRoute>} />
+      <Route path="/development"     element={<PrivateRoute><AppShell><PlaceholderPage module="Development" /></AppShell></PrivateRoute>} />
+      <Route path="/medical"         element={<PrivateRoute><AppShell><Medical /></AppShell></PrivateRoute>} />
+      <Route path="/welfare"         element={<PrivateRoute><AppShell><Welfare /></AppShell></PrivateRoute>} />
+      <Route path="/scouting"        element={<PrivateRoute><AppShell><Scouting /></AppShell></PrivateRoute>} />
       <Route path="/fitness-testing" element={<PrivateRoute><AppShell><FitnessTesting /></AppShell></PrivateRoute>} />
-      <Route path="/coaching"  element={<PrivateRoute><AppShell><PlaceholderPage module="Coaching" /></AppShell></PrivateRoute>} />
-      <Route path="/compliance" element={<PrivateRoute><AppShell><Compliance /></AppShell></PrivateRoute>} />
-      <Route path="/settings"  element={<PrivateRoute><AppShell><Settings /></AppShell></PrivateRoute>} />
+      <Route path="/coaching"        element={<PrivateRoute><AppShell><PlaceholderPage module="Coaching" /></AppShell></PrivateRoute>} />
+      <Route path="/compliance"      element={<PrivateRoute><AppShell><Compliance /></AppShell></PrivateRoute>} />
+      <Route path="/travel"          element={<PrivateRoute><AppShell><TravelEvents /></AppShell></PrivateRoute>} />
+      <Route path="/travel/:id"      element={<PrivateRoute><AppShell><TravelEventDetail /></AppShell></PrivateRoute>} />
+      <Route path="/settings"        element={<PrivateRoute><AppShell><Settings /></AppShell></PrivateRoute>} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
