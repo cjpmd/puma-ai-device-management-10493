@@ -9,8 +9,7 @@ import { TravelLogisticsTab } from '@/components/travel/TravelLogisticsTab';
 import { TravelParentViewTab } from '@/components/travel/TravelParentView';
 import { TravelUpdatesTab   } from '@/components/travel/TravelUpdatesTab';
 
-// ─── Remaining sub-component imports (uncomment as each file is created) ──────
-// import { TravelDocumentsTab } from '@/components/travel/TravelDocumentsTab';
+import { TravelDocumentsTab } from '@/components/travel/TravelDocumentsTab';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -154,7 +153,7 @@ export default function TravelEventDetail() {
     logistics: <TravelLogisticsTab  event={event} />,
     parents:   <TravelParentViewTab event={event} />,
     updates:   <TravelUpdatesTab    event={event} />,
-    documents: <Placeholder label="Documents" hint="src/components/travel/TravelDocumentsTab.tsx" />,
+    documents: <TravelDocumentsTab event={event} />,
   };
 
   return (
