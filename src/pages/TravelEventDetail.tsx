@@ -4,9 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, MapPin, Calendar, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { TravelOverviewTab } from '@/components/travel/TravelOverviewTab';
+import { TravelItineraryTab } from '@/components/travel/TravelItineraryTab';
 
 // ─── Remaining sub-component imports (uncomment as each file is created) ──────
-// import { TravelItineraryTab  } from '@/components/travel/TravelItineraryTab';
 // import { TravelLogisticsTab  } from '@/components/travel/TravelLogisticsTab';
 // import { TravelParentViewTab } from '@/components/travel/TravelParentViewTab';
 // import { TravelUpdatesTab    } from '@/components/travel/TravelUpdatesTab';
@@ -154,11 +154,11 @@ export default function TravelEventDetail() {
 
   const tabContent: Record<TabId, React.ReactNode> = {
     overview:  <TravelOverviewTab event={event} />,
-    itinerary: <Placeholder label="Itinerary"    hint="src/components/travel/TravelItineraryTab.tsx"  />,
-    logistics: <Placeholder label="Logistics"    hint="src/components/travel/TravelLogisticsTab.tsx"  />,
-    parents:   <Placeholder label="Parent view"  hint="src/components/travel/TravelParentViewTab.tsx" />,
-    updates:   <Placeholder label="Updates"      hint="src/components/travel/TravelUpdatesTab.tsx"    />,
-    documents: <Placeholder label="Documents"    hint="src/components/travel/TravelDocumentsTab.tsx"  />,
+    itinerary: <TravelItineraryTab event={event} />,
+    logistics: <Placeholder label="Logistics"   hint="src/components/travel/TravelLogisticsTab.tsx"  />,
+    parents:   <Placeholder label="Parent view" hint="src/components/travel/TravelParentViewTab.tsx" />,
+    updates:   <Placeholder label="Updates"     hint="src/components/travel/TravelUpdatesTab.tsx"    />,
+    documents: <Placeholder label="Documents"   hint="src/components/travel/TravelDocumentsTab.tsx"  />,
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
