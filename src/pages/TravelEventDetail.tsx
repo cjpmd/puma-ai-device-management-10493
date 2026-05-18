@@ -3,11 +3,11 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, MapPin, Calendar, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { TravelOverviewTab } from '@/components/travel/TravelOverviewTab';
+import { TravelOverviewTab  } from '@/components/travel/TravelOverviewTab';
 import { TravelItineraryTab } from '@/components/travel/TravelItineraryTab';
+import { TravelLogisticsTab } from '@/components/travel/TravelLogisticsTab';
 
 // ─── Remaining sub-component imports (uncomment as each file is created) ──────
-// import { TravelLogisticsTab  } from '@/components/travel/TravelLogisticsTab';
 // import { TravelParentViewTab } from '@/components/travel/TravelParentViewTab';
 // import { TravelUpdatesTab    } from '@/components/travel/TravelUpdatesTab';
 // import { TravelDocumentsTab  } from '@/components/travel/TravelDocumentsTab';
@@ -121,12 +121,11 @@ export default function TravelEventDetail() {
     },
   });
 
-  // ── Loading / error states ────────────────────────────────────────────────
-
   if (isLoading) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
-        <Link to="/travel" className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-600 transition-colors mb-6">
+        <Link to="/travel" className="inline-flex items-center gap-1.5 text-sm text-slate-400
+                                      hover:text-slate-600 transition-colors mb-6">
           <ArrowLeft className="w-4 h-4" /> Travel Events
         </Link>
         <div className="text-center text-sm text-slate-400 mt-20">Loading…</div>
@@ -137,7 +136,8 @@ export default function TravelEventDetail() {
   if (isError || !event) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
-        <Link to="/travel" className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-600 transition-colors mb-6">
+        <Link to="/travel" className="inline-flex items-center gap-1.5 text-sm text-slate-400
+                                      hover:text-slate-600 transition-colors mb-6">
           <ArrowLeft className="w-4 h-4" /> Travel Events
         </Link>
         <div className="text-center text-sm text-red-500 mt-20">Event not found.</div>
@@ -145,28 +145,21 @@ export default function TravelEventDetail() {
     );
   }
 
-  // ── Derived display values ────────────────────────────────────────────────
-
   const status = STATUS_CONFIG[event.status] ?? STATUS_CONFIG.draft;
   const n      = nightCount(event.departure_date, event.return_date);
 
-  // ── Tab content map ───────────────────────────────────────────────────────
-
   const tabContent: Record<TabId, React.ReactNode> = {
-    overview:  <TravelOverviewTab event={event} />,
+    overview:  <TravelOverviewTab  event={event} />,
     itinerary: <TravelItineraryTab event={event} />,
-    logistics: <Placeholder label="Logistics"   hint="src/components/travel/TravelLogisticsTab.tsx"  />,
+    logistics: <TravelLogisticsTab event={event} />,
     parents:   <Placeholder label="Parent view" hint="src/components/travel/TravelParentViewTab.tsx" />,
     updates:   <Placeholder label="Updates"     hint="src/components/travel/TravelUpdatesTab.tsx"    />,
     documents: <Placeholder label="Documents"   hint="src/components/travel/TravelDocumentsTab.tsx"  />,
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
   return (
     <div className="p-6 max-w-5xl mx-auto">
 
-      {/* Back link */}
       <Link
         to="/travel"
         className="inline-flex items-center gap-1.5 text-sm text-slate-400
@@ -176,7 +169,6 @@ export default function TravelEventDetail() {
         Travel Events
       </Link>
 
-      {/* Event header */}
       <div className="mt-4 flex flex-col sm:flex-row sm:items-start gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -215,7 +207,6 @@ export default function TravelEventDetail() {
         </div>
       </div>
 
-      {/* Tab bar */}
       <div className="mt-6 flex gap-0 border-b border-slate-200 overflow-x-auto">
         {TABS.map(tab => (
           <button
@@ -234,7 +225,6 @@ export default function TravelEventDetail() {
         ))}
       </div>
 
-      {/* Active tab body */}
       <div className="mt-1">
         {tabContent[activeTab]}
       </div>
