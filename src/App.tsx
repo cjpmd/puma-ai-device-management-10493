@@ -36,6 +36,7 @@ import Settings from "./pages/Settings";
 import LogRPE from "./pages/LogRPE";
 import FitnessTesting from "./pages/FitnessTesting";
 import TravelEvents from "./pages/TravelEvents";
+import TravelEventDetail from "./pages/TravelEventDetail";
 
 const queryClient = new QueryClient();
 
@@ -99,6 +100,7 @@ const AppRoutes = () => {
       <Route path="/coaching"        element={<PrivateRoute><AppShell><PlaceholderPage module="Coaching" /></AppShell></PrivateRoute>} />
       <Route path="/compliance"      element={<PrivateRoute><AppShell><Compliance /></AppShell></PrivateRoute>} />
       <Route path="/travel"          element={<PrivateRoute><AppShell><TravelEvents /></AppShell></PrivateRoute>} />
+      <Route path="/travel/:id"      element={<PrivateRoute><AppShell><TravelEventDetail /></AppShell></PrivateRoute>} />
       <Route path="/settings"        element={<PrivateRoute><AppShell><Settings /></AppShell></PrivateRoute>} />
 
       <Route path="*" element={<NotFound />} />
