@@ -3,12 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, MapPin, Calendar, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { TravelOverviewTab } from '@/components/travel/TravelOverviewTab';
 
-// ─── Sub-component imports ────────────────────────────────────────────────────
-// Each import below will be uncommented once the file exists in
-// src/components/travel/. Until then the inline placeholder is rendered.
-//
-// import { TravelOverviewTab   } from '@/components/travel/TravelOverviewTab';
+// ─── Remaining sub-component imports (uncomment as each file is created) ──────
 // import { TravelItineraryTab  } from '@/components/travel/TravelItineraryTab';
 // import { TravelLogisticsTab  } from '@/components/travel/TravelLogisticsTab';
 // import { TravelParentViewTab } from '@/components/travel/TravelParentViewTab';
@@ -87,53 +84,8 @@ function nightCount(dep: string, ret: string) {
   );
 }
 
-// ─── Placeholder tab bodies ───────────────────────────────────────────────────
-// Each is typed to accept the TravelEvent so the real component can drop in
-// with the same props signature once src/components/travel/<Name>.tsx exists.
+// ─── Placeholder for tabs not yet implemented ─────────────────────────────────
 
-function TravelOverviewTab({ event }: { event: TravelEvent }) {
-  // Replace with: import { TravelOverviewTab } from '@/components/travel/TravelOverviewTab'
-  return (
-    <Placeholder label="Event overview" hint="src/components/travel/TravelOverviewTab.tsx" />
-  );
-}
-
-function TravelItineraryTab({ event }: { event: TravelEvent }) {
-  // Replace with: import { TravelItineraryTab } from '@/components/travel/TravelItineraryTab'
-  return (
-    <Placeholder label="Itinerary" hint="src/components/travel/TravelItineraryTab.tsx" />
-  );
-}
-
-function TravelLogisticsTab({ event }: { event: TravelEvent }) {
-  // Replace with: import { TravelLogisticsTab } from '@/components/travel/TravelLogisticsTab'
-  return (
-    <Placeholder label="Logistics" hint="src/components/travel/TravelLogisticsTab.tsx" />
-  );
-}
-
-function TravelParentViewTab({ event }: { event: TravelEvent }) {
-  // Replace with: import { TravelParentViewTab } from '@/components/travel/TravelParentViewTab'
-  return (
-    <Placeholder label="Parent view" hint="src/components/travel/TravelParentViewTab.tsx" />
-  );
-}
-
-function TravelUpdatesTab({ event }: { event: TravelEvent }) {
-  // Replace with: import { TravelUpdatesTab } from '@/components/travel/TravelUpdatesTab'
-  return (
-    <Placeholder label="Updates" hint="src/components/travel/TravelUpdatesTab.tsx" />
-  );
-}
-
-function TravelDocumentsTab({ event }: { event: TravelEvent }) {
-  // Replace with: import { TravelDocumentsTab } from '@/components/travel/TravelDocumentsTab'
-  return (
-    <Placeholder label="Documents" hint="src/components/travel/TravelDocumentsTab.tsx" />
-  );
-}
-
-// Shared placeholder shell used by all stub components above.
 function Placeholder({ label, hint }: { label: string; hint: string }) {
   return (
     <div className="mt-2 rounded-xl border-2 border-dashed border-slate-200 p-12
@@ -195,18 +147,18 @@ export default function TravelEventDetail() {
 
   // ── Derived display values ────────────────────────────────────────────────
 
-  const status  = STATUS_CONFIG[event.status] ?? STATUS_CONFIG.draft;
-  const n       = nightCount(event.departure_date, event.return_date);
+  const status = STATUS_CONFIG[event.status] ?? STATUS_CONFIG.draft;
+  const n      = nightCount(event.departure_date, event.return_date);
 
   // ── Tab content map ───────────────────────────────────────────────────────
 
   const tabContent: Record<TabId, React.ReactNode> = {
-    overview:  <TravelOverviewTab   event={event} />,
-    itinerary: <TravelItineraryTab  event={event} />,
-    logistics: <TravelLogisticsTab  event={event} />,
-    parents:   <TravelParentViewTab event={event} />,
-    updates:   <TravelUpdatesTab    event={event} />,
-    documents: <TravelDocumentsTab  event={event} />,
+    overview:  <TravelOverviewTab event={event} />,
+    itinerary: <Placeholder label="Itinerary"    hint="src/components/travel/TravelItineraryTab.tsx"  />,
+    logistics: <Placeholder label="Logistics"    hint="src/components/travel/TravelLogisticsTab.tsx"  />,
+    parents:   <Placeholder label="Parent view"  hint="src/components/travel/TravelParentViewTab.tsx" />,
+    updates:   <Placeholder label="Updates"      hint="src/components/travel/TravelUpdatesTab.tsx"    />,
+    documents: <Placeholder label="Documents"    hint="src/components/travel/TravelDocumentsTab.tsx"  />,
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
