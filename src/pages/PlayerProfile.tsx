@@ -516,14 +516,14 @@ function MedicalTab({ playerId, dob }: { playerId: string; dob?: string }) {
     },
   });
 
-  const active   = (injuries as any[]).find((i) => !i.resolved_at) ?? null;
-  const resolved = (injuries as any[]).filter((i) => !!i.resolved_at);
+  const active   = (injuries as any[]).find((i) => !i.is_resolved) ?? null;
+  const resolved = (injuries as any[]).filter((i) => !!i.is_resolved);
 
   const recurrenceIds = new Set<string>();
   for (const inj of resolved) {
     for (const prev of resolved) {
-      if (prev.id === inj.id || prev.body_part !== inj.body_part || !prev.resolved_at) continue;
-      const gap = (new Date(inj.injury_date).getTime() - new Date(prev.resolved_at).getTime()) / 86_400_000;
+      if (prev.id === inj.id || prev.body_part !== inj.body_part || !prev.actual_return_date) continue;
+      const gap = (new Date(inj.injury_date).getTime() - new Date(prev.actual_return_date).getTime()) / 86_400_000;
       if (gap >= 0 && gap <= 56) recurrenceIds.add(inj.id);
     }
   }

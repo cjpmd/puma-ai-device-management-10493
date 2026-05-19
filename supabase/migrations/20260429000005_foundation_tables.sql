@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS injury_record (
   injury_type          text,
   body_part            text,
   severity             int CHECK (severity BETWEEN 1 AND 3),
-  date_of_injury       date NOT NULL,
+  injury_date          date NOT NULL,
   expected_return_date date,
   actual_return_date   date,
   mechanism            text,
