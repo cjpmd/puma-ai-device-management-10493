@@ -57,6 +57,7 @@ export default function Compliance() {
   const { activeContext } = useActiveContext();
   const clubId = activeContext?.clubId ?? null;
   const teamId = activeContext?.kind === 'team' ? activeContext.id : null;
+  const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
   const col = teamId ? 'team_id' : 'club_id';
   const val = teamId ?? clubId;
 
@@ -64,8 +65,7 @@ export default function Compliance() {
   const [auditTable, setAuditTable] = useState('');
 
   // EPPP counts — scoped to active context via players!inner join.
-  // session_plan FK to players/teams not confirmed in types; left unscoped.
-  // TODO: scope session_plan once its FK is verified in the schema.
+  // session_plan scoped directly via academy_id (confirmed in schema).
   const { data: epppData } = useQuery({
     queryKey: ['eppp-counts', activeContext?.id],
     enabled: !!activeContext,
@@ -97,9 +97,9 @@ export default function Compliance() {
           sb.from('training_load')
             .select('players!inner(club_id, team_id)', { count: 'exact', head: true })
             .eq(`players.${col}`, val).gte('session_date', cutoff14),
-          // TODO: scope session_plan once FK to players/teams is confirmed in schema
           sb.from('session_plan')
-            .select('id', { count: 'exact', head: true }),
+            .select('id', { count: 'exact', head: true })
+            .eq('academy_id', academyId!),
           sb.from('milestones')
             .select('players!inner(club_id, team_id)', { count: 'exact', head: true })
             .eq(`players.${col}`, val),
