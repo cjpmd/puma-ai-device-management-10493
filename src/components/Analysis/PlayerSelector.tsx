@@ -1,11 +1,11 @@
 
 import { useState, useEffect } from 'react';
 import { Check, ChevronsUpDown } from "lucide-react";
-import { 
-  Command, 
-  CommandEmpty, 
-  CommandGroup, 
-  CommandInput, 
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
   CommandItem,
   CommandList
 } from "@/components/ui/command";
@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import { useActiveContext } from "@/contexts/ActiveContextContext";
 
 interface Player {
   id: string;
@@ -37,26 +38,24 @@ const PlayerSelector = ({ onPlayerSelect, selectedPlayerId, teamId, clubId }: Pl
   const [open, setOpen] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
+  const { activeContext } = useActiveContext();
+
+  const effectiveTeamId = teamId ?? (activeContext?.kind === 'team' ? activeContext.id : undefined);
+  const effectiveClubId = clubId ?? activeContext?.clubId;
 
   useEffect(() => {
     const fetchPlayers = async () => {
       try {
         setLoading(true);
-        
-        // Build query with team and club joins
         let query = supabase
           .from('players')
           .select('id, name, player_type, position, team:teams(name, club:clubs(name))')
           .order('name');
-        
-        // Filter by team if specified
-        if (teamId) {
-          query = query.eq('team_id', teamId);
-        }
-        
-        // Filter by club if specified (and no team filter)
-        if (clubId && !teamId) {
-          query = query.eq('club_id', clubId);
+
+        if (effectiveTeamId) {
+          query = query.eq('team_id', effectiveTeamId);
+        } else if (effectiveClubId) {
+          query = query.eq('club_id', effectiveClubId);
         }
           
         const { data, error } = await query;
@@ -91,7 +90,7 @@ const PlayerSelector = ({ onPlayerSelect, selectedPlayerId, teamId, clubId }: Pl
     };
 
     fetchPlayers();
-  }, [teamId, clubId]);
+  }, [effectiveTeamId, effectiveClubId]);
 
   const selectedPlayer = players.find(player => player.id === selectedPlayerId);
 

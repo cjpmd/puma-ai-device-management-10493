@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Check, ChevronsUpDown } from "lucide-react";
+import { useActiveContext } from "@/contexts/ActiveContextContext";
 import { 
   Command, 
   CommandEmpty, 
@@ -33,6 +34,9 @@ const TeamSelector = ({ onTeamSelect, selectedTeamId, clubId }: TeamSelectorProp
   const [open, setOpen] = useState(false);
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
+  const { activeContext } = useActiveContext();
+
+  const effectiveClubId = clubId ?? activeContext?.clubId;
 
   useEffect(() => {
     const fetchTeams = async () => {
@@ -42,10 +46,9 @@ const TeamSelector = ({ onTeamSelect, selectedTeamId, clubId }: TeamSelectorProp
           .from('teams')
           .select('id, name, club_id')
           .order('name');
-          
-        // Filter by club if specified
-        if (clubId) {
-          query = query.eq('club_id', clubId);
+
+        if (effectiveClubId) {
+          query = query.eq('club_id', effectiveClubId);
         }
           
         const { data, error } = await query;
@@ -62,7 +65,7 @@ const TeamSelector = ({ onTeamSelect, selectedTeamId, clubId }: TeamSelectorProp
     };
 
     fetchTeams();
-  }, [clubId]);
+  }, [effectiveClubId]);
 
   const selectedTeam = teams.find(team => team.id === selectedTeamId);
 
