@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
 
 const POSITIONS = ['GK','CB','RB','LB','RWB','LWB','CDM','CM','CAM','RM','LM','RW','LW','ST','CF'];
 const MAT_OPTIONS = ['', 'Early', 'On time', 'Late'] as const;
@@ -33,26 +34,36 @@ function matBadge(offset?: number | null): MatBadge | null {
 }
 
 export default function Players() {
+  const { activeContext } = useActiveContext();
+  const clubId = activeContext?.clubId ?? null;
+  const teamId = activeContext?.kind === 'team' ? activeContext.id : null;
+
   const [search,    setSearch]    = useState('');
   const [ageGroup,  setAgeGroup]  = useState('');
   const [position,  setPosition]  = useState('');
   const [matFilter, setMatFilter] = useState('');
 
   const { data: players = [], isLoading } = useQuery({
-    queryKey: ['players-directory'],
+    queryKey: ['players-directory', activeContext?.id],
+    enabled: !!activeContext,
     staleTime: 60_000,
     queryFn: async () => {
       const sb = supabase as any;
+      const col = teamId ? 'team_id' : 'club_id';
+      const val = teamId ?? clubId;
       const [{ data: pl }, { data: snaps }, { data: mats }] = await Promise.all([
         sb.from('players')
           .select('id, name, position, date_of_birth, team_id, teams(name, age_group)')
+          .eq(col, val)
           .order('name'),
         sb.from('attribute_snapshot')
-          .select('player_id, scores, snapshot_date')
+          .select('player_id, scores, snapshot_date, players!inner(club_id, team_id)')
+          .eq(`players.${col}`, val)
           .eq('is_final', true)
           .order('snapshot_date', { ascending: false }),
         sb.from('maturation_record')
-          .select('player_id, bio_age_estimate, recorded_date')
+          .select('player_id, bio_age_estimate, recorded_date, players!inner(club_id, team_id)')
+          .eq(`players.${col}`, val)
           .order('recorded_date', { ascending: false }),
       ]);
 
