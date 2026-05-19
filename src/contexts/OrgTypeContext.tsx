@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import React, { createContext, useContext } from 'react';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
 
 export type OrgType = 'academy' | 'club' | 'team';
 
@@ -15,76 +15,17 @@ const OrgTypeContext = createContext<OrgTypeContextValue>({
   loading: true,
 });
 
+/**
+ * Thin adapter over ActiveContextContext.
+ * Existing code that calls useOrgType() continues to work unchanged.
+ * OrgType is now derived from the active context rather than re-fetching
+ * membership tables independently.
+ */
 export function OrgTypeProvider({ children }: { children: React.ReactNode }) {
-  const [orgType, setOrgType] = useState<OrgType>('team');
-  const [academyId, setAcademyId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { activeContext, loading } = useActiveContext();
 
-  useEffect(() => {
-    const supabaseAny = supabase as any;
-
-    const derive = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      // 1. Check local user_academies mirror (synced from Football Central)
-      const { data: uaRows } = await supabaseAny
-        .from('user_academies')
-        .select('academy_id')
-        .eq('user_id', user.id)
-        .limit(1);
-
-      if (uaRows?.length) {
-        setOrgType('academy');
-        setAcademyId(uaRows[0].academy_id);
-        setLoading(false);
-        return;
-      }
-
-      // 2. Check if this user is head_of_academy on any synced academy
-      const { data: headRows } = await supabaseAny
-        .from('academies')
-        .select('id')
-        .eq('head_of_academy_user_id', user.id)
-        .limit(1);
-
-      if (headRows?.length) {
-        setOrgType('academy');
-        setAcademyId(headRows[0].id);
-        setLoading(false);
-        return;
-      }
-
-      // 3. Check user_club_access
-      const { data: clubRows } = await supabaseAny
-        .from('user_club_access')
-        .select('club_id')
-        .eq('user_id', user.id)
-        .limit(1);
-
-      if (clubRows?.length) {
-        setOrgType('club');
-        setLoading(false);
-        return;
-      }
-
-      // 4. Default: team-level user
-      setOrgType('team');
-      setLoading(false);
-    };
-
-    derive();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      setLoading(true);
-      derive();
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const orgType: OrgType = activeContext?.kind ?? 'team';
+  const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
 
   return (
     <OrgTypeContext.Provider value={{ orgType, academyId, loading }}>

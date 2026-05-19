@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useDeepLinkHandler } from "@/hooks/useDeepLinkHandler";
 import { OrgTypeProvider } from "@/contexts/OrgTypeContext";
+import { ActiveContextProvider } from "@/contexts/ActiveContextContext";
 import { AppShell } from "@/components/layout/AppShell";
 import { PlaceholderPage } from "@/components/layout/PlaceholderPage";
 import { IOSApp } from "./pages/ios/IOSApp";
@@ -114,9 +115,11 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <OrgTypeProvider>
-          <AppRoutes />
-        </OrgTypeProvider>
+        <ActiveContextProvider>
+          <OrgTypeProvider>
+            <AppRoutes />
+          </OrgTypeProvider>
+        </ActiveContextProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

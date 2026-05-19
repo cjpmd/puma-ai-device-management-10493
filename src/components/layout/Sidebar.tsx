@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useOrgType, OrgType } from '@/contexts/OrgTypeContext';
+import { ContextSwitcher } from './ContextSwitcher';
 
 interface NavItem {
   label: string;
@@ -86,20 +87,14 @@ export function Sidebar() {
         collapsed ? 'w-16' : 'w-56'
       } min-h-screen flex-shrink-0`}
     >
-      {/* Logo / org badge */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-white/10">
-        <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center flex-shrink-0 text-xs font-bold">
-          OS
+      {/* Context switcher (replaces static org badge) */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <ContextSwitcher collapsed={collapsed} />
         </div>
-        {!collapsed && (
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-semibold text-white truncate">Origin Sports</div>
-            <div className="text-[10px] text-white/50 capitalize">{TIER_LABEL[orgType]}</div>
-          </div>
-        )}
         <button
           onClick={() => setCollapsed(c => !c)}
-          className="ml-auto text-white/40 hover:text-white/80 transition-colors"
+          className="flex-shrink-0 mr-2 text-white/40 hover:text-white/80 transition-colors"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
