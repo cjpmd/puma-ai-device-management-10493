@@ -35,8 +35,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Icon d="M22 12h-4l-3 9L9 3l-3 9H2" />,
   },
   {
-    label: 'Medical', path: '/medical', tiers: ['academy', 'club'],
+    label: 'Medical', path: '/medical', tiers: ['academy', 'club', 'team'],
     icon: <Icon d="M22 12h-4l-3 9L9 3l-3 9H2" />,
+  },
+  {
+    label: 'Fitness Testing', path: '/fitness-testing', tiers: ['academy', 'club', 'team'],
+    icon: <Icon d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />,
   },
   {
     label: 'Welfare', path: '/welfare', tiers: ['academy'],
