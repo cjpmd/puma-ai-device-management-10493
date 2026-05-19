@@ -21,7 +21,7 @@ interface InjuryRecord {
   body_part: string;
   severity?: string;
   rtp_phase?: number;
-  resolved_at?: string | null;
+  is_resolved?: boolean;
 }
 
 interface AcwrAlert {
@@ -67,8 +67,8 @@ export default function Medical() {
     queryFn: async () => {
       let q = sb
         .from('injury_record')
-        .select('id, player_id, injury_date, body_part, severity, rtp_phase, resolved_at, players!inner(club_id, team_id)')
-        .is('resolved_at', null)
+        .select('id, player_id, injury_date, body_part, severity, rtp_phase, is_resolved, players!inner(club_id, team_id)')
+        .eq('is_resolved', false)
         .order('injury_date', { ascending: false });
       q = teamId ? q.eq('players.team_id', teamId) : q.eq('players.club_id', clubId);
       const { data } = await q;
@@ -280,7 +280,7 @@ function RtpStepper({ injury, onUpdate }: { injury: InjuryRecord; onUpdate: () =
   async function markResolved() {
     setSaving(true);
     await sb.from('injury_record')
-      .update({ rtp_phase: 5, resolved_at: new Date().toISOString() })
+      .update({ rtp_phase: 5, is_resolved: true })
       .eq('id', injury.id);
     setSaving(false);
     onUpdate();
