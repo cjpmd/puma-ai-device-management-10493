@@ -9,10 +9,15 @@ import { CreateMatchDialog } from '@/components/Matches/CreateMatchDialog';
 import { EventCard, type TeamEvent } from '@/components/Matches/EventCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
 
 
 const Matches = () => {
-  const { matches, loading, refetch } = useMatchPolling();
+  const { activeContext } = useActiveContext();
+  const clubId = activeContext?.clubId ?? undefined;
+  const teamId = activeContext?.kind === 'team' ? activeContext.id : undefined;
+
+  const { matches, loading, refetch } = useMatchPolling(undefined, clubId, teamId);
   const [events, setEvents] = useState<TeamEvent[]>([]);
   const [teams, setTeams] = useState<Record<string, string>>({});
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -20,22 +25,26 @@ const Matches = () => {
   const navigate = useNavigate();
 
   const fetchEvents = useCallback(async () => {
-    const { data } = await supabase
-      .from('team_events')
-      .select('*')
-      .order('date', { ascending: true });
+    if (!activeContext) return;
+    const sb = supabase as any;
+    let q = teamId
+      ? sb.from('team_events').select('*').eq('team_id', teamId)
+      : sb.from('team_events').select('*, teams!inner(club_id)').eq('teams.club_id', clubId);
+    const { data } = await q.order('date', { ascending: true });
     if (data) setEvents(data as TeamEvent[]);
     setEventsLoading(false);
-  }, []);
+  }, [activeContext, clubId, teamId]);
 
   const fetchTeams = useCallback(async () => {
-    const { data } = await supabase.from('teams').select('id, name');
+    if (!activeContext) return;
+    const { data } = await supabase
+      .from('teams').select('id, name').eq('club_id', activeContext.clubId);
     if (data) {
       const map: Record<string, string> = {};
       data.forEach((t: any) => { map[t.id] = t.name; });
       setTeams(map);
     }
-  }, []);
+  }, [activeContext]);
 
   useEffect(() => {
     fetchEvents();

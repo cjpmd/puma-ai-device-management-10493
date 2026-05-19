@@ -41,7 +41,7 @@ interface MatchVideo {
   file_size: number | null;
 }
 
-export function useMatchPolling(matchId?: string) {
+export function useMatchPolling(matchId?: string, clubId?: string, teamId?: string) {
   const [matches, setMatches] = useState<Match[]>([]);
   const [match, setMatch] = useState<Match | null>(null);
   const [videos, setVideos] = useState<MatchVideo[]>([]);
@@ -49,13 +49,13 @@ export function useMatchPolling(matchId?: string) {
   const [loading, setLoading] = useState(true);
 
   const fetchMatches = useCallback(async () => {
-    const { data } = await supabase
-      .from('matches')
-      .select('*')
-      .order('created_at', { ascending: false });
+    let q = supabase.from('matches').select('*').order('created_at', { ascending: false });
+    if (teamId)      q = (q as any).eq('team_id', teamId);
+    else if (clubId) q = (q as any).eq('club_id', clubId);
+    const { data } = await q;
     if (data) setMatches(data as Match[]);
     setLoading(false);
-  }, []);
+  }, [clubId, teamId]);
 
   const fetchMatchDetail = useCallback(async () => {
     if (!matchId) return;
