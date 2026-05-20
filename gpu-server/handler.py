@@ -1663,9 +1663,16 @@ def run_analysis(job_input: dict) -> dict:
         player_tracker  = PlayerTracker()
         ball_pipeline   = BallTrackingPipeline(fps=native_fps / frame_step)
 
+        # Touch tracker: pixels_per_metre assumes panoramic width ≈ 105m pitch length
+        pixels_per_metre = frame_w / 105.0
+        analysed_fps     = native_fps / frame_step
+        from touch_tracker import TouchTracker
+        touch_tracker    = TouchTracker(pixels_per_metre=pixels_per_metre, fps=analysed_fps)
+
         ball_positions: list[dict] = []
         stage_counts   = {"yolo": 0, "motion": 0, "kalman": 0, "none": 0}
         frame_idx      = 0
+        prev_ball_speed_ms = 0.0
 
         while True:
             ret, frame = cap.read()
@@ -1675,6 +1682,8 @@ def run_analysis(job_input: dict) -> dict:
             if frame_idx % frame_step != 0:
                 frame_idx += 1
                 continue
+
+            timestamp_ms = int((frame_idx / native_fps) * 1000)
 
             # ── YOLO inference ──
             results = model(frame, verbose=False)
@@ -1686,21 +1695,26 @@ def run_analysis(job_input: dict) -> dict:
                 if ball_dets else None
             )
             ball = ball_pipeline.update(yolo_ball, frame)
+            ball_pos_px: tuple[float, float] | None = None
+            ball_speed_ms = 0.0
             if ball is not None:
                 bx, by, bconf, stage = ball
+                ball_pos_px = (bx, by)
                 stage_counts[stage] = stage_counts.get(stage, 0) + 1
                 prev_bp = ball_positions[-1] if ball_positions else None
-                speed = 0.0
+                speed_px = 0.0
                 if prev_bp:
                     dx = bx - prev_bp["x"]
                     dy = by - prev_bp["y"]
-                    speed = float(np.sqrt(dx ** 2 + dy ** 2))
+                    speed_px = float(np.sqrt(dx ** 2 + dy ** 2))
+                # Convert px/analysed-frame to m/s
+                ball_speed_ms = (speed_px / pixels_per_metre) * analysed_fps
                 ball_positions.append({
                     "frame": frame_idx,
                     "time": round(frame_idx / native_fps, 2),
                     "x": round(bx, 1),
                     "y": round(by, 1),
-                    "speed": round(speed, 1),
+                    "speed": round(speed_px, 1),
                     "stage": stage,
                     "confidence": round(bconf, 3),
                 })
@@ -1710,6 +1724,23 @@ def run_analysis(job_input: dict) -> dict:
             # ── Players ──
             person_dets = parse_detections(results, PERSON_CLASSES)
             player_tracker.update_from_detections(person_dets, frame_idx)
+
+            # ── Touch detection ──
+            # Build current frame's player positions from latest tracker state
+            current_positions: dict[int, tuple[float, float]] = {
+                tid: (positions[-1][1], positions[-1][2])
+                for tid, positions in player_tracker.tracks.items()
+                if positions and positions[-1][0] == frame_idx
+            }
+            touch_tracker.update(
+                frame_idx=frame_idx,
+                timestamp_ms=timestamp_ms,
+                ball_pos=ball_pos_px,
+                ball_speed_ms=ball_speed_ms,
+                prev_ball_speed_ms=prev_ball_speed_ms,
+                player_positions=current_positions,
+            )
+            prev_ball_speed_ms = ball_speed_ms
 
             frame_idx += 1
 
@@ -1728,6 +1759,10 @@ def run_analysis(job_input: dict) -> dict:
 
         # ── Event detection, team assignment, metrics ──
         team_assignment = TeamClassifier.assign_teams(player_tracker.tracks)
+
+        # Back-fill team onto all recorded touches now that assignment is known
+        touch_tracker.assign_teams(team_assignment)
+
         events = EventDetector.detect(
             ball_positions=ball_positions,
             player_tracks=player_tracker.tracks,
@@ -1749,8 +1784,19 @@ def run_analysis(job_input: dict) -> dict:
             player_tracker.tracks, frame_w, frame_h, grid_w=20, grid_h=12
         )
 
+        # ── Merge touch breakdown into player_metrics ──
+        for tid_str, pm in player_metrics.items():
+            tid = int(tid_str) if str(tid_str).isdigit() else tid_str
+            pm.update(touch_tracker.player_touch_summary(int(tid_str) if str(tid_str).isdigit() else 0))
+
+        # ── Merge touch totals into team_metrics ──
+        for team_id, tm in team_metrics.items():
+            tm.update(touch_tracker.team_touch_summary(team_id))
+
+        total_touches = sum(tm.get("total_touches", 0) for tm in team_metrics.values())
         print(f"  ✓ {len(events)} events  {len(team_metrics)} teams  "
-              f"{len(player_metrics)} player metric sets")
+              f"{len(player_metrics)} player metric sets  "
+              f"{len(touch_tracker.touches)} touch events ({total_touches} total)")
 
         # ── Confidence score ──
         # Product of: fraction of expected players tracked × fraction of frames with ball

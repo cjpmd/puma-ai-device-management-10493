@@ -53,6 +53,14 @@ export interface PlayerMetrics {
   tackles?: number;
   xg?: number;
   contribution_score?: number;
+  // Touch breakdown — populated by TouchTracker in the analysis pipeline
+  touches?: number;           // alias for touches_total (backward compat)
+  touches_total?: number;
+  touches_receive?: number;   // first contact receiving an inbound ball
+  touches_control?: number;   // settling / turning with the ball
+  touches_pass?: number;      // the kick/release itself on a pass
+  touches_shot?: number;      // outbound contacts at shot velocity (≥12 m/s)
+  touches_dribble?: number;   // dribble contacts sampled every 1.5s to cap counts
 }
 
 export interface TeamMetrics {
@@ -64,6 +72,15 @@ export interface TeamMetrics {
   possession_changes?: number;
   possession_pct?: number;
   xg?: number;
+  // Touch totals — populated by TouchTracker
+  total_touches?: number;
+  touches_per_type?: {
+    receive: number;
+    control: number;
+    pass: number;
+    shot: number;
+    dribble: number;
+  };
 }
 
 export interface BallTrackingData {

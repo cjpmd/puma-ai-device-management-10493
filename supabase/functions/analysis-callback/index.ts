@@ -153,6 +153,43 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Upsert player_match_stats with touch breakdown
+      const playerMetrics: Record<string, any> = output.player_metrics ?? {};
+      if (Object.keys(playerMetrics).length > 0) {
+        const statsRows = Object.entries(playerMetrics).map(([trackIdStr, pm]: [string, any]) => ({
+          match_id:          job!.match_id,
+          processing_job_id: job!.id,
+          track_id:          Number(trackIdStr),
+          team:              pm.team ?? null,
+          distance_m:        pm.distance_m ?? null,
+          top_speed_kmh:     pm.top_speed_kmh ?? null,
+          sprints:           pm.sprints ?? null,
+          minutes_played:    pm.minutes_played ?? null,
+          passes:            pm.passes ?? null,
+          passes_completed:  pm.passes_completed ?? null,
+          pass_success_pct:  pm.pass_success_pct ?? null,
+          shots:             pm.shots ?? null,
+          tackles:           pm.tackles ?? null,
+          goals:             0,
+          xg:                pm.xg ?? null,
+          contribution_score: pm.contribution_score ?? null,
+          // Touch breakdown from TouchTracker
+          touches_total:     pm.touches_total   ?? pm.touches   ?? null,
+          touches_receive:   pm.touches_receive  ?? null,
+          touches_control:   pm.touches_control  ?? null,
+          touches_pass:      pm.touches_pass     ?? null,
+          touches_shot:      pm.touches_shot     ?? null,
+          touches_dribble:   pm.touches_dribble  ?? null,
+        }));
+
+        await adminClient
+          .from("player_match_stats")
+          .upsert(statsRows, {
+            onConflict: "match_id,processing_job_id,track_id",
+            ignoreDuplicates: false,
+          });
+      }
+
       await adminClient
         .from("matches")
         .update({ status: "complete" })
