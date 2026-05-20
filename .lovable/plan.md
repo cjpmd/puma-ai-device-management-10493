@@ -1,74 +1,34 @@
-## What I found
+## Problem
 
-I traced every `supabase.from(...)` call in `src/` and `supabase/functions/` and compared the list against the 41 tables currently in the database. Travel + match + GPS + ML tables are all in place. **20 tables that pages and edge functions read/write are missing**, which is why Compliance, Medical, Scouting, Welfare, Coaching, Fitness Testing, Development, Settings, Player Profile, Dashboard and the Hudl/performance-sync edge functions partially break.
+The Settings page reads everything from `academy_settings`, but the Origin Sports (Football Central) sync writes academy data into the `academies` table — never `academy_settings`. On top of that:
 
-Four other names that show up in code (`events`, `match_events`, `event_player_stats`, `academy_clubs`) only live in the **external Football Central database** that the sync edge functions read from — they shouldn't be created locally.
+- The form binds to field names that don't exist anywhere (`hoa_email`, `academy_tier`, `license_expiry`, `address`, `pdc_target`, `eppp_assessor`, `eppp_next_review`, `min_snapshots`, `min_rpe_sessions`, `acwr_amber`, `acwr_red`). These can't load and can't save.
+- The Staff tab renders truncated user UUIDs (`a1b2c3d4e5f6…`) because it never joins `profiles` for name/email.
+- EPPP Config reads `eppp_category` from `academy_settings` (empty) instead of `academies` (populated by sync).
+- Head of Academy email is never resolved — sync stores `head_of_academy_user_id` on `academies`, but the form looks for a non-existent `hoa_email` column.
 
-## Plan — one migration that adds 20 tables + RLS + triggers
+## Fix
 
-### Helper for player-scoped policies
-Reuse the existing `public.user_can_access_player(_user_id, _player_id)` and `public.user_has_academy_access(_user_id, _academy_id)` security-definer functions. No new helpers needed.
+### 1. Academy Profile tab — read from `academies` + `academy_settings`, write back to both
+- Pull base fields from `academies`: `name`, `fa_registration_number`, `eppp_category`, `founded_year`, `logo_url`, plus `head_of_academy_user_id`.
+- Resolve Head of Academy to a profile (`profiles.full_name`, `profiles.email`) via the stored `head_of_academy_user_id` and render the email read-only (it comes from the synced admin account).
+- Editable extras (`address`, `license_expiry`, `academy_tier`) → store under `academy_settings.prefs` JSONB so we don't need new columns.
+- Save handler updates `academies` for synced fields (name, fa_registration_number, eppp_category, founded_year) and upserts `academy_settings` with `prefs` for the rest.
 
-### Tables grouped by feature area
+### 2. EPPP Config tab — same source-of-truth split
+- Read `eppp_category` and `eppp_tier` from `academy_settings` if set, otherwise fall back to `academies.eppp_category`.
+- Store assessor, next-review date, PDC target, and KPI thresholds under `academy_settings.prefs`.
+- Save handler writes `eppp_category`/`eppp_tier` to `academy_settings` (and mirrors `eppp_category` to `academies` so other surfaces stay consistent).
 
-**Player development & performance** (RLS: `user_can_access_player(auth.uid(), player_id)` for all four CRUD ops)
+### 3. Staff tab — join profiles
+- Fetch `user_academies` rows for the academy, then a second query against `profiles` for the matched `user_id`s, and render `full_name` + `email` instead of truncated UUIDs.
+- Fall back to "(no profile)" + UUID tail only when no profile row exists.
 
-- `attribute_snapshot` — `player_id`, `scores jsonb`, `snapshot_date`, `season`, `is_final bool default true`, `notes`
-- `fitness_test_result` — `player_id`, `test_date`, `test_name`, `value numeric`, `unit`, `percentile`, `bio_age numeric`, `notes`
-- `maturation_record` — `player_id`, `recorded_date`, `height_cm`, `weight_kg`, `seated_height_cm`, `bio_age_estimate numeric`, `method_used`
-- `milestones` — `player_id`, `title`, `description`, `category`, `milestone_date`, `achieved_date`, `is_upcoming bool default true`
-- `injury_record` — `player_id`, `injury_date`, `body_part`, `severity`, `rtp_phase int default 0`, `is_resolved bool default false`, `resolved_at`, `notes`
-- `training_load` — `player_id`, `session_date`, `session_type`, `rpe int`, `duration int`, `load_au numeric`, `acwr_at_time numeric`, `notes`
-- `welfare_log` — `player_id`, `author_id`, `log_date`, `log_type`, `status`, `notes`, `tags text[] default '{}'`, `is_restricted bool default false`
-- `parent_communication` — `player_id`, `message`, `direction`, `sent_at`
-- `coach_observation` — `player_id`, `author_id`, `observed_at`, `category`, `body`
-- `school_attendance` — `player_id`, `term`, `academic_year`, `attendance_pct numeric`
-- `video_clip` — `player_id`, `source`, `external_id`, `url`, `title`, `tags text[] default '{}'`, `clip_date`, `description`; unique on (`source`, `external_id`, `player_id`) to support the Hudl idempotency check
+### 4. Trigger an academy sync on mount
+- The Settings page should call the `sync-external-academy` edge function once when opened (similar pattern to `useAutoSync`) so newly added Origin Sports data appears without manual sync. Show a small "Syncing…" indicator while it runs; refetch the academy + settings queries on completion.
 
-**Scouting** (RLS: `user_has_academy_access(auth.uid(), academy_id)` on `prospect`; `scout_report` joins to prospect)
+## Technical notes
 
-- `prospect` — `academy_id`, `first_name`, `last_name`, `dob`, `position`, `current_club`, `parent_contact`, `pipeline_stage default 'identified'`, `competing_interest`, `international_eligibility_confirmed bool default false`, `approach_date`
-- `scout_report` — `prospect_id` (CASCADE → prospect), `scout_id`, `report_date`, `rating int`, `notes`
-
-**Coaching curriculum** (RLS: authenticated read/write — these are global definition tables, no academy scoping in current UI)
-
-- `curriculum_outcome` — `age_group`, `season`, `outcome_title`, `outcome_description`, `title`, `description`, `tags text[]`
-- `session_plan` — `title`, `age_group`, `curriculum_tags text[]`, `duration_minutes int`, `drills jsonb`, `created_by`
-- `fitness_benchmark` — `test_name`, `age_group`, `sex`, `percentile int`, `value numeric`, `unit`
-
-**Settings & attributes** (RLS: `user_has_academy_access` for `academy_settings`; authenticated read/write for `attribute_definition`)
-
-- `academy_settings` — `academy_id unique`, common columns the Settings page writes (`name`, `fa_affiliation_number`, `eppp_category`, `eppp_tier`, `founded_year`, `head_of_academy_user_id`, plus a `prefs jsonb default '{}'` bag for toggles). I'll make all data columns nullable so the page's `...merged` upsert keeps working as it adds new fields.
-- `attribute_definition` — `name`, `category`, `max_value int default 10`, `descriptors jsonb`, `is_active bool default true`
-
-**Sync targets** (already external — these are *local* destinations the sync writes to)
-
-- `team_event_player_stats` — `external_id unique`, `event_id` (→ `team_events.id` CASCADE), `player_id` (→ `players.id`), `period_number`, `team_number`, `position`, `minutes_played`, `appearances`, `goals`, `assists`, `season_start`, `age_group`, `is_captain bool`, `is_substitute bool`, `substitution_time`, `synced_at`. RLS: authenticated read, service-role insert/update (mirrors `team_events`).
-
-**Audit**
-
-- `audit_log` — `actor_id`, `action`, `table_name`, `record_id`, `metadata jsonb`, `created_at`. RLS: authenticated read; insert via service role (used by `sync-performance-summary` edge function).
-
-### Triggers
-Standard `update_updated_at_column()` `BEFORE UPDATE` trigger on every table that has `updated_at`.
-
-### Indexes
-`player_id`, `academy_id`, `event_id`, `prospect_id` foreign-key columns get B-tree indexes; `video_clip(source, external_id, player_id)` gets the unique index for Hudl dedupe.
-
-## Out of scope
-
-- No UI changes — pages already query these tables correctly; they'll just start returning data.
-- I will **not** create `events`, `match_events`, `event_player_stats`, `academy_clubs` locally — those are read from the external Football Central Supabase by the sync edge functions and would be confusing to duplicate.
-- No role/permission table refactor for admin-only writes on `attribute_definition`, `curriculum_outcome`, `session_plan`, `fitness_benchmark`. Currently any authenticated user can edit them (matches today's UI which has no role gating). Happy to tighten later if you add a roles table.
-- Not migrating any existing data.
-
-## Verification after the migration
-
-1. Load `/scouting` — Add Prospect form should save and the pipeline view should populate (even if empty).
-2. Load `/welfare` — "Log welfare" should save.
-3. Load `/medical` — RPE log form (`/log-rpe`) inserts into `training_load`; injury list pulls from `injury_record`.
-4. Load `/coaching` and `/settings` — curriculum & attribute definitions can be added without errors.
-5. Open a player profile → add a fitness test, attribute snapshot, milestone, maturation record — each should write successfully.
-6. Run the `sync-performance-summary` edge function — should no longer fail on the `audit_log` insert.
-
-Approve and I'll run the single migration.
+- No DB migration required — `academy_settings.prefs` (jsonb, default `{}`) already exists for the extra fields.
+- All reads stay RLS-safe: `academies` uses `user_has_club_access`, `academy_settings` uses `user_has_academy_access`, `profiles` is self-read only so the Staff join needs to use `user_academies` joined to `profiles` via a service-role edge function OR by relaxing the profiles SELECT policy to allow members of the same academy to see each other's name/email. I'll take the edge-function route (`get-academy-staff`) to avoid widening profiles RLS.
+- Files touched: `src/pages/Settings.tsx`, new edge function `supabase/functions/get-academy-staff/index.ts`.
