@@ -90,6 +90,7 @@ export default function Medical() {
         .order('session_date', { ascending: false });
       q = teamId ? q.eq('players.team_id', teamId) : q.eq('players.club_id', clubId);
 
+      const { data } = await q;
       const seen = new Map<string, AcwrAlert>();
       for (const row of data ?? []) {
         if (!seen.has(row.player_id) && row.acwr_at_time >= 1.3) {
