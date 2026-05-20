@@ -3,17 +3,10 @@ import { Glass } from '@/components/ios/Glass';
 import { Avatar } from '@/components/ios/Avatar';
 import { T, tType } from '@/lib/ios-tokens';
 import { useActiveContext, type ActiveContext } from '@/contexts/ActiveContextContext';
+import { groupContextsByClub, type ClubNode } from '@/lib/groupContexts';
 
 const initialsOf = (name: string) =>
   name.split(' ').map(w => w[0] ?? '').join('').slice(0, 2).toUpperCase() || '·';
-
-interface ClubNode {
-  clubId: string;
-  label: string;
-  clubCtx: ActiveContext | null;
-  academies: ActiveContext[];
-  teams: ActiveContext[];
-}
 
 interface Props {
   open: boolean;
@@ -29,32 +22,10 @@ export function HierarchicalContextPicker({ open, onClose }: Props) {
   const { activeContext, availableContexts, setActiveContext } = useActiveContext();
   const [step, setStep] = useState<Step>({ kind: 'clubs' });
 
-  const clubs = useMemo<ClubNode[]>(() => {
-    const byId = new Map<string, ClubNode>();
-    const ensure = (clubId: string, label: string, clubCtx: ActiveContext | null) => {
-      let n = byId.get(clubId);
-      if (!n) {
-        n = { clubId, label, clubCtx, academies: [], teams: [] };
-        byId.set(clubId, n);
-      } else if (clubCtx && !n.clubCtx) {
-        n.clubCtx = clubCtx;
-        n.label = label;
-      }
-      return n;
-    };
-    for (const c of availableContexts) {
-      if (c.kind === 'club') {
-        ensure(c.clubId, c.label, c);
-      } else if (c.kind === 'academy') {
-        const node = ensure(c.clubId, c.label.replace(/\s+Academy$/, ''), null);
-        if (!node.academies.find(a => a.id === c.id)) node.academies.push(c);
-      } else if (c.kind === 'team') {
-        const node = ensure(c.clubId, c.label, null);
-        node.teams.push(c);
-      }
-    }
-    return Array.from(byId.values());
-  }, [availableContexts]);
+  const clubs = useMemo<ClubNode[]>(
+    () => groupContextsByClub(availableContexts),
+    [availableContexts],
+  );
 
   if (!open) return null;
 
