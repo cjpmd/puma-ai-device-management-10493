@@ -55,125 +55,153 @@ export function useActiveContextData(): UseActiveContextReturn {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setLoading(false); return; }
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setAvailableContexts([]);
+        setActiveContextState(null);
+        return;
+      }
 
-    const sb = supabase as any;
+      const sb = supabase as any;
 
-    // Resolve tier; default to amateur_professional so access isn't accidentally
-    // stripped if the column hasn't been populated yet.
-    const { data: profile } = await sb
-      .from('profiles')
-      .select('user_group_tier')
-      .eq('id', user.id)
-      .maybeSingle();
-    const tier: UserGroupTier = profile?.user_group_tier ?? 'amateur_professional';
+      // Resolve tier; default to amateur_professional so access isn't accidentally
+      // stripped if the column hasn't been populated yet.
+      let tier: UserGroupTier = 'amateur_professional';
+      try {
+        const { data: profile, error: profileErr } = await sb
+          .from('profiles')
+          .select('user_group_tier')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (profileErr) console.warn('[useActiveContext] profiles query failed:', profileErr);
+        if (profile?.user_group_tier) tier = profile.user_group_tier as UserGroupTier;
+      } catch (e) {
+        console.warn('[useActiveContext] profiles query threw:', e);
+      }
 
-    // Academy memberships — only fetched for amateur_professional users.
-    // Note: academies has no club_id column; the relationship lives on
-    // clubs.academy_id, so we resolve the owning club via a follow-up query.
-    const academyPromise: Promise<{ data: any[] | null }> =
-      tier === 'amateur_professional'
-        ? sb
-            .from('user_academies')
-            .select('academy_id, role, academies!inner(id, name)')
-            .eq('user_id', user.id)
-        : Promise.resolve({ data: [] });
+      // ── Fetch membership tables in parallel, each isolated so one failure
+      //    can't take down the whole context loader.
+      const safeQuery = async (label: string, p: Promise<any>): Promise<any[]> => {
+        try {
+          const { data, error } = await p;
+          if (error) {
+            console.warn(`[useActiveContext] ${label} failed:`, error);
+            return [];
+          }
+          return data ?? [];
+        } catch (e) {
+          console.warn(`[useActiveContext] ${label} threw:`, e);
+          return [];
+        }
+      };
 
-    const [teamResult, clubResult, academyResult] = await Promise.all([
-      sb
-        .from('user_team_access')
-        .select('team_id, teams!inner(id, name, club_id)')
-        .eq('user_id', user.id),
-      sb
-        .from('user_club_access')
-        .select('club_id, clubs!inner(id, name, academy_id)')
-        .eq('user_id', user.id),
-      academyPromise,
-    ]);
+      const [teamRows, clubRows, academyRows] = await Promise.all([
+        safeQuery('user_team_access',
+          sb.from('user_team_access')
+            .select('team_id, teams!inner(id, name, club_id)')
+            .eq('user_id', user.id)),
+        safeQuery('user_club_access',
+          sb.from('user_club_access')
+            .select('club_id, clubs!inner(id, name, academy_id)')
+            .eq('user_id', user.id)),
+        tier === 'amateur_professional'
+          ? safeQuery('user_academies',
+              sb.from('user_academies')
+                .select('academy_id, role')
+                .eq('user_id', user.id))
+          : Promise.resolve([] as any[]),
+      ]);
 
-    const contexts: ActiveContext[] = [];
+      const contexts: ActiveContext[] = [];
 
-    // 1. Academy contexts from user_academies (highest rank — shown first).
-    // Resolve owning club via clubs.academy_id reverse lookup.
-    const academyRows = academyResult.data ?? [];
-    const academyIds = Array.from(
-      new Set(academyRows.map((r: any) => r.academy_id).filter(Boolean))
-    );
-    const academyClubMap = new Map<string, { clubId: string; clubName: string }>();
-    if (academyIds.length > 0) {
-      const { data: clubsForAcademies } = await sb
-        .from('clubs')
-        .select('id, name, academy_id')
-        .in('academy_id', academyIds);
-      for (const c of (clubsForAcademies ?? [])) {
-        if (c?.academy_id && !academyClubMap.has(c.academy_id)) {
-          academyClubMap.set(c.academy_id, { clubId: c.id, clubName: c.name ?? '' });
+      // 1. Academy contexts from user_academies. Resolve names + owning club
+      //    via plain follow-up queries (no nested embed, so no FK required).
+      const academyIds = Array.from(
+        new Set(academyRows.map((r: any) => r.academy_id).filter(Boolean))
+      );
+      const academyNameMap = new Map<string, string>();
+      const academyClubMap = new Map<string, { clubId: string; clubName: string }>();
+      if (academyIds.length > 0) {
+        const academiesData = await safeQuery('academies lookup',
+          sb.from('academies').select('id, name').in('id', academyIds));
+        for (const a of academiesData) {
+          if (a?.id) academyNameMap.set(a.id, a.name ?? '');
+        }
+        const clubsForAcademies = await safeQuery('clubs reverse lookup',
+          sb.from('clubs').select('id, name, academy_id').in('academy_id', academyIds));
+        for (const c of clubsForAcademies) {
+          if (c?.academy_id && !academyClubMap.has(c.academy_id)) {
+            academyClubMap.set(c.academy_id, { clubId: c.id, clubName: c.name ?? '' });
+          }
         }
       }
-    }
-    for (const row of academyRows) {
-      const link = academyClubMap.get(row.academy_id);
-      if (!link) continue; // need a club for downstream scoping
-      const academyName: string = row.academies?.name ?? '';
-      contexts.push({
-        kind: 'academy',
-        id: row.academy_id,
-        clubId: link.clubId,
-        label: academyName || (link.clubName ? `${link.clubName} Academy` : 'Academy'),
-        userGroupTier: tier,
-      });
-    }
+      for (const row of academyRows) {
+        const link = academyClubMap.get(row.academy_id);
+        if (!link) continue; // need a club for downstream scoping
+        const academyName = academyNameMap.get(row.academy_id) || '';
+        contexts.push({
+          kind: 'academy',
+          id: row.academy_id,
+          clubId: link.clubId,
+          label: academyName || (link.clubName ? `${link.clubName} Academy` : 'Academy'),
+          userGroupTier: tier,
+        });
+      }
 
-    // 1b. Surface academy contexts derived from club access — but ONLY when
-    //     the club is linked to a real academy row (clubs.academy_id is set).
-    //     We do NOT fabricate academies for clubs that have no academy.
-    const seenAcademyIds = new Set(contexts.map(c => c.id));
-    for (const row of (clubResult.data ?? [])) {
-      const club = row.clubs;
-      if (!club?.academy_id) continue;
-      if (seenAcademyIds.has(club.academy_id)) continue;
-      seenAcademyIds.add(club.academy_id);
-      contexts.push({
-        kind: 'academy',
-        id: club.academy_id,
-        clubId: row.club_id,
-        label: `${club.name} Academy`,
-        userGroupTier: tier,
-      });
+      // 1b. Surface academy contexts derived from club access — only when
+      //     clubs.academy_id is set. Skip duplicates from step 1.
+      const seenAcademyIds = new Set(contexts.map(c => c.id));
+      for (const row of clubRows) {
+        const club = row.clubs;
+        if (!club?.academy_id) continue;
+        if (seenAcademyIds.has(club.academy_id)) continue;
+        seenAcademyIds.add(club.academy_id);
+        contexts.push({
+          kind: 'academy',
+          id: club.academy_id,
+          clubId: row.club_id,
+          label: `${club.name} Academy`,
+          userGroupTier: tier,
+        });
+      }
+
+      // 2. Club contexts
+      for (const row of clubRows) {
+        const club = row.clubs;
+        if (!club) continue;
+        contexts.push({
+          kind: 'club',
+          id: row.club_id,
+          clubId: row.club_id,
+          label: club.name,
+          userGroupTier: tier,
+        });
+      }
+
+      // 3. Team contexts
+      for (const row of teamRows) {
+        const team = row.teams;
+        if (!team?.club_id) continue;
+        contexts.push({
+          kind: 'team',
+          id: row.team_id,
+          clubId: team.club_id,
+          label: team.name,
+          userGroupTier: tier,
+        });
+      }
+
+      setAvailableContexts(contexts);
+      const stored = loadStored(user.id, contexts);
+      setActiveContextState(stored ?? contexts[0] ?? null);
+    } catch (e) {
+      console.error('[useActiveContext] load() failed:', e);
+      setAvailableContexts([]);
+      setActiveContextState(null);
+    } finally {
+      setLoading(false);
     }
-
-    // 2. Club contexts
-    for (const row of (clubResult.data ?? [])) {
-      const club = row.clubs;
-      if (!club) continue;
-      contexts.push({
-        kind: 'club',
-        id: row.club_id,
-        clubId: row.club_id,
-        label: club.name,
-        userGroupTier: tier,
-      });
-    }
-
-    // 3. Team contexts (most granular — shown last)
-    for (const row of (teamResult.data ?? [])) {
-      const team = row.teams;
-      if (!team?.club_id) continue;
-      contexts.push({
-        kind: 'team',
-        id: row.team_id,
-        clubId: team.club_id,
-        label: team.name,
-        userGroupTier: tier,
-      });
-    }
-
-    setAvailableContexts(contexts);
-
-    const stored = loadStored(user.id, contexts);
-    setActiveContextState(stored ?? contexts[0] ?? null);
-    setLoading(false);
   }, []);
 
   useEffect(() => {

@@ -1,39 +1,60 @@
-# Fix: Academy not reflected + Ultra tab ignores picker
+# Fix blank UI screens after sign-in
 
-## Root causes
+## What’s likely happening
+The signed-in app depends on `ActiveContextProvider`, and `useActiveContextData()` currently does all of its loading in one async flow with no `try/catch/finally` and no per-query error handling.
 
-**1. Academy from `user_academies` never surfaces in the picker.**
-`src/hooks/useActiveContext.ts` line 77 selects:
-```
-academies!inner(id, club_id, clubs!inner(id, name))
-```
-The `academies` table has **no `club_id` column** — the relationship goes the other way (`clubs.academy_id`). So `acad.club_id` is always undefined and line 98 (`if (!acad?.club_id) continue`) skips every row. The synced Dundee FC Academy membership therefore never produces an academy context from `user_academies`; it only appears via the 1b club-derived fallback, which means any academy-only metadata (e.g. true membership role, academies that aren't linked to a club the user has direct access to) is lost.
+If any of these queries fail or return an unexpected shape:
+- `profiles`
+- `user_team_access -> teams!inner(...)`
+- `user_club_access -> clubs!inner(...)`
+- `user_academies -> academies!inner(...)`
+- follow-up `clubs` reverse lookup by `academy_id`
 
-**2. Ultra tab ignores the global context picker.**
-`src/pages/ios/UltraScreen.tsx` uses the legacy `useActiveTeam()` hook instead of `useActiveContext()`, so switching to Dundee FC / Dundee FC Academy on Home doesn't change anything on Ultra. Its data queries (`devices`, `biometric_readings`) are also unscoped — they fetch globally regardless of which team/club is selected.
+then `loading` can stay `true` forever or the provider can end up with no usable context. Because that provider wraps the whole app, the result is an apparently blank signed-in UI.
 
-## Changes
+## Plan
 
-### A. `src/hooks/useActiveContext.ts`
-- Change the `user_academies` query to fetch the academy directly and resolve the owning club via `clubs.academy_id` (reverse lookup), since there is no `academies.club_id` column:
-  ```ts
-  sb.from('user_academies')
-    .select('academy_id, role, academies!inner(id, name)')
-    .eq('user_id', user.id)
-  ```
-  Then in a single follow-up query, fetch `clubs` where `academy_id` is in the returned academy ids (`id, name, academy_id`), and build a map `academyId -> { clubId, clubName, academyName }`.
-- Build academy contexts from that map. Use `academies.name` as the label (fallback to `${clubName} Academy`). `clubId` comes from the matched club row; skip the academy if no club is linked (rare — we still need a clubId for downstream scoping).
-- Keep the 1b club-derived fallback as-is (it correctly adds academy contexts for clubs whose `academy_id` is set but the user has no `user_academies` row). De-dupe against academies already added in step 1.
+### 1. Make active-context loading fail-safe
+Update `src/hooks/useActiveContext.ts` so context loading can never strand the app in a blank state:
+- Wrap `load()` in `try/catch/finally`
+- Always call `setLoading(false)` in `finally`
+- Check and handle `error` from each Supabase query instead of assuming `.data` exists
+- Add safe defaults for failed queries (`[]`) so one broken membership source does not blank the whole app
+- Log the specific failing query to the console for future debugging
 
-### B. `src/pages/ios/UltraScreen.tsx`
-- Replace `useActiveTeam` with `useActiveContext` from `@/contexts/ActiveContextContext`.
-- Header subtitle: use `activeContext?.label` (with the same `· N wearables` suffix).
-- Scope the data fetches to the active context:
-  - `kind === 'team'`: filter `devices.assigned_player_id` and `biometric_readings.player_id` by players where `team_id = activeContext.id`.
-  - `kind === 'club'` or `'academy'`: gather all teams for `activeContext.clubId`, then filter by players whose `team_id IN (teamIds)` OR `club_id = activeContext.clubId`. Mirrors the pattern already used in `SquadScreen` / `HomeScreen`.
-- Re-run the effect when `activeContext?.kind / id / clubId` changes.
+### 2. Simplify the academy lookup path
+Reduce risk from nested relation queries in `useActiveContext.ts`:
+- Keep the academy membership fetch, but avoid relying on fragile nested response shapes
+- Resolve academy labels and owning clubs from plain follow-up queries when needed
+- Build contexts only from validated data (`id`, `kind`, `clubId`, `label`)
+- If academy resolution fails, still return club/team contexts so the UI remains usable
 
-## Out of scope
-- No DB migrations; existing data + RLS are sufficient.
-- No edge-function changes (academy sync already populates `user_academies` and `clubs.academy_id`).
-- No changes to other screens.
+### 3. Add explicit no-context fallbacks in signed-in screens
+Prevent signed-in routes from rendering “nothing” when there is no active context:
+- `src/pages/ios/HomeScreen.tsx`
+- `src/pages/ios/SquadScreen.tsx`
+- `src/pages/ios/UltraScreen.tsx`
+- any route guards relying on `useActiveContext()`
+
+Behavior:
+- If context is still loading: show a visible loading state
+- If loading is finished but no contexts are available: show a clear empty state like “No club/team access found” instead of a blank screen
+- Avoid silent redirects/empty render paths when `activeContext` is null
+
+### 4. Verify the Dundee FC academy path still works
+After hardening the loader, verify that:
+- Dundee FC Academy appears as a valid academy context
+- Home shows academy-only navigation when academy context is selected
+- Ultra follows the same selected context
+- Non-academy contexts still render normally
+
+## Technical details
+Files expected to change:
+- `src/hooks/useActiveContext.ts`
+- `src/App.tsx`
+- `src/pages/ios/HomeScreen.tsx`
+- `src/pages/ios/UltraScreen.tsx`
+- possibly `src/pages/ios/SquadScreen.tsx` if it still has a silent null-context render path
+
+Main implementation rule:
+- The signed-in app must never depend on a single fragile async query chain to render anything. If academy lookup fails, the app should degrade to club/team context instead of going blank.
