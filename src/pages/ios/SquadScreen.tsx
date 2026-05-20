@@ -10,8 +10,8 @@ import { IOSStatusBar } from '@/components/ios/StatusBar';
 import { AttributeBar } from '@/components/ios/AttributeBar';
 import { Radar } from '@/components/ios/Radar';
 import { T, tType, Wallpapers } from '@/lib/ios-tokens';
-import { useActiveTeam } from '@/hooks/useActiveTeam';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
 
 const ATTR_GROUPS: { key: 'technical' | 'mental' | 'physical' | 'goalkeeping'; label: string; fields: { col: string; label: string }[] }[] = [
   {
@@ -336,25 +336,35 @@ interface SquadScreenProps {
 }
 
 export function SquadScreen({ onTabChange }: SquadScreenProps) {
-  const { activeTeam } = useActiveTeam();
+  const { activeContext } = useActiveContext();
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Player | null>(null);
   const [filter, setFilter] = useState(0);
 
   useEffect(() => {
-    if (!activeTeam) { setPlayers([]); setLoading(false); return; }
+    if (!activeContext) { setPlayers([]); setLoading(false); return; }
     setLoading(true);
     (async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('players')
-        .select('id, name, position, squad_number, availability, photo_url, date_of_birth')
-        .eq('team_id', activeTeam.id)
-        .order('squad_number', { ascending: true, nullsFirst: false });
+        .select('id, name, position, squad_number, availability, photo_url, date_of_birth');
+      if (activeContext.kind === 'team') {
+        query = query.eq('team_id', activeContext.id);
+      } else {
+        // club or academy → all players in any team of that club, or directly on the club
+        const { data: clubTeams } = await supabase
+          .from('teams').select('id').eq('club_id', activeContext.clubId);
+        const teamIds = (clubTeams || []).map(t => t.id);
+        const orParts = [`club_id.eq.${activeContext.clubId}`];
+        if (teamIds.length) orParts.push(`team_id.in.(${teamIds.join(',')})`);
+        query = query.or(orParts.join(','));
+      }
+      const { data } = await query.order('squad_number', { ascending: true, nullsFirst: false });
       setPlayers(data || []);
       setLoading(false);
     })();
-  }, [activeTeam]);
+  }, [activeContext?.kind, activeContext?.id, activeContext?.clubId]);
 
   if (selected) {
     return <PlayerDetailScreen player={selected} onBack={() => setSelected(null)} onTabChange={onTabChange} />;
@@ -376,7 +386,7 @@ export function SquadScreen({ onTabChange }: SquadScreenProps) {
       <div style={{ height: 4 }} />
       <div style={{ padding: '8px 20px 12px' }}>
         <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>
-          {activeTeam?.name || 'Select a team'} · {players.length} player{players.length === 1 ? '' : 's'}
+          {activeContext?.label || 'Select a team'} · {players.length} player{players.length === 1 ? '' : 's'}
         </div>
         <div style={{ ...tType('largeTitle'), color: T.fg }}>Squad</div>
       </div>
@@ -399,7 +409,7 @@ export function SquadScreen({ onTabChange }: SquadScreenProps) {
         )}
         {!loading && filtered.length === 0 && (
           <div style={{ padding: '40px 20px', textAlign: 'center', ...tType('subhead'), color: T.fg2 }}>
-            {activeTeam ? 'No players synced for this team yet.' : 'No team linked to your account.'}
+            {activeContext ? 'No players for this view yet.' : 'No team linked to your account.'}
           </div>
         )}
         {Object.entries(grouped).map(([grp, list]) => list.length > 0 && (
