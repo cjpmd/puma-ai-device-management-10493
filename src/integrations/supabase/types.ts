@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       academies: {
         Row: {
+          club_website_url: string | null
           created_at: string
           eppp_category: string | null
           external_id: string | null
@@ -29,6 +30,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          club_website_url?: string | null
           created_at?: string
           eppp_category?: string | null
           external_id?: string | null
@@ -42,6 +44,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          club_website_url?: string | null
           created_at?: string
           eppp_category?: string | null
           external_id?: string | null
@@ -115,6 +118,7 @@ export type Database = {
           is_active: boolean
           max_value: number
           name: string
+          source: string
           updated_at: string
         }
         Insert: {
@@ -125,6 +129,7 @@ export type Database = {
           is_active?: boolean
           max_value?: number
           name: string
+          source?: string
           updated_at?: string
         }
         Update: {
@@ -135,6 +140,7 @@ export type Database = {
           is_active?: boolean
           max_value?: number
           name?: string
+          source?: string
           updated_at?: string
         }
         Relationships: []
