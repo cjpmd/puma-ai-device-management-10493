@@ -88,7 +88,7 @@ function AcademyProfileTab() {
     staleTime: 60_000,
     queryFn: async () => {
       const { data } = await sb.from('academies')
-        .select('id, name, fa_registration_number, eppp_category, founded_year, logo_url, head_of_academy_user_id, synced_at')
+        .select('id, name, fa_registration_number, eppp_category, founded_year, logo_url, head_of_academy_user_id, club_website_url, synced_at')
         .eq('id', academyId).maybeSingle();
       return data ?? {};
     },
@@ -123,6 +123,7 @@ function AcademyProfileTab() {
     fa_affiliation_number: settings?.fa_affiliation_number ?? academy?.fa_registration_number ?? '',
     eppp_category: settings?.eppp_category ?? academy?.eppp_category ?? '',
     founded_year: academy?.founded_year ? String(academy.founded_year) : '',
+    club_website_url: academy?.club_website_url ?? '',
     academy_tier: prefs.academy_tier ?? '',
     license_expiry: prefs.license_expiry ?? '',
     address: prefs.address ?? '',
@@ -137,6 +138,7 @@ function AcademyProfileTab() {
       fa_registration_number: merged.fa_affiliation_number || null,
       eppp_category: merged.eppp_category || null,
       founded_year: merged.founded_year ? Number(merged.founded_year) : null,
+      club_website_url: merged.club_website_url || null,
     }).eq('id', academyId);
 
     // 2. Write extras to academy_settings (+ prefs jsonb)
@@ -172,6 +174,7 @@ function AcademyProfileTab() {
         <InputRow label="Founded year" value={merged.founded_year ?? ''} type="number" onChange={(v) => setForm((f) => ({ ...f, founded_year: v }))} />
         <InputRow label="Academy tier" value={merged.academy_tier ?? ''} onChange={(v) => setForm((f) => ({ ...f, academy_tier: v }))} placeholder="1–3" />
         <InputRow label="License expiry" value={merged.license_expiry ?? ''} type="date" onChange={(v) => setForm((f) => ({ ...f, license_expiry: v }))} />
+        <InputRow label="Club website" value={merged.club_website_url ?? ''} onChange={(v) => setForm((f) => ({ ...f, club_website_url: v }))} placeholder="https://yourclub.com" />
       </SectionCard>
       <SectionCard title="Contact">
         <div className="flex items-center gap-4">
@@ -210,10 +213,14 @@ function StaffTab() {
         body: { academy_id: academyId },
       });
       if (error) throw error;
-      return ((data as any)?.staff ?? []) as {
+      const rows = ((data as any)?.staff ?? []) as {
         user_id: string; role: string; created_at: string;
         full_name: string | null; email: string | null;
       }[];
+      const order: Record<string, number> = {
+        head_coach: 0, coach: 1, physio: 2, welfare_officer: 3, scout: 4, analyst: 5,
+      };
+      return rows.sort((a, b) => (order[a.role] ?? 99) - (order[b.role] ?? 99));
     },
   });
 
@@ -257,22 +264,36 @@ function StaffTab() {
       </SectionCard>
       <SectionCard title={`Current Staff (${staff.length})`}>
         {staff.length === 0 ? (
-          <p className="text-slate-400 text-sm">No staff added yet.</p>
+          <p className="text-slate-500 text-sm">No staff added yet.</p>
         ) : (
-          <div className="space-y-2">
-            {staff.map((s) => (
-              <div key={s.user_id} className="flex items-center justify-between py-1">
-                <div className="min-w-0">
-                  <div className="text-sm text-slate-900 truncate">
-                    {s.full_name || s.email || `${s.user_id.slice(0, 8)}…`}
+          <div className="divide-y divide-slate-100">
+            {staff.map((s) => {
+              const name = s.full_name || s.email || `${s.user_id.slice(0, 8)}…`;
+              const initials = (s.full_name || s.email || '?')
+                .split(/[\s@]+/).filter(Boolean).slice(0, 2)
+                .map((p) => p[0]?.toUpperCase()).join('') || '?';
+              return (
+                <div key={s.user_id} className="flex items-center gap-3 py-2.5">
+                  <div className="w-9 h-9 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-semibold flex-shrink-0">
+                    {initials}
                   </div>
-                  {s.email && s.full_name && (
-                    <div className="text-xs text-slate-500 truncate">{s.email}</div>
-                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-slate-900 truncate">{name}</div>
+                    {s.email && (
+                      <div className="text-xs text-slate-500 truncate">{s.email}</div>
+                    )}
+                  </div>
+                  <span className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 capitalize whitespace-nowrap">
+                    {s.role?.replace(/_/g, ' ')}
+                  </span>
+                  {s.email ? (
+                    <a href={`mailto:${s.email}`} className="text-xs text-violet-600 hover:text-violet-800 font-medium whitespace-nowrap">
+                      Contact
+                    </a>
+                  ) : null}
                 </div>
-                <span className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 capitalize">{s.role?.replace(/_/g, ' ')}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </SectionCard>
@@ -288,7 +309,7 @@ function AttributesTab() {
     staleTime: 300_000,
     queryFn: async () => {
       const { data } = await sb.from('attribute_definition').select('*').order('category').order('name');
-      return (data ?? []) as { id: string; name: string; category: string; max_value: number; is_active: boolean }[];
+      return (data ?? []) as { id: string; name: string; category: string; max_value: number; is_active: boolean; source?: string }[];
     },
   });
 
@@ -350,19 +371,24 @@ function AttributesTab() {
       {byCategory.map(({ cat, items }) => (
         <SectionCard key={cat} title={`${cat.charAt(0).toUpperCase() + cat.slice(1)} (${items.length})`}>
           {items.length === 0 ? (
-            <p className="text-slate-900/30 text-sm">No attributes in this category.</p>
+            <p className="text-slate-500 text-sm">No attributes in this category.</p>
           ) : (
             <div className="space-y-1">
               {items.map((def) => (
                 <div key={def.id} className="flex items-center gap-3 py-1">
-                  <span className={`flex-1 text-sm ${def.is_active ? 'text-slate-900' : 'text-slate-900/30 line-through'}`}>{def.name}</span>
-                  <span className="text-xs text-slate-900/30">max {def.max_value}</span>
+                  <span className={`flex-1 text-sm ${def.is_active ? 'text-slate-900' : 'text-slate-400 line-through'}`}>{def.name}</span>
+                  {def.source === 'origin_sports' && (
+                    <span className="text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full font-medium">
+                      Origin Sports
+                    </span>
+                  )}
+                  <span className="text-xs text-slate-400">max {def.max_value}</span>
                   <button
                     onClick={() => toggleActive(def.id, def.is_active)}
                     className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
                       def.is_active
-                        ? 'bg-emerald-500/20 text-emerald-400 hover:bg-red-500/20 hover:text-red-400'
-                        : 'bg-slate-100 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400'
+                        ? 'bg-emerald-100 text-emerald-700 hover:bg-red-100 hover:text-red-700'
+                        : 'bg-slate-100 text-slate-500 hover:bg-emerald-100 hover:text-emerald-700'
                     }`}
                   >
                     {def.is_active ? 'Active' : 'Inactive'}
@@ -582,8 +608,8 @@ function IntegrationsTab() {
               <span
                 className={`text-xs px-2 py-0.5 rounded-full ${
                   int.status === 'active'
-                    ? 'bg-emerald-500/20 text-emerald-400'
-                    : 'bg-slate-100 text-slate-400'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-slate-100 text-slate-500'
                 }`}
               >
                 {int.status === 'active' ? 'Active' : 'Coming soon'}

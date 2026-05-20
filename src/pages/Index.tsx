@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BrainCircuit, BarChart, Video } from "lucide-react";
+import { BrainCircuit, BarChart, Video, GraduationCap } from "lucide-react";
 
 const Index = () => {
   return (
@@ -15,7 +15,24 @@ const Index = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <Link to="/dashboard">
+            <Card className="glass border-white/10 hover:bg-white/10 transition-colors h-full">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-white">
+                  <GraduationCap className="h-6 w-6 text-primary" />
+                  Academy
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-white/70">
+                  Open the Academy dashboard — squads, players, welfare, scouting,
+                  coaching curriculum, and EPPP compliance.
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
+
           <Link to="/matches">
             <Card className="glass border-white/10 hover:bg-white/10 transition-colors h-full">
               <CardHeader>
