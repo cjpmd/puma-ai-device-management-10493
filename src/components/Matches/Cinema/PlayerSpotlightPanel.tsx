@@ -222,6 +222,12 @@ export function PlayerSpotlightPanel({
       touches_pass:    fromMetrics?.touches_pass     ?? null,
       touches_shot:    fromMetrics?.touches_shot     ?? null,
       touches_dribble: fromMetrics?.touches_dribble  ?? null,
+      // Pass direction breakdown from PassAnalyser
+      passes_attempted:  fromMetrics?.passes_attempted  ?? null,
+      passes_forward:    fromMetrics?.passes_forward    ?? null,
+      passes_sideways:   fromMetrics?.passes_sideways   ?? null,
+      passes_back:       fromMetrics?.passes_back       ?? null,
+      pass_accuracy:     fromMetrics?.pass_accuracy     ?? null,
     };
   }, [selected, playerEvents, playerMetrics]);
 
@@ -357,6 +363,55 @@ export function PlayerSpotlightPanel({
                             <div className="h-1 rounded-full mt-0.5 mx-0.5 opacity-60" style={{ background: color, width: `${pct}%`, minWidth: count > 0 ? 2 : 0 }} />
                             <div className="text-[9px] text-muted-foreground mt-0.5">{label}</div>
                           </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pass direction bar — shown when PassAnalyser data is available */}
+                {stats?.passes_attempted != null && stats.passes_attempted > 0 && (
+                  <div className="border-t border-border/40 pt-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Pass direction</span>
+                      <span className="text-xs font-semibold tabular-nums">
+                        {stats.pass_accuracy != null ? `${stats.pass_accuracy}% acc` : `${stats.passes_attempted} att`}
+                      </span>
+                    </div>
+                    <div className="flex h-2 rounded-full overflow-hidden w-full">
+                      {(
+                        [
+                          { key: 'passes_forward',  color: '#22c55e' },
+                          { key: 'passes_sideways', color: '#3b82f6' },
+                          { key: 'passes_back',     color: '#f97316' },
+                        ] as const
+                      ).map(({ key, color }) => {
+                        const count = (stats as Record<string, number | null>)[key] ?? 0;
+                        const total = stats.passes_attempted ?? 1;
+                        const pct = (count / total) * 100;
+                        return pct > 0 ? (
+                          <div
+                            key={key}
+                            style={{ width: `${pct}%`, background: color }}
+                            title={`${key.replace('passes_', '')}: ${count} (${Math.round(pct)}%)`}
+                          />
+                        ) : null;
+                      })}
+                    </div>
+                    <div className="flex gap-2 mt-1">
+                      {(
+                        [
+                          { key: 'passes_forward',  label: 'Fwd',  color: '#22c55e' },
+                          { key: 'passes_sideways', label: 'Side', color: '#3b82f6' },
+                          { key: 'passes_back',     label: 'Back', color: '#f97316' },
+                        ] as const
+                      ).map(({ key, label, color }) => {
+                        const count = (stats as Record<string, number | null>)[key] ?? 0;
+                        return (
+                          <span key={key} className="text-[9px] flex items-center gap-0.5">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+                            {label} {count}
+                          </span>
                         );
                       })}
                     </div>
