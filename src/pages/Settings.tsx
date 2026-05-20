@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -65,6 +65,46 @@ function AcademyProfileTab() {
   const { activeContext } = useActiveContext();
   const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
 
+  // Trigger a one-shot academy sync when this page opens
+  const synced = useRef(false);
+  const [syncing, setSyncing] = useState(false);
+  useEffect(() => {
+    if (synced.current) return;
+    synced.current = true;
+    setSyncing(true);
+    supabase.functions.invoke('sync-external-academy')
+      .catch((e) => console.warn('academy sync skipped:', e))
+      .finally(() => {
+        setSyncing(false);
+        qc.invalidateQueries({ queryKey: ['academy-row', academyId] });
+        qc.invalidateQueries({ queryKey: ['academy-settings', academyId] });
+        qc.invalidateQueries({ queryKey: ['academy-hoa', academyId] });
+      });
+  }, [academyId, qc]);
+
+  const { data: academy } = useQuery({
+    queryKey: ['academy-row', academyId],
+    enabled: !!academyId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await sb.from('academies')
+        .select('id, name, fa_registration_number, eppp_category, founded_year, logo_url, head_of_academy_user_id, synced_at')
+        .eq('id', academyId).maybeSingle();
+      return data ?? {};
+    },
+  });
+
+  const { data: hoa } = useQuery({
+    queryKey: ['academy-hoa', academy?.head_of_academy_user_id],
+    enabled: !!academy?.head_of_academy_user_id,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await sb.from('profiles')
+        .select('id, full_name, email').eq('id', academy.head_of_academy_user_id).maybeSingle();
+      return data ?? null;
+    },
+  });
+
   const { data: settings } = useQuery({
     queryKey: ['academy-settings', academyId],
     enabled: !!academyId,
@@ -76,26 +116,77 @@ function AcademyProfileTab() {
     },
   });
 
+  const prefs = (settings?.prefs ?? {}) as Record<string, string>;
   const [form, setForm] = useState<Record<string, string>>({});
-  const merged = { ...settings, ...form };
+  const merged = {
+    name: academy?.name ?? '',
+    fa_affiliation_number: settings?.fa_affiliation_number ?? academy?.fa_registration_number ?? '',
+    eppp_category: settings?.eppp_category ?? academy?.eppp_category ?? '',
+    founded_year: academy?.founded_year ? String(academy.founded_year) : '',
+    academy_tier: prefs.academy_tier ?? '',
+    license_expiry: prefs.license_expiry ?? '',
+    address: prefs.address ?? '',
+    ...form,
+  };
 
   async function save() {
-    await sb.from('academy_settings')
-      .upsert({ id: settings?.id ?? undefined, academy_id: academyId, ...merged });
+    if (!academyId) return;
+    // 1. Write synced/base fields to academies
+    await sb.from('academies').update({
+      name: merged.name || null,
+      fa_registration_number: merged.fa_affiliation_number || null,
+      eppp_category: merged.eppp_category || null,
+      founded_year: merged.founded_year ? Number(merged.founded_year) : null,
+    }).eq('id', academyId);
+
+    // 2. Write extras to academy_settings (+ prefs jsonb)
+    const nextPrefs = {
+      ...prefs,
+      academy_tier: merged.academy_tier || undefined,
+      license_expiry: merged.license_expiry || undefined,
+      address: merged.address || undefined,
+    };
+    await sb.from('academy_settings').upsert({
+      id: settings?.id ?? undefined,
+      academy_id: academyId,
+      name: merged.name || null,
+      fa_affiliation_number: merged.fa_affiliation_number || null,
+      eppp_category: merged.eppp_category || null,
+      founded_year: merged.founded_year ? Number(merged.founded_year) : null,
+      prefs: nextPrefs,
+    });
+    qc.invalidateQueries({ queryKey: ['academy-row', academyId] });
     qc.invalidateQueries({ queryKey: ['academy-settings', academyId] });
     setForm({});
   }
 
   return (
     <div className="space-y-4">
+      {syncing && (
+        <div className="text-xs text-slate-500">Syncing from Origin Sports…</div>
+      )}
       <SectionCard title="Basic Information">
         <InputRow label="Academy name" value={merged.name ?? ''} onChange={(v) => setForm((f) => ({ ...f, name: v }))} />
         <InputRow label="FA affiliation number" value={merged.fa_affiliation_number ?? ''} onChange={(v) => setForm((f) => ({ ...f, fa_affiliation_number: v }))} />
+        <InputRow label="EPPP category" value={merged.eppp_category ?? ''} onChange={(v) => setForm((f) => ({ ...f, eppp_category: v }))} placeholder="e.g. Category 1" />
+        <InputRow label="Founded year" value={merged.founded_year ?? ''} type="number" onChange={(v) => setForm((f) => ({ ...f, founded_year: v }))} />
         <InputRow label="Academy tier" value={merged.academy_tier ?? ''} onChange={(v) => setForm((f) => ({ ...f, academy_tier: v }))} placeholder="1–3" />
         <InputRow label="License expiry" value={merged.license_expiry ?? ''} type="date" onChange={(v) => setForm((f) => ({ ...f, license_expiry: v }))} />
       </SectionCard>
       <SectionCard title="Contact">
-        <InputRow label="Head of Academy email" value={merged.hoa_email ?? ''} type="email" onChange={(v) => setForm((f) => ({ ...f, hoa_email: v }))} />
+        <div className="flex items-center gap-4">
+          <label className="text-slate-500 text-sm w-44 flex-shrink-0">Head of Academy</label>
+          <div className="flex-1 text-sm text-slate-900">
+            {hoa ? (
+              <>
+                <div>{hoa.full_name || '—'}</div>
+                <div className="text-slate-500 text-xs">{hoa.email}</div>
+              </>
+            ) : (
+              <span className="text-slate-400">Not assigned (synced from Origin Sports admin)</span>
+            )}
+          </div>
+        </div>
         <InputRow label="Address" value={merged.address ?? ''} onChange={(v) => setForm((f) => ({ ...f, address: v }))} />
       </SectionCard>
       <button onClick={save} className="bg-violet-600 hover:bg-violet-700 text-white text-sm px-6 py-2 rounded-lg transition-colors">
@@ -115,9 +206,14 @@ function StaffTab() {
     enabled: !!academyId,
     staleTime: 60_000,
     queryFn: async () => {
-      const { data } = await sb.from('user_academies')
-        .select('user_id, role, created_at').eq('academy_id', academyId);
-      return (data ?? []) as { user_id: string; role: string; created_at: string }[];
+      const { data, error } = await supabase.functions.invoke('get-academy-staff', {
+        body: { academy_id: academyId },
+      });
+      if (error) throw error;
+      return ((data as any)?.staff ?? []) as {
+        user_id: string; role: string; created_at: string;
+        full_name: string | null; email: string | null;
+      }[];
     },
   });
 
@@ -166,7 +262,14 @@ function StaffTab() {
           <div className="space-y-2">
             {staff.map((s) => (
               <div key={s.user_id} className="flex items-center justify-between py-1">
-                <span className="text-slate-700 font-mono text-xs">{s.user_id.slice(0, 12)}…</span>
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-900 truncate">
+                    {s.full_name || s.email || `${s.user_id.slice(0, 8)}…`}
+                  </div>
+                  {s.email && s.full_name && (
+                    <div className="text-xs text-slate-500 truncate">{s.email}</div>
+                  )}
+                </div>
                 <span className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 capitalize">{s.role?.replace(/_/g, ' ')}</span>
               </div>
             ))}
