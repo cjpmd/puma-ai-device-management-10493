@@ -1,96 +1,39 @@
-## Goals
+# Plan
 
-1. Staff list shows name + email + role (and profile reference)
-2. Attribute Framework pulls the canonical attribute list from Origin Sports
-3. "Origin Sports FC" topbar link points to the actual club website (configurable in Academy Profile)
-4. Add a way to navigate back to the Origin Sports Performance home (`/`) from the topbar
-5. Add a "Academy Dashboard" entry point on the Home page
-6. Tighten data scoping (only show players for selected team/club) and fix design issues (light text on light backgrounds)
+## 1. Ultra Analysis — match dark/glass design
 
----
+The Analysis page (`/analysis`) uses a dark purple gradient background, but `MetricCard` and the chart panels render as solid white cards (`bg-white text-slate-900`), breaking the scheme. Movement Intensity and Shot Power Analysis panels are also empty white boxes.
 
-## 1. Staff tab (`src/pages/Settings.tsx`)
+Changes:
+- **`src/components/MetricCard.tsx`** — switch to the same glass surface used elsewhere on Analysis: `bg-white/5 border border-white/10 backdrop-blur-md text-white`, title `text-white/70`, value `text-white`, unit/subtitle `text-white/60`, icon `text-white/70`. Remove the duplicated `border border-slate-200` class.
+- **`src/pages/Analysis.tsx`** — wrap Movement Intensity / Shot Power Analysis / Player Movement Map / any remaining white panels in the same `bg-white/5 border border-white/10 backdrop-blur-md rounded-lg` shell; titles to `text-white`, secondary copy to `text-white/70`. Audit Individual/Group/Biometrics/Video tab panels in the same pass and fix any `bg-white`, `text-slate-900`, or `text-slate-*` on the dark background.
+- Keep all functional logic, queries and props untouched.
 
-`get-academy-staff` already returns `full_name` + `email`. Update the rendered row so name is always primary, email is always shown beneath it, and role + a "View profile" link sit on the right.
+## 2. Settings → Staff — assign role to existing staff
 
-```text
-[ Avatar ]  Jane Smith                              [ coach ]  View profile
-            jane@club.com
-```
+Today each staff row shows a static role pill. Add inline role editing and prepare the data model so Origin Sports can read it back.
 
-- Avatar: initials in a violet circle (same style as TopBar)
-- "View profile" links to a placeholder route `/staff/:user_id` (or opens a slide-over). If a profile page does not exist yet, link to `mailto:` as a fallback and add a TODO.
-- Sort: head_coach → coach → physio → analyst → others.
+Frontend (`src/pages/Settings.tsx`, `StaffTab`):
+- Replace the static role pill with a small `<select>` (Head Coach, Coach, Assistant Coach, Physio, Analyst, S&C, Academy Manager, Admin, Other) bound to `user_academies.role` for the active academy.
+- On change, call a new edge function `update-academy-staff-role` (service-role) that updates `user_academies.role` for `(academy_id, user_id)` after verifying the caller has academy access and is a head_coach / academy_manager / admin. Optimistic update + toast.
+- Show a small "Synced to Origin Sports" hint when `external_role_synced_at` is set; otherwise "Pending sync".
 
-## 2. Attribute Framework — pull from Origin Sports
+Database (migration):
+- `ALTER TABLE public.user_academies ADD COLUMN IF NOT EXISTS external_role_synced_at timestamptz;`
+- `ALTER TABLE public.user_academies ADD COLUMN IF NOT EXISTS external_role text;` (last role pushed to Origin Sports, for diffing)
+- Index on `(academy_id)` if not present.
+- RLS: keep existing; the edge function uses service role.
 
-Today `attribute_definition` is locally editable but starts empty. Origin Sports stores per-player attributes as `{name, value, enabled}` on `players.attributes`. We will:
+Edge functions:
+- **`update-academy-staff-role`** (new) — input `{ academy_id, user_id, role }`. Verifies caller via JWT + `user_has_academy_access` + caller role in allow-list. Updates `user_academies.role`, clears `external_role_synced_at`, returns updated row.
+- **`sync-external-user-access`** (extend) — on each run, for every `user_academies` row where `role <> external_role` (or `external_role_synced_at IS NULL`), push the role to Origin Sports via the matching external membership table (`user_clubs`/`club_members` / `user_teams`/`team_members` already handled there). On success set `external_role = role`, `external_role_synced_at = now()`. If Origin Sports table is read-only, log a warning and leave timestamp null.
+- **`get-academy-staff`** (extend) — include `external_role`, `external_role_synced_at` in returned rows so the Staff tab can display sync status.
 
-- Extend `supabase/functions/sync-external-core/index.ts` so that while iterating FC players it also collects every unique `(category, name)` pair and upserts them into `public.attribute_definition` (key on `name`).
-  - Category is inferred from the FC attribute object if present, otherwise defaulted to `technical`.
-  - `max_value` defaults to 20 (matches FC scale).
-  - Existing locally-added rows are preserved; the sync only inserts missing names.
-- On the Attributes tab, show a "Synced from Origin Sports" badge next to rows that came from FC (track via a new `source TEXT` column on `attribute_definition`, default `'local'`; sync sets `'origin_sports'`).
-- Keep the local add/toggle UI for academy-specific extensions.
-
-Migration:
-```sql
-ALTER TABLE public.attribute_definition
-  ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'local';
-```
-
-## 3. Club website + topbar "Origin Sports FC" link
-
-The topbar currently links to `app.originsports.co.uk` (a dummy). Replace with a per-academy "Club website" URL.
-
-- **Migration:** add `club_website_url TEXT` to `public.academies`.
-- **Settings → Academy Profile:** new "Club website" input under Basic Information; saves to `academies.club_website_url`.
-- **TopBar:** read the active academy's `club_website_url` (via `useActiveContext` + a small query in `AppShell`) and pass to `TopBar` as `fcUrl`. Fallback hidden if not set.
-- Rename the link label to "Club website" to reflect what it is.
-
-## 4. Topbar Home button
-
-Add a "Home" link on the left side of `TopBar` (before the org name) that navigates to `/` (the Origin Sports Performance landing page). House icon + label, same violet hover treatment as the existing FC link.
-
-## 5. Home page Academy entry point (`src/pages/Index.tsx`)
-
-Add a fourth card alongside Match Day / ML Training / Performance Analysis:
-
-- **Academy** card → links to `/dashboard`
-- Same `glass` styling, uses a school/shield icon
-- Card grid becomes `md:grid-cols-2 lg:grid-cols-4`
-
-## 6. Data scoping + design pass
-
-These touch multiple pages; group as a sweep but only fix the broken ones.
-
-**Scoping audit (must filter by `activeContext.clubId` or `teamId`):**
-- `Players.tsx`, `Squads.tsx`, `Welfare.tsx`, `Medical.tsx`, `FitnessTesting.tsx`, `Development.tsx`, `Scouting.tsx`, `Coaching.tsx`, `Compliance.tsx`
-- For each, find the players/list query and add `.eq('club_id', clubId)` (or `team_id` when context is a team). If a page lists records keyed by `player_id`, scope via an `players!inner(club_id)` join (same pattern Dashboard uses).
-- Empty state when no context is selected: "Select a club or team to view data."
-
-**Design pass (light text on light backgrounds):**
-- Replace `text-slate-900/30` and `text-white/…` usages that appear on white cards with `text-slate-400` / `text-slate-500`.
-- Replace ad-hoc backgrounds with the design tokens already used in `Dashboard.tsx` (`bg-white border border-slate-200 rounded-2xl`).
-- Targets identified in current files: `Settings.tsx` (Attributes tab uses `text-slate-900/30` and `text-white/…`), any page still using `wallpaper-dawn` with `text-white` outside the Home/Auth pages.
-
-A grep pass for `text-white` + `text-slate-900/` will be used to find every offender.
-
----
+Origin Sports preparation (documented, not code we own):
+- Document the contract in `docs/origin-sports-sync.md`: field `role` (enum list above) on the membership row, optional `updated_at`. Note that Lovable will be the source of truth for academy role and Origin Sports should reflect it back into its UI.
 
 ## Technical notes
 
-- One migration handles both schema changes:
-  ```sql
-  ALTER TABLE public.academies ADD COLUMN IF NOT EXISTS club_website_url TEXT;
-  ALTER TABLE public.attribute_definition ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'local';
-  ```
-- `sync-external-core` change is additive — does not affect existing player/attribute upserts.
-- `AppShell.tsx` will need to read the active academy row to provide `fcUrl` and academy name to `TopBar`.
-- Staff "View profile" route is a stub; we'll add a minimal `/staff/:id` page that shows name/email/role and the academies they belong to (read via `get-academy-staff` extended to single-user, or a new `get-staff-profile` function).
-
-## Out of scope
-
-- Auth Admin invite workflow (still alerts a placeholder)
-- Real alert feed data on Dashboard
-- Full design system rewrite — only fixing legibility regressions where light text sits on light backgrounds
+- No changes to `MetricCard` consumers' props.
+- `update-academy-staff-role` must be registered in `supabase/config.toml` with `verify_jwt = true` (default).
+- Keep `src/integrations/supabase/types.ts` regeneration to the automated pipeline after the migration.
