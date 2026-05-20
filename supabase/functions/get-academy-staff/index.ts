@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
 
     const { data: members } = await admin
       .from("user_academies")
-      .select("user_id, role, created_at")
+      .select("user_id, role, created_at, external_role, external_role_synced_at")
       .eq("academy_id", academy_id);
 
     const userIds = (members || []).map((m: any) => m.user_id);
@@ -65,6 +65,8 @@ Deno.serve(async (req) => {
         created_at: m.created_at,
         full_name: p?.full_name ?? null,
         email: p?.email ?? null,
+        external_role: m.external_role ?? null,
+        external_role_synced_at: m.external_role_synced_at ?? null,
       };
     });
 
