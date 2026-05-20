@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       academies: {
         Row: {
+          background_check_jurisdiction: string
           club_website_url: string | null
           created_at: string
           eppp_category: string | null
@@ -30,6 +31,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          background_check_jurisdiction?: string
           club_website_url?: string | null
           created_at?: string
           eppp_category?: string | null
@@ -44,6 +46,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          background_check_jurisdiction?: string
           club_website_url?: string | null
           created_at?: string
           eppp_category?: string | null
@@ -1692,6 +1695,8 @@ export type Database = {
       }
       profiles: {
         Row: {
+          accessni_expiry: string | null
+          background_check_type: string | null
           created_at: string
           dbs_expiry: string | null
           email: string | null
@@ -1699,11 +1704,14 @@ export type Database = {
           first_aid_expiry: string | null
           full_name: string | null
           id: string
+          pvg_expiry: string | null
           uefa_licence: string | null
           updated_at: string
           user_group_tier: string
         }
         Insert: {
+          accessni_expiry?: string | null
+          background_check_type?: string | null
           created_at?: string
           dbs_expiry?: string | null
           email?: string | null
@@ -1711,11 +1719,14 @@ export type Database = {
           first_aid_expiry?: string | null
           full_name?: string | null
           id: string
+          pvg_expiry?: string | null
           uefa_licence?: string | null
           updated_at?: string
           user_group_tier?: string
         }
         Update: {
+          accessni_expiry?: string | null
+          background_check_type?: string | null
           created_at?: string
           dbs_expiry?: string | null
           email?: string | null
@@ -1723,6 +1734,7 @@ export type Database = {
           first_aid_expiry?: string | null
           full_name?: string | null
           id?: string
+          pvg_expiry?: string | null
           uefa_licence?: string | null
           updated_at?: string
           user_group_tier?: string
