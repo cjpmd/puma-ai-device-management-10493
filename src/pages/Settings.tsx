@@ -203,6 +203,7 @@ function AcademyProfileTab() {
 function StaffTab() {
   const { activeContext } = useActiveContext();
   const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
+  const qc = useQueryClient();
 
   const { data: staff = [] } = useQuery({
     queryKey: ['staff-list', academyId],
@@ -216,6 +217,7 @@ function StaffTab() {
       const rows = ((data as any)?.staff ?? []) as {
         user_id: string; role: string; created_at: string;
         full_name: string | null; email: string | null;
+        external_role?: string | null; external_role_synced_at?: string | null;
       }[];
       const order: Record<string, number> = {
         head_coach: 0, coach: 1, physio: 2, welfare_officer: 3, scout: 4, analyst: 5,
@@ -226,6 +228,37 @@ function StaffTab() {
 
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('coach');
+  const [savingUserId, setSavingUserId] = useState<string | null>(null);
+
+  const ROLE_OPTIONS: { value: string; label: string }[] = [
+    { value: 'head_coach', label: 'Head Coach' },
+    { value: 'coach', label: 'Coach' },
+    { value: 'assistant_coach', label: 'Assistant Coach' },
+    { value: 'academy_manager', label: 'Academy Manager' },
+    { value: 'physio', label: 'Physio' },
+    { value: 'sports_scientist', label: 'S&C / Sports Scientist' },
+    { value: 'analyst', label: 'Analyst' },
+    { value: 'scout', label: 'Scout' },
+    { value: 'welfare_officer', label: 'Welfare Officer' },
+    { value: 'admin', label: 'Admin' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  async function changeRole(userId: string, nextRole: string) {
+    if (!academyId) return;
+    setSavingUserId(userId);
+    try {
+      const { error } = await supabase.functions.invoke('update-academy-staff-role', {
+        body: { academy_id: academyId, user_id: userId, role: nextRole },
+      });
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ['staff-list', academyId] });
+    } catch (e: any) {
+      alert(`Failed to update role: ${e?.message ?? e}`);
+    } finally {
+      setSavingUserId(null);
+    }
+  }
 
   async function invite() {
     if (!email.trim()) return;
@@ -272,6 +305,7 @@ function StaffTab() {
               const initials = (s.full_name || s.email || '?')
                 .split(/[\s@]+/).filter(Boolean).slice(0, 2)
                 .map((p) => p[0]?.toUpperCase()).join('') || '?';
+              const synced = !!s.external_role_synced_at && s.external_role === s.role;
               return (
                 <div key={s.user_id} className="flex items-center gap-3 py-2.5">
                   <div className="w-9 h-9 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-semibold flex-shrink-0">
@@ -283,9 +317,24 @@ function StaffTab() {
                       <div className="text-xs text-slate-500 truncate">{s.email}</div>
                     )}
                   </div>
-                  <span className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 capitalize whitespace-nowrap">
-                    {s.role?.replace(/_/g, ' ')}
-                  </span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <select
+                      value={s.role}
+                      disabled={savingUserId === s.user_id}
+                      onChange={(e) => changeRole(s.user_id, e.target.value)}
+                      className="text-xs bg-white border border-slate-200 rounded-md px-2 py-1 text-slate-700 focus:outline-none focus:border-violet-500 disabled:opacity-50"
+                    >
+                      {ROLE_OPTIONS.find((r) => r.value === s.role) ? null : (
+                        <option value={s.role}>{s.role?.replace(/_/g, ' ')}</option>
+                      )}
+                      {ROLE_OPTIONS.map((r) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                    </select>
+                    <span className={`text-[10px] ${synced ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      {synced ? 'Synced to Origin Sports' : 'Pending sync'}
+                    </span>
+                  </div>
                   {s.email ? (
                     <a href={`mailto:${s.email}`} className="text-xs text-violet-600 hover:text-violet-800 font-medium whitespace-nowrap">
                       Contact
