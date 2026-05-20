@@ -229,21 +229,41 @@ function StaffTab() {
         body: { academy_id: academyId },
       });
       if (error) throw error;
-      const rows = ((data as any)?.staff ?? []) as {
-        user_id: string; role: string; created_at: string;
-        full_name: string | null; email: string | null;
-        external_role?: string | null; external_role_synced_at?: string | null;
-      }[];
+      const rows = ((data as any)?.staff ?? []) as StaffMember[];
       const order: Record<string, number> = {
         head_coach: 0, coach: 1, physio: 2, welfare_officer: 3, scout: 4, analyst: 5,
       };
-      return rows.sort((a, b) => (order[a.role] ?? 99) - (order[b.role] ?? 99));
+      const sorted = rows.sort((a, b) => (order[a.role] ?? 99) - (order[b.role] ?? 99));
+      return {
+        staff: sorted,
+        jurisdiction: (data as any)?.academy?.background_check_jurisdiction ?? 'england',
+      };
     },
   });
+  type StaffMember = {
+        user_id: string; role: string; created_at: string;
+        full_name: string | null; email: string | null;
+        external_role?: string | null; external_role_synced_at?: string | null;
+        uefa_licence?: string | null;
+        fa_safeguarding_expiry?: string | null;
+        first_aid_expiry?: string | null;
+        dbs_expiry?: string | null;
+        pvg_expiry?: string | null;
+        accessni_expiry?: string | null;
+        background_check_type?: string | null;
+  };
+  const staffList: StaffMember[] = (staff as any)?.staff ?? [];
+  const jurisdiction: string = (staff as any)?.jurisdiction ?? 'england';
+  const DEFAULT_BG_TYPE: Record<string, 'dbs' | 'pvg' | 'accessni'> = {
+    england: 'dbs', scotland: 'pvg', wales: 'dbs', northern_ireland: 'accessni',
+  };
 
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('coach');
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [qualForm, setQualForm] = useState<Record<string, string>>({});
+  const [savingQuals, setSavingQuals] = useState(false);
 
   const ROLE_OPTIONS: { value: string; label: string }[] = [
     { value: 'head_coach', label: 'Head Coach' },
@@ -272,6 +292,55 @@ function StaffTab() {
       alert(`Failed to update role: ${e?.message ?? e}`);
     } finally {
       setSavingUserId(null);
+    }
+  }
+
+  function toggleExpand(s: StaffMember) {
+    if (expandedUserId === s.user_id) {
+      setExpandedUserId(null);
+      return;
+    }
+    const resolvedType = (s.background_check_type as any) || DEFAULT_BG_TYPE[jurisdiction] || 'dbs';
+    const bgExpiry =
+      resolvedType === 'pvg' ? (s.pvg_expiry ?? '')
+      : resolvedType === 'accessni' ? (s.accessni_expiry ?? '')
+      : (s.dbs_expiry ?? '');
+    setQualForm({
+      uefa_licence: s.uefa_licence ?? '',
+      fa_safeguarding_expiry: s.fa_safeguarding_expiry ?? '',
+      first_aid_expiry: s.first_aid_expiry ?? '',
+      background_check_type: s.background_check_type ?? '',
+      bg_expiry: bgExpiry ?? '',
+    });
+    setExpandedUserId(s.user_id);
+  }
+
+  async function saveQuals(s: StaffMember) {
+    if (!academyId) return;
+    setSavingQuals(true);
+    try {
+      const resolvedType =
+        (qualForm.background_check_type as 'dbs' | 'pvg' | 'accessni' | '') ||
+        DEFAULT_BG_TYPE[jurisdiction] || 'dbs';
+      const updates: Record<string, any> = {
+        uefa_licence: qualForm.uefa_licence || null,
+        fa_safeguarding_expiry: qualForm.fa_safeguarding_expiry || null,
+        first_aid_expiry: qualForm.first_aid_expiry || null,
+        background_check_type: qualForm.background_check_type || null,
+        dbs_expiry: resolvedType === 'dbs' ? (qualForm.bg_expiry || null) : s.dbs_expiry ?? null,
+        pvg_expiry: resolvedType === 'pvg' ? (qualForm.bg_expiry || null) : s.pvg_expiry ?? null,
+        accessni_expiry: resolvedType === 'accessni' ? (qualForm.bg_expiry || null) : s.accessni_expiry ?? null,
+      };
+      const { error } = await supabase.functions.invoke('update-staff-qualifications', {
+        body: { user_id: s.user_id, academy_id: academyId, updates },
+      });
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ['staff-list', academyId] });
+      setExpandedUserId(null);
+    } catch (e: any) {
+      alert(`Failed to save qualifications: ${e?.message ?? e}`);
+    } finally {
+      setSavingQuals(false);
     }
   }
 
