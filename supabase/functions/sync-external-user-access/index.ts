@@ -46,6 +46,7 @@ Deno.serve(async (req) => {
     const results = {
       matched: false,
       user_access: { inserted: 0, updated: 0, errors: 0 },
+      academy_roles: { pushed: 0, skipped: 0, errors: 0 },
     };
 
     if (!user.email) {
@@ -165,6 +166,66 @@ Deno.serve(async (req) => {
     }
 
     const teams_synced = results.user_access.updated;
+
+    // Push pending academy role changes back to Origin Sports.
+    // Sources of truth: local user_academies.role. We only push rows for THIS user
+    // where external_role differs from role (or has never been synced).
+    try {
+      const { data: pendingRoles } = await localSupabase
+        .from("user_academies")
+        .select("academy_id, role, external_role, external_role_synced_at")
+        .eq("user_id", user.id);
+
+      for (const row of pendingRoles || []) {
+        if (row.external_role === row.role && row.external_role_synced_at) {
+          results.academy_roles.skipped++;
+          continue;
+        }
+        // Find external academy id
+        const { data: academy } = await localSupabase
+          .from("academies")
+          .select("external_id")
+          .eq("id", row.academy_id)
+          .maybeSingle();
+        if (!academy?.external_id) {
+          results.academy_roles.skipped++;
+          continue;
+        }
+
+        let pushed = false;
+        for (const table of ["user_academies", "academy_members"]) {
+          const { error } = await externalSupabase
+            .from(table)
+            .update({ role: row.role, updated_at: new Date().toISOString() })
+            .eq("academy_id", academy.external_id)
+            .eq("user_id", externalUserId);
+          if (!error) { pushed = true; break; }
+        }
+
+        if (pushed) {
+          await localSupabase
+            .from("user_academies")
+            .update({
+              external_role: row.role,
+              external_role_synced_at: new Date().toISOString(),
+            })
+            .eq("academy_id", row.academy_id)
+            .eq("user_id", user.id);
+          results.academy_roles.pushed++;
+        } else {
+          console.warn(
+            `sync-external-user-access: Could not push role to Origin Sports for academy ${row.academy_id}`,
+          );
+          results.academy_roles.errors++;
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "sync-external-user-access: academy role push failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
