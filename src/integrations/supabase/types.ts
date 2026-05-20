@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      academies: {
+        Row: {
+          created_at: string
+          eppp_category: string | null
+          external_id: string | null
+          fa_registration_number: string | null
+          founded_year: number | null
+          head_of_academy_user_id: string | null
+          id: string
+          logo_url: string | null
+          name: string
+          synced_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          eppp_category?: string | null
+          external_id?: string | null
+          fa_registration_number?: string | null
+          founded_year?: number | null
+          head_of_academy_user_id?: string | null
+          id?: string
+          logo_url?: string | null
+          name: string
+          synced_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          eppp_category?: string | null
+          external_id?: string | null
+          fa_registration_number?: string | null
+          founded_year?: number | null
+          head_of_academy_user_id?: string | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          synced_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academies_head_of_academy_user_id_fkey"
+            columns: ["head_of_academy_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       biometric_readings: {
         Row: {
           created_at: string | null
@@ -82,6 +132,7 @@ export type Database = {
       }
       clubs: {
         Row: {
+          academy_id: string | null
           created_at: string | null
           external_id: string
           id: string
@@ -91,6 +142,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          academy_id?: string | null
           created_at?: string | null
           external_id: string
           id?: string
@@ -100,6 +152,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          academy_id?: string | null
           created_at?: string | null
           external_id?: string
           id?: string
@@ -108,7 +161,15 @@ export type Database = {
           synced_at?: string | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "clubs_academy_id_fkey"
+            columns: ["academy_id"]
+            isOneToOne: false
+            referencedRelation: "academies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       devices: {
         Row: {
@@ -1182,6 +1243,45 @@ export type Database = {
           },
         ]
       }
+      profiles: {
+        Row: {
+          created_at: string
+          dbs_expiry: string | null
+          email: string | null
+          fa_safeguarding_expiry: string | null
+          first_aid_expiry: string | null
+          full_name: string | null
+          id: string
+          uefa_licence: string | null
+          updated_at: string
+          user_group_tier: string
+        }
+        Insert: {
+          created_at?: string
+          dbs_expiry?: string | null
+          email?: string | null
+          fa_safeguarding_expiry?: string | null
+          first_aid_expiry?: string | null
+          full_name?: string | null
+          id: string
+          uefa_licence?: string | null
+          updated_at?: string
+          user_group_tier?: string
+        }
+        Update: {
+          created_at?: string
+          dbs_expiry?: string | null
+          email?: string | null
+          fa_safeguarding_expiry?: string | null
+          first_aid_expiry?: string | null
+          full_name?: string | null
+          id?: string
+          uefa_licence?: string | null
+          updated_at?: string
+          user_group_tier?: string
+        }
+        Relationships: []
+      }
       sensor_recordings: {
         Row: {
           created_at: string | null
@@ -1585,6 +1685,48 @@ export type Database = {
           },
         ]
       }
+      user_academies: {
+        Row: {
+          academy_id: string
+          created_at: string
+          id: string
+          role: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          academy_id: string
+          created_at?: string
+          id?: string
+          role?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          academy_id?: string
+          created_at?: string
+          id?: string
+          role?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_academies_academy_id_fkey"
+            columns: ["academy_id"]
+            isOneToOne: false
+            referencedRelation: "academies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_academies_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_club_access: {
         Row: {
           club_id: string
@@ -1680,6 +1822,10 @@ export type Database = {
     Functions: {
       user_can_access_player: {
         Args: { _player_id: string; _user_id: string }
+        Returns: boolean
+      }
+      user_has_academy_access: {
+        Args: { _academy_id: string; _user_id: string }
         Returns: boolean
       }
       user_has_club_access: {
