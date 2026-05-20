@@ -1,39 +1,45 @@
-# Plan
 
-## 1. Ultra Analysis — match dark/glass design
+## 1. Compliance — show staff name, not ID, in Safeguarding/Audit sections
 
-The Analysis page (`/analysis`) uses a dark purple gradient background, but `MetricCard` and the chart panels render as solid white cards (`bg-white text-slate-900`), breaking the scheme. Movement Intensity and Shot Power Analysis panels are also empty white boxes.
+Currently the Safeguarding and Audit Trail tables render `e.user_id?.slice(0, 8)…`. Replace with full name + email.
 
-Changes:
-- **`src/components/MetricCard.tsx`** — switch to the same glass surface used elsewhere on Analysis: `bg-white/5 border border-white/10 backdrop-blur-md text-white`, title `text-white/70`, value `text-white`, unit/subtitle `text-white/60`, icon `text-white/70`. Remove the duplicated `border border-slate-200` class.
-- **`src/pages/Analysis.tsx`** — wrap Movement Intensity / Shot Power Analysis / Player Movement Map / any remaining white panels in the same `bg-white/5 border border-white/10 backdrop-blur-md rounded-lg` shell; titles to `text-white`, secondary copy to `text-white/70`. Audit Individual/Group/Biometrics/Video tab panels in the same pass and fix any `bg-white`, `text-slate-900`, or `text-slate-*` on the dark background.
-- Keep all functional logic, queries and props untouched.
+- In `src/pages/Compliance.tsx`, collect distinct `user_id`s from `auditEntries`, fetch `profiles(id, full_name, email)` via a `useQuery` keyed on those IDs, and render `name (email)` in the Actor columns (Safeguarding + Audit Trail). Fall back to short ID only if profile is missing.
+- Fix low-contrast text on this page in the same pass: `text-slate-900/30` → `text-slate-500`; ensure tables use design-system surfaces (already mostly white/slate — keep, but make sure no `text-white` on white).
 
-## 2. Settings → Staff — assign role to existing staff
+## 2. DBS ↔ PVG jurisdiction toggle (academy default + per-staff override)
 
-Today each staff row shows a static role pill. Add inline role editing and prepare the data model so Origin Sports can read it back.
+### Database migration
+- `academies`: add `background_check_jurisdiction text default 'england'` (enum-like: `england` → DBS, `scotland` → PVG, `wales` → DBS, `northern_ireland` → AccessNI). Stored as text for flexibility.
+- `profiles`: add
+  - `background_check_type text` (nullable; `dbs` | `pvg` | `accessni`) — override; null = inherit academy default.
+  - `pvg_expiry date` (nullable) — used when type resolves to `pvg`.
+  - `accessni_expiry date` (nullable) — used for NI.
+  - Keep existing `dbs_expiry` as-is.
 
-Frontend (`src/pages/Settings.tsx`, `StaffTab`):
-- Replace the static role pill with a small `<select>` (Head Coach, Coach, Assistant Coach, Physio, Analyst, S&C, Academy Manager, Admin, Other) bound to `user_academies.role` for the active academy.
-- On change, call a new edge function `update-academy-staff-role` (service-role) that updates `user_academies.role` for `(academy_id, user_id)` after verifying the caller has academy access and is a head_coach / academy_manager / admin. Optimistic update + toast.
-- Show a small "Synced to Origin Sports" hint when `external_role_synced_at` is set; otherwise "Pending sync".
+### Settings → Academy Profile
+- Add a "Background check jurisdiction" `<select>` (England – DBS / Scotland – PVG / Wales – DBS / Northern Ireland – AccessNI) bound to `academies.background_check_jurisdiction`.
 
-Database (migration):
-- `ALTER TABLE public.user_academies ADD COLUMN IF NOT EXISTS external_role_synced_at timestamptz;`
-- `ALTER TABLE public.user_academies ADD COLUMN IF NOT EXISTS external_role text;` (last role pushed to Origin Sports, for diffing)
-- Index on `(academy_id)` if not present.
-- RLS: keep existing; the edge function uses service role.
+### Settings → Staff tab
+- New "Qualifications" inline editor per staff row (collapsible) — fields: UEFA Licence, FA Safeguarding expiry, First Aid expiry, Background check type (Inherit / DBS / PVG / AccessNI), Background check expiry (writes to the matching `*_expiry` column).
+- Editable by self OR by Head Coach / Academy Manager / Admin (mirrors role edit). Use a new edge function `update-staff-qualifications` (service-role, validates caller is self or has manager role via `user_academies`).
 
-Edge functions:
-- **`update-academy-staff-role`** (new) — input `{ academy_id, user_id, role }`. Verifies caller via JWT + `user_has_academy_access` + caller role in allow-list. Updates `user_academies.role`, clears `external_role_synced_at`, returns updated row.
-- **`sync-external-user-access`** (extend) — on each run, for every `user_academies` row where `role <> external_role` (or `external_role_synced_at IS NULL`), push the role to Origin Sports via the matching external membership table (`user_clubs`/`club_members` / `user_teams`/`team_members` already handled there). On success set `external_role = role`, `external_role_synced_at = now()`. If Origin Sports table is read-only, log a warning and leave timestamp null.
-- **`get-academy-staff`** (extend) — include `external_role`, `external_role_synced_at` in returned rows so the Staff tab can display sync status.
+### Compliance → Staff Qualifications table
+- Replace fixed "DBS" column with dynamic header that resolves per row: row uses `profiles.background_check_type` if set, else `academies.background_check_jurisdiction`. Header label becomes "Background check"; each cell shows the resolved label (DBS / PVG / AccessNI) + expiry badge.
+- Continue to show UEFA Licence, FA Safeguarding, First Aid columns unchanged.
+- Fix `text-slate-900/30` "None" pill → `text-slate-500`.
 
-Origin Sports preparation (documented, not code we own):
-- Document the contract in `docs/origin-sports-sync.md`: field `role` (enum list above) on the membership row, optional `updated_at`. Note that Lovable will be the source of truth for academy role and Origin Sports should reflect it back into its UI.
+## 3. Profile self-service edit
+
+- Add a "My qualifications" card on Settings (already a page) for the signed-in user editing their own `profiles` row (UEFA, Safeguarding, First Aid, background-check type + expiry). RLS already lets users update their own profile, so this is a direct `supabase.from('profiles').update(...).eq('id', user.id)` — no edge function needed for self.
+
+## 4. Session Plans — clarification only (no code change)
+
+`session_plan` is a Lovable-side table per academy. It is not synced from Origin Sports and there is no UI to create plans yet. Out of scope for this plan unless you want me to add a creation UI (separate request).
 
 ## Technical notes
 
-- No changes to `MetricCard` consumers' props.
-- `update-academy-staff-role` must be registered in `supabase/config.toml` with `verify_jwt = true` (default).
-- Keep `src/integrations/supabase/types.ts` regeneration to the automated pipeline after the migration.
+- Migration order: `ALTER TABLE academies ADD COLUMN background_check_jurisdiction text NOT NULL DEFAULT 'england';` then `ALTER TABLE profiles ADD COLUMN background_check_type text, ADD COLUMN pvg_expiry date, ADD COLUMN accessni_expiry date;`
+- New edge function `update-staff-qualifications` deployed under `supabase/functions/update-staff-qualifications/index.ts`, follows the same auth pattern as `update-academy-staff-role`.
+- `get-academy-staff` extended to return `background_check_type`, `pvg_expiry`, `accessni_expiry`, plus the academy's `background_check_jurisdiction` once at the top of the response (so the Staff tab doesn't need a second query).
+- `src/integrations/supabase/types.ts` will be auto-regenerated after the migration.
+- All new UI must follow the design system — no `text-white` on light surfaces, no `text-slate-900/30` low-contrast text.

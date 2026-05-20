@@ -88,7 +88,7 @@ function AcademyProfileTab() {
     staleTime: 60_000,
     queryFn: async () => {
       const { data } = await sb.from('academies')
-        .select('id, name, fa_registration_number, eppp_category, founded_year, logo_url, head_of_academy_user_id, club_website_url, synced_at')
+        .select('id, name, fa_registration_number, eppp_category, founded_year, logo_url, head_of_academy_user_id, club_website_url, background_check_jurisdiction, synced_at')
         .eq('id', academyId).maybeSingle();
       return data ?? {};
     },
@@ -124,6 +124,7 @@ function AcademyProfileTab() {
     eppp_category: settings?.eppp_category ?? academy?.eppp_category ?? '',
     founded_year: academy?.founded_year ? String(academy.founded_year) : '',
     club_website_url: academy?.club_website_url ?? '',
+    background_check_jurisdiction: academy?.background_check_jurisdiction ?? 'england',
     academy_tier: prefs.academy_tier ?? '',
     license_expiry: prefs.license_expiry ?? '',
     address: prefs.address ?? '',
@@ -139,6 +140,7 @@ function AcademyProfileTab() {
       eppp_category: merged.eppp_category || null,
       founded_year: merged.founded_year ? Number(merged.founded_year) : null,
       club_website_url: merged.club_website_url || null,
+      background_check_jurisdiction: merged.background_check_jurisdiction || 'england',
     }).eq('id', academyId);
 
     // 2. Write extras to academy_settings (+ prefs jsonb)
@@ -175,6 +177,19 @@ function AcademyProfileTab() {
         <InputRow label="Academy tier" value={merged.academy_tier ?? ''} onChange={(v) => setForm((f) => ({ ...f, academy_tier: v }))} placeholder="1–3" />
         <InputRow label="License expiry" value={merged.license_expiry ?? ''} type="date" onChange={(v) => setForm((f) => ({ ...f, license_expiry: v }))} />
         <InputRow label="Club website" value={merged.club_website_url ?? ''} onChange={(v) => setForm((f) => ({ ...f, club_website_url: v }))} placeholder="https://yourclub.com" />
+        <div className="flex items-center gap-4">
+          <label className="text-slate-500 text-sm w-44 flex-shrink-0">Background check jurisdiction</label>
+          <select
+            value={merged.background_check_jurisdiction}
+            onChange={(e) => setForm((f) => ({ ...f, background_check_jurisdiction: e.target.value }))}
+            className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-violet-500"
+          >
+            <option value="england">England — DBS</option>
+            <option value="scotland">Scotland — PVG</option>
+            <option value="wales">Wales — DBS</option>
+            <option value="northern_ireland">Northern Ireland — AccessNI</option>
+          </select>
+        </div>
       </SectionCard>
       <SectionCard title="Contact">
         <div className="flex items-center gap-4">
@@ -214,21 +229,41 @@ function StaffTab() {
         body: { academy_id: academyId },
       });
       if (error) throw error;
-      const rows = ((data as any)?.staff ?? []) as {
-        user_id: string; role: string; created_at: string;
-        full_name: string | null; email: string | null;
-        external_role?: string | null; external_role_synced_at?: string | null;
-      }[];
+      const rows = ((data as any)?.staff ?? []) as StaffMember[];
       const order: Record<string, number> = {
         head_coach: 0, coach: 1, physio: 2, welfare_officer: 3, scout: 4, analyst: 5,
       };
-      return rows.sort((a, b) => (order[a.role] ?? 99) - (order[b.role] ?? 99));
+      const sorted = rows.sort((a, b) => (order[a.role] ?? 99) - (order[b.role] ?? 99));
+      return {
+        staff: sorted,
+        jurisdiction: (data as any)?.academy?.background_check_jurisdiction ?? 'england',
+      };
     },
   });
+  type StaffMember = {
+        user_id: string; role: string; created_at: string;
+        full_name: string | null; email: string | null;
+        external_role?: string | null; external_role_synced_at?: string | null;
+        uefa_licence?: string | null;
+        fa_safeguarding_expiry?: string | null;
+        first_aid_expiry?: string | null;
+        dbs_expiry?: string | null;
+        pvg_expiry?: string | null;
+        accessni_expiry?: string | null;
+        background_check_type?: string | null;
+  };
+  const staffList: StaffMember[] = (staff as any)?.staff ?? [];
+  const jurisdiction: string = (staff as any)?.jurisdiction ?? 'england';
+  const DEFAULT_BG_TYPE: Record<string, 'dbs' | 'pvg' | 'accessni'> = {
+    england: 'dbs', scotland: 'pvg', wales: 'dbs', northern_ireland: 'accessni',
+  };
 
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('coach');
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [qualForm, setQualForm] = useState<Record<string, string>>({});
+  const [savingQuals, setSavingQuals] = useState(false);
 
   const ROLE_OPTIONS: { value: string; label: string }[] = [
     { value: 'head_coach', label: 'Head Coach' },
@@ -257,6 +292,55 @@ function StaffTab() {
       alert(`Failed to update role: ${e?.message ?? e}`);
     } finally {
       setSavingUserId(null);
+    }
+  }
+
+  function toggleExpand(s: StaffMember) {
+    if (expandedUserId === s.user_id) {
+      setExpandedUserId(null);
+      return;
+    }
+    const resolvedType = (s.background_check_type as any) || DEFAULT_BG_TYPE[jurisdiction] || 'dbs';
+    const bgExpiry =
+      resolvedType === 'pvg' ? (s.pvg_expiry ?? '')
+      : resolvedType === 'accessni' ? (s.accessni_expiry ?? '')
+      : (s.dbs_expiry ?? '');
+    setQualForm({
+      uefa_licence: s.uefa_licence ?? '',
+      fa_safeguarding_expiry: s.fa_safeguarding_expiry ?? '',
+      first_aid_expiry: s.first_aid_expiry ?? '',
+      background_check_type: s.background_check_type ?? '',
+      bg_expiry: bgExpiry ?? '',
+    });
+    setExpandedUserId(s.user_id);
+  }
+
+  async function saveQuals(s: StaffMember) {
+    if (!academyId) return;
+    setSavingQuals(true);
+    try {
+      const resolvedType =
+        (qualForm.background_check_type as 'dbs' | 'pvg' | 'accessni' | '') ||
+        DEFAULT_BG_TYPE[jurisdiction] || 'dbs';
+      const updates: Record<string, any> = {
+        uefa_licence: qualForm.uefa_licence || null,
+        fa_safeguarding_expiry: qualForm.fa_safeguarding_expiry || null,
+        first_aid_expiry: qualForm.first_aid_expiry || null,
+        background_check_type: qualForm.background_check_type || null,
+        dbs_expiry: resolvedType === 'dbs' ? (qualForm.bg_expiry || null) : s.dbs_expiry ?? null,
+        pvg_expiry: resolvedType === 'pvg' ? (qualForm.bg_expiry || null) : s.pvg_expiry ?? null,
+        accessni_expiry: resolvedType === 'accessni' ? (qualForm.bg_expiry || null) : s.accessni_expiry ?? null,
+      };
+      const { error } = await supabase.functions.invoke('update-staff-qualifications', {
+        body: { user_id: s.user_id, academy_id: academyId, updates },
+      });
+      if (error) throw error;
+      await qc.invalidateQueries({ queryKey: ['staff-list', academyId] });
+      setExpandedUserId(null);
+    } catch (e: any) {
+      alert(`Failed to save qualifications: ${e?.message ?? e}`);
+    } finally {
+      setSavingQuals(false);
     }
   }
 
@@ -295,19 +379,26 @@ function StaffTab() {
           </button>
         </div>
       </SectionCard>
-      <SectionCard title={`Current Staff (${staff.length})`}>
-        {staff.length === 0 ? (
+      <SectionCard title={`Current Staff (${staffList.length})`}>
+        {staffList.length === 0 ? (
           <p className="text-slate-500 text-sm">No staff added yet.</p>
         ) : (
           <div className="divide-y divide-slate-100">
-            {staff.map((s) => {
+            {staffList.map((s) => {
               const name = s.full_name || s.email || `${s.user_id.slice(0, 8)}…`;
               const initials = (s.full_name || s.email || '?')
                 .split(/[\s@]+/).filter(Boolean).slice(0, 2)
                 .map((p) => p[0]?.toUpperCase()).join('') || '?';
               const synced = !!s.external_role_synced_at && s.external_role === s.role;
+              const isExpanded = expandedUserId === s.user_id;
+              const resolvedType =
+                (qualForm.background_check_type as any) ||
+                s.background_check_type ||
+                DEFAULT_BG_TYPE[jurisdiction] || 'dbs';
+              const bgLabel = resolvedType === 'pvg' ? 'PVG' : resolvedType === 'accessni' ? 'AccessNI' : 'DBS';
               return (
-                <div key={s.user_id} className="flex items-center gap-3 py-2.5">
+                <div key={s.user_id} className="py-2.5">
+                  <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-semibold flex-shrink-0">
                     {initials}
                   </div>
@@ -340,6 +431,84 @@ function StaffTab() {
                       Contact
                     </a>
                   ) : null}
+                  <button
+                    onClick={() => toggleExpand(s)}
+                    className="text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded-md hover:bg-slate-100"
+                  >
+                    {isExpanded ? 'Close' : 'Qualifications'}
+                  </button>
+                  </div>
+                  {isExpanded && (
+                    <div className="mt-3 ml-12 mr-2 p-3 bg-slate-50 rounded-lg space-y-2 border border-slate-200">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">UEFA Licence</span>
+                          <input
+                            type="text"
+                            value={qualForm.uefa_licence ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, uefa_licence: e.target.value }))}
+                            placeholder="e.g. UEFA A"
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">FA Safeguarding expiry</span>
+                          <input
+                            type="date"
+                            value={qualForm.fa_safeguarding_expiry ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, fa_safeguarding_expiry: e.target.value }))}
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">First Aid expiry</span>
+                          <input
+                            type="date"
+                            value={qualForm.first_aid_expiry ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, first_aid_expiry: e.target.value }))}
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">Background check type</span>
+                          <select
+                            value={qualForm.background_check_type ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, background_check_type: e.target.value }))}
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          >
+                            <option value="">Inherit academy ({(DEFAULT_BG_TYPE[jurisdiction] || 'dbs').toUpperCase()})</option>
+                            <option value="dbs">DBS</option>
+                            <option value="pvg">PVG</option>
+                            <option value="accessni">AccessNI</option>
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">{bgLabel} expiry</span>
+                          <input
+                            type="date"
+                            value={qualForm.bg_expiry ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, bg_expiry: e.target.value }))}
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          />
+                        </label>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          onClick={() => setExpandedUserId(null)}
+                          className="text-xs px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-200"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => saveQuals(s)}
+                          disabled={savingQuals}
+                          className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50"
+                        >
+                          {savingQuals ? 'Saving…' : 'Save qualifications'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
