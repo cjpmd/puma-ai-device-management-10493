@@ -213,10 +213,14 @@ function StaffTab() {
         body: { academy_id: academyId },
       });
       if (error) throw error;
-      return ((data as any)?.staff ?? []) as {
+      const rows = ((data as any)?.staff ?? []) as {
         user_id: string; role: string; created_at: string;
         full_name: string | null; email: string | null;
       }[];
+      const order: Record<string, number> = {
+        head_coach: 0, coach: 1, physio: 2, welfare_officer: 3, scout: 4, analyst: 5,
+      };
+      return rows.sort((a, b) => (order[a.role] ?? 99) - (order[b.role] ?? 99));
     },
   });
 
@@ -260,22 +264,36 @@ function StaffTab() {
       </SectionCard>
       <SectionCard title={`Current Staff (${staff.length})`}>
         {staff.length === 0 ? (
-          <p className="text-slate-400 text-sm">No staff added yet.</p>
+          <p className="text-slate-500 text-sm">No staff added yet.</p>
         ) : (
-          <div className="space-y-2">
-            {staff.map((s) => (
-              <div key={s.user_id} className="flex items-center justify-between py-1">
-                <div className="min-w-0">
-                  <div className="text-sm text-slate-900 truncate">
-                    {s.full_name || s.email || `${s.user_id.slice(0, 8)}…`}
+          <div className="divide-y divide-slate-100">
+            {staff.map((s) => {
+              const name = s.full_name || s.email || `${s.user_id.slice(0, 8)}…`;
+              const initials = (s.full_name || s.email || '?')
+                .split(/[\s@]+/).filter(Boolean).slice(0, 2)
+                .map((p) => p[0]?.toUpperCase()).join('') || '?';
+              return (
+                <div key={s.user_id} className="flex items-center gap-3 py-2.5">
+                  <div className="w-9 h-9 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-semibold flex-shrink-0">
+                    {initials}
                   </div>
-                  {s.email && s.full_name && (
-                    <div className="text-xs text-slate-500 truncate">{s.email}</div>
-                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-slate-900 truncate">{name}</div>
+                    {s.email && (
+                      <div className="text-xs text-slate-500 truncate">{s.email}</div>
+                    )}
+                  </div>
+                  <span className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 capitalize whitespace-nowrap">
+                    {s.role?.replace(/_/g, ' ')}
+                  </span>
+                  {s.email ? (
+                    <a href={`mailto:${s.email}`} className="text-xs text-violet-600 hover:text-violet-800 font-medium whitespace-nowrap">
+                      Contact
+                    </a>
+                  ) : null}
                 </div>
-                <span className="text-xs bg-slate-100 px-2 py-0.5 rounded-full text-slate-600 capitalize">{s.role?.replace(/_/g, ' ')}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </SectionCard>
