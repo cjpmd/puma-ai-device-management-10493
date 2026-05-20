@@ -2821,6 +2821,8 @@ export type Database = {
         Row: {
           academy_id: string
           created_at: string
+          external_role: string | null
+          external_role_synced_at: string | null
           id: string
           role: string
           updated_at: string
@@ -2829,6 +2831,8 @@ export type Database = {
         Insert: {
           academy_id: string
           created_at?: string
+          external_role?: string | null
+          external_role_synced_at?: string | null
           id?: string
           role?: string
           updated_at?: string
@@ -2837,6 +2841,8 @@ export type Database = {
         Update: {
           academy_id?: string
           created_at?: string
+          external_role?: string | null
+          external_role_synced_at?: string | null
           id?: string
           role?: string
           updated_at?: string
