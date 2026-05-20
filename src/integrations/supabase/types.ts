@@ -762,6 +762,54 @@ export type Database = {
           },
         ]
       }
+      match_event_tags: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          match_id: string
+          notes: string | null
+          session_id: string | null
+          tagged_by: string | null
+          timestamp_ms: number
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          match_id: string
+          notes?: string | null
+          session_id?: string | null
+          tagged_by?: string | null
+          timestamp_ms: number
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          match_id?: string
+          notes?: string | null
+          session_id?: string | null
+          tagged_by?: string | null
+          timestamp_ms?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_event_tags_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "match_event_tags_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "recording_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       matches: {
         Row: {
           age_group: string | null
@@ -1847,6 +1895,91 @@ export type Database = {
             columns: ["prospect_id"]
             isOneToOne: false
             referencedRelation: "prospect"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recording_sessions: {
+        Row: {
+          created_at: string
+          duration_seconds: number | null
+          ended_at: string | null
+          id: string
+          master_device_id: string | null
+          match_id: string
+          started_at: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          master_device_id?: string | null
+          match_id: string
+          started_at?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          master_device_id?: string | null
+          match_id?: string
+          started_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recording_sessions_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_cameras: {
+        Row: {
+          connected_at: string
+          device_id: string
+          device_name: string | null
+          disconnected_at: string | null
+          id: string
+          recording_file_path: string | null
+          role: string | null
+          session_id: string
+          upload_status: string
+        }
+        Insert: {
+          connected_at?: string
+          device_id: string
+          device_name?: string | null
+          disconnected_at?: string | null
+          id?: string
+          recording_file_path?: string | null
+          role?: string | null
+          session_id: string
+          upload_status?: string
+        }
+        Update: {
+          connected_at?: string
+          device_id?: string
+          device_name?: string | null
+          disconnected_at?: string | null
+          id?: string
+          recording_file_path?: string | null
+          role?: string | null
+          session_id?: string
+          upload_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_cameras_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "recording_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -2994,6 +3127,60 @@ export type Database = {
           url?: string | null
         }
         Relationships: []
+      }
+      video_footage: {
+        Row: {
+          camera_role: string | null
+          created_at: string
+          duration_seconds: number | null
+          file_size_bytes: number | null
+          id: string
+          match_id: string
+          processing_status: string
+          session_id: string | null
+          stitched_path: string | null
+          storage_path: string | null
+        }
+        Insert: {
+          camera_role?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          file_size_bytes?: number | null
+          id?: string
+          match_id: string
+          processing_status?: string
+          session_id?: string | null
+          stitched_path?: string | null
+          storage_path?: string | null
+        }
+        Update: {
+          camera_role?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          file_size_bytes?: number | null
+          id?: string
+          match_id?: string
+          processing_status?: string
+          session_id?: string | null
+          stitched_path?: string | null
+          storage_path?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_footage_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "video_footage_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "recording_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       welfare_log: {
         Row: {
