@@ -15,6 +15,8 @@ const ALLOWED_FIELDS = new Set([
   "first_aid_expiry",
   "dbs_expiry",
   "pvg_expiry",
+  "pvg_approved",
+  "pvg_approved_at",
   "accessni_expiry",
   "background_check_type",
 ]);
@@ -81,6 +83,10 @@ Deno.serve(async (req) => {
         if (v === null || v === "") patch[k] = null;
         else if (typeof v === "string" && ALLOWED_BG_TYPES.has(v)) patch[k] = v;
         else return json({ error: `Invalid background_check_type: ${v}` }, 400);
+      } else if (k === "pvg_approved") {
+        if (v === null || v === "") patch[k] = null;
+        else if (typeof v === "boolean") patch[k] = v;
+        else return json({ error: "pvg_approved must be boolean" }, 400);
       } else {
         patch[k] = v === "" ? null : v;
       }
@@ -91,7 +97,7 @@ Deno.serve(async (req) => {
       .from("profiles")
       .update(patch)
       .eq("id", user_id)
-      .select("id, full_name, email, uefa_licence, fa_safeguarding_expiry, first_aid_expiry, dbs_expiry, pvg_expiry, accessni_expiry, background_check_type")
+      .select("id, full_name, email, uefa_licence, fa_safeguarding_expiry, first_aid_expiry, dbs_expiry, pvg_expiry, pvg_approved, pvg_approved_at, accessni_expiry, background_check_type")
       .maybeSingle();
     if (updErr) return json({ error: updErr.message }, 500);
 
