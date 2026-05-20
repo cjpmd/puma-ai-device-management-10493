@@ -1704,6 +1704,8 @@ export type Database = {
           first_aid_expiry: string | null
           full_name: string | null
           id: string
+          pvg_approved: boolean | null
+          pvg_approved_at: string | null
           pvg_expiry: string | null
           uefa_licence: string | null
           updated_at: string
@@ -1719,6 +1721,8 @@ export type Database = {
           first_aid_expiry?: string | null
           full_name?: string | null
           id: string
+          pvg_approved?: boolean | null
+          pvg_approved_at?: string | null
           pvg_expiry?: string | null
           uefa_licence?: string | null
           updated_at?: string
@@ -1734,6 +1738,8 @@ export type Database = {
           first_aid_expiry?: string | null
           full_name?: string | null
           id?: string
+          pvg_approved?: boolean | null
+          pvg_approved_at?: string | null
           pvg_expiry?: string | null
           uefa_licence?: string | null
           updated_at?: string

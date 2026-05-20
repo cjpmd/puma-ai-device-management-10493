@@ -24,6 +24,8 @@ type CoachRecord = {
   fa_safeguarding_expiry: string | null;
   dbs_expiry: string | null;
   pvg_expiry: string | null;
+  pvg_approved: boolean | null;
+  pvg_approved_at: string | null;
   accessni_expiry: string | null;
   background_check_type: string | null;
   first_aid_expiry: string | null;
@@ -174,6 +176,8 @@ export default function Compliance() {
         fa_safeguarding_expiry: r.fa_safeguarding_expiry ?? null,
         dbs_expiry: r.dbs_expiry ?? null,
         pvg_expiry: r.pvg_expiry ?? null,
+        pvg_approved: r.pvg_approved ?? null,
+        pvg_approved_at: r.pvg_approved_at ?? null,
         accessni_expiry: r.accessni_expiry ?? null,
         background_check_type: r.background_check_type ?? null,
         first_aid_expiry: r.first_aid_expiry ?? null,
@@ -301,8 +305,8 @@ export default function Compliance() {
                   const resolvedType = s.background_check_type || defaultBg.type;
                   const bgLabel = BG_TYPE_LABEL[resolvedType] ?? defaultBg.label;
                   const bgExpiry =
-                    resolvedType === 'pvg' ? s.pvg_expiry
-                    : resolvedType === 'accessni' ? s.accessni_expiry
+                    resolvedType === 'accessni' ? s.accessni_expiry
+                    : resolvedType === 'pvg' ? null
                     : s.dbs_expiry;
                   return (
                   <tr key={s.id}>
@@ -324,7 +328,23 @@ export default function Compliance() {
                     <td className="py-3">
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{bgLabel}</span>
-                        <ExpiryBadge date={bgExpiry} />
+                        {resolvedType === 'pvg' ? (
+                          s.pvg_approved ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"
+                              title={s.pvg_approved_at ? `Approved ${new Date(s.pvg_approved_at).toLocaleDateString()}` : 'Approved'}
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                              Approved
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400">Not recorded</span>
+                          )
+                        ) : (
+                          <ExpiryBadge date={bgExpiry} />
+                        )}
                       </div>
                     </td>
                     <td className="py-3"><ExpiryBadge date={s.first_aid_expiry} /></td>

@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
     const userIds = (members || []).map((m: any) => m.user_id);
     const { data: profiles } = userIds.length
       ? await admin.from("profiles").select(
-          "id, full_name, email, uefa_licence, fa_safeguarding_expiry, first_aid_expiry, dbs_expiry, pvg_expiry, accessni_expiry, background_check_type",
+          "id, full_name, email, uefa_licence, fa_safeguarding_expiry, first_aid_expiry, dbs_expiry, pvg_expiry, pvg_approved, pvg_approved_at, accessni_expiry, background_check_type",
         ).in("id", userIds)
       : { data: [] };
 
@@ -78,6 +78,8 @@ Deno.serve(async (req) => {
         first_aid_expiry: p?.first_aid_expiry ?? null,
         dbs_expiry: p?.dbs_expiry ?? null,
         pvg_expiry: p?.pvg_expiry ?? null,
+        pvg_approved: p?.pvg_approved ?? null,
+        pvg_approved_at: p?.pvg_approved_at ?? null,
         accessni_expiry: p?.accessni_expiry ?? null,
         background_check_type: p?.background_check_type ?? null,
         external_role: m.external_role ?? null,
