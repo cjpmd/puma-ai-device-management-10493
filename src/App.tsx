@@ -40,6 +40,7 @@ import TravelEvents from "./pages/TravelEvents";
 import TravelEventDetail from "./pages/TravelEventDetail";
 import Squads from "./pages/Squads";
 import Development from "./pages/Development";
+import Coaching from "./pages/Coaching";
 
 const queryClient = new QueryClient();
 
@@ -113,7 +114,7 @@ const AppRoutes = () => {
       <Route path="/welfare"         element={<PrivateRoute><TierRoute kind="academy"><AppShell><Welfare /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/scouting"        element={<PrivateRoute><TierRoute kind="academy"><AppShell><Scouting /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/fitness-testing" element={<PrivateRoute><AppShell><FitnessTesting /></AppShell></PrivateRoute>} />
-      <Route path="/coaching"        element={<PrivateRoute><TierRoute kind="academy"><AppShell><PlaceholderPage module="Coaching" /></AppShell></TierRoute></PrivateRoute>} />
+      <Route path="/coaching"        element={<PrivateRoute><TierRoute kind="academy"><AppShell><Coaching /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/compliance"      element={<PrivateRoute><TierRoute kind="academy"><AppShell><Compliance /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/travel"          element={<PrivateRoute><TierRoute kind="academy"><AppShell><TravelEvents /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/travel/:id"      element={<PrivateRoute><TierRoute kind="academy"><AppShell><TravelEventDetail /></AppShell></TierRoute></PrivateRoute>} />
