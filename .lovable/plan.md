@@ -1,60 +1,68 @@
-# Fix blank UI screens after sign-in
+## Problem
 
-## What’s likely happening
-The signed-in app depends on `ActiveContextProvider`, and `useActiveContextData()` currently does all of its loading in one async flow with no `try/catch/finally` and no per-query error handling.
+The Travel Events feature is wired up in the UI but the underlying database tables don't exist yet. Creating a new event fails with `Could not find the table 'public.travel_event' in the schema cache`.
 
-If any of these queries fail or return an unexpected shape:
-- `profiles`
-- `user_team_access -> teams!inner(...)`
-- `user_club_access -> clubs!inner(...)`
-- `user_academies -> academies!inner(...)`
-- follow-up `clubs` reverse lookup by `academy_id`
+The code references 8 tables and 1 storage bucket:
 
-then `loading` can stay `true` forever or the provider can end up with no usable context. Because that provider wraps the whole app, the result is an apparently blank signed-in UI.
+- `travel_event` — top-level event
+- `travel_itinerary_item` — daily schedule entries
+- `travel_transport_leg` — flights/coaches/etc.
+- `travel_accommodation` — hotels
+- `travel_budget_item` — line-item budget
+- `travel_player_consent` — per-player consent/passport/dietary info
+- `travel_document` — uploaded documents (linked to storage)
+- `travel_update` — posted updates / push messages
+- `travel-documents` storage bucket — file uploads
 
 ## Plan
 
-### 1. Make active-context loading fail-safe
-Update `src/hooks/useActiveContext.ts` so context loading can never strand the app in a blank state:
-- Wrap `load()` in `try/catch/finally`
-- Always call `setLoading(false)` in `finally`
-- Check and handle `error` from each Supabase query instead of assuming `.data` exists
-- Add safe defaults for failed queries (`[]`) so one broken membership source does not blank the whole app
-- Log the specific failing query to the console for future debugging
+Create a single migration that adds all 8 tables, the storage bucket, and RLS policies scoped to the parent academy.
 
-### 2. Simplify the academy lookup path
-Reduce risk from nested relation queries in `useActiveContext.ts`:
-- Keep the academy membership fetch, but avoid relying on fragile nested response shapes
-- Resolve academy labels and owning clubs from plain follow-up queries when needed
-- Build contexts only from validated data (`id`, `kind`, `clubId`, `label`)
-- If academy resolution fails, still return club/team contexts so the UI remains usable
+### Schema
 
-### 3. Add explicit no-context fallbacks in signed-in screens
-Prevent signed-in routes from rendering “nothing” when there is no active context:
-- `src/pages/ios/HomeScreen.tsx`
-- `src/pages/ios/SquadScreen.tsx`
-- `src/pages/ios/UltraScreen.tsx`
-- any route guards relying on `useActiveContext()`
+`travel_event` — `academy_id`, title, destination_city/country, departure_date, return_date, event_type, squads (text[]), total_budget (numeric), status (default `draft`), created_by, timestamps.
 
-Behavior:
-- If context is still loading: show a visible loading state
-- If loading is finished but no contexts are available: show a clear empty state like “No club/team access found” instead of a blank screen
-- Avoid silent redirects/empty render paths when `activeContext` is null
+`travel_itinerary_item` — `travel_event_id`, day_date, item_time, title, description, location, item_type, visible_to_parents (bool), sort_order (int), timestamps.
 
-### 4. Verify the Dundee FC academy path still works
-After hardening the loader, verify that:
-- Dundee FC Academy appears as a valid academy context
-- Home shows academy-only navigation when academy context is selected
-- Ultra follows the same selected context
-- Non-academy contexts still render normally
+`travel_transport_leg` — `travel_event_id`, leg_order, transport_type, provider, reference_number, departure_location, arrival_location, departure_datetime, arrival_datetime, status (default `provisional`), notes, timestamps.
 
-## Technical details
-Files expected to change:
-- `src/hooks/useActiveContext.ts`
-- `src/App.tsx`
-- `src/pages/ios/HomeScreen.tsx`
-- `src/pages/ios/UltraScreen.tsx`
-- possibly `src/pages/ios/SquadScreen.tsx` if it still has a silent null-context render path
+`travel_accommodation` — `travel_event_id`, hotel_name, address, phone, check_in, check_out, room_count, meal_plan, booking_reference, status (default `provisional`), notes, timestamps.
 
-Main implementation rule:
-- The signed-in app must never depend on a single fragile async query chain to render anything. If academy lookup fails, the app should degrade to club/team context instead of going blank.
+`travel_budget_item` — `travel_event_id`, category, description, budgeted_amount, actual_amount, paid (bool), timestamps.
+
+`travel_player_consent` — `travel_event_id`, `player_id` (→ players.id), travel_consent_signed, passport_submitted, medical_declaration_signed, photo_consent, emergency_contact_confirmed (booleans, default false), dietary_requirements, passport_expiry (date), signed_at, timestamps. Unique on (travel_event_id, player_id).
+
+`travel_document` — `travel_event_id`, title, document_type, file_url, is_restricted (bool), required (bool), uploaded_at, timestamps.
+
+`travel_update` — `travel_event_id`, title, body, update_type, target_squads (text[]), sent_push (bool), posted_at (default now()), created_by, timestamps.
+
+All child tables: `travel_event_id` is `ON DELETE CASCADE` to `travel_event`.
+
+### Security helper
+
+Add a SECURITY DEFINER function `user_has_travel_event_access(_user_id, _event_id)` that returns true when the user has academy access (via `user_has_academy_access`) to the event's academy. Reuses existing helpers — no recursion issues.
+
+### RLS
+
+- `travel_event`: SELECT/INSERT/UPDATE/DELETE allowed when `user_has_academy_access(auth.uid(), academy_id)`.
+- All child tables: SELECT/INSERT/UPDATE/DELETE allowed when `user_has_travel_event_access(auth.uid(), travel_event_id)`.
+
+### Storage
+
+Create `travel-documents` bucket (public for read so the existing `getPublicUrl` calls work). Add policies so only authenticated users with academy access on the owning event can upload/update/delete. Path layout: `<travel_event_id>/<document_id>.<ext>`.
+
+### Triggers
+
+Standard `updated_at` triggers using existing `public.update_updated_at_column()` on every table.
+
+## Out of scope
+
+- No UI changes — `TravelEvents.tsx` and tabs work as-is once the schema exists.
+- No edits to `useActiveContext` / blank-screen work from prior turns.
+- Push notification delivery for `travel_update.sent_push` is just a flag; no backend job is added.
+
+## Verification
+
+1. Run the migration.
+2. From `/travel` create a new event for Dundee FC Academy — should succeed and appear in the list.
+3. Open the event, add an itinerary item, a transport leg, a budget line, and a document upload.
