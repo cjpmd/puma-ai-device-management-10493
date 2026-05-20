@@ -9,6 +9,8 @@ import { SectionHeader } from '@/components/ios/SectionHeader';
 import { IOSStatusBar } from '@/components/ios/StatusBar';
 import { T, tType, Wallpapers } from '@/lib/ios-tokens';
 import { useActiveTeam } from '@/hooks/useActiveTeam';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
+import { HierarchicalContextPicker } from '@/components/ios/HierarchicalContextPicker';
 import { supabase } from '@/integrations/supabase/client';
 
 const BUILD_STAMP: string =
@@ -68,10 +70,11 @@ const initialsOf = (name: string) =>
 
 export function HomeScreen({ onTabChange }: HomeScreenProps) {
   const { activeTeam, teams, setActiveTeam, loading } = useActiveTeam();
+  const { availableContexts } = useActiveContext();
   const navigate = useNavigate();
   const [nextEvent, setNextEvent] = useState<NextEvent | null>(null);
   const [userInitials, setUserInitials] = useState('OS');
-  const [showTeamPicker, setShowTeamPicker] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [pastFixtures, setPastFixtures] = useState<PastFixture[]>([]);
 
@@ -194,9 +197,9 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
       <div style={{ padding: '8px 20px 10px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>{today}</div>
-          {teams.length > 1 ? (
+          {availableContexts.length > 1 ? (
             <button
-              onClick={() => setShowTeamPicker(true)}
+              onClick={() => setShowPicker(true)}
               style={{
                 background: 'rgba(255,255,255,0.08)',
                 border: '0.5px solid rgba(255,255,255,0.16)',
@@ -469,67 +472,7 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
 
       <TabBar active={0} onChange={onTabChange} />
 
-      {/* Team picker sheet */}
-      {showTeamPicker && (
-        <div
-          onClick={() => setShowTeamPicker(false)}
-          style={{
-            position: 'absolute', inset: 0, zIndex: 50,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex', alignItems: 'flex-end',
-            backdropFilter: 'blur(4px)',
-          }}
-        >
-          <div onClick={e => e.stopPropagation()} style={{ width: '100%', padding: 16 }}>
-            <Glass r={24}>
-              <div style={{ padding: 16 }}>
-                <div style={{ ...tType('caption1'), color: T.fg2, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12, textAlign: 'center' }}>
-                  Switch team
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {teams.map(t => {
-                    const isActive = t.id === activeTeam?.id;
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => { setActiveTeam(t.id); setShowTeamPicker(false); }}
-                        style={{
-                          display: 'flex', alignItems: 'center', gap: 12,
-                          padding: '10px 12px', borderRadius: 12,
-                          background: isActive ? 'rgba(168,85,247,0.25)' : 'rgba(255,255,255,0.04)',
-                          border: '0.5px solid ' + (isActive ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.08)'),
-                          cursor: 'pointer', textAlign: 'left',
-                          color: T.fg,
-                        }}
-                      >
-                        <Avatar initials={initialsOf(t.name)} size={36} hue={295} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
-                          <div style={{ ...tType('caption2'), color: T.fg2 }}>
-                            {t.age_group || ''}{t.age_group && t.role ? ' · ' : ''}{t.role}
-                          </div>
-                        </div>
-                        {isActive && <div style={{ color: T.purple[300], fontSize: 18 }}>✓</div>}
-                      </button>
-                    );
-                  })}
-                </div>
-                <button
-                  onClick={() => setShowTeamPicker(false)}
-                  style={{
-                    width: '100%', marginTop: 12, padding: '12px',
-                    background: 'rgba(255,255,255,0.08)',
-                    border: 'none', borderRadius: 12,
-                    color: T.fg, ...tType('headline'), cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </Glass>
-          </div>
-        </div>
-      )}
+      <HierarchicalContextPicker open={showPicker} onClose={() => setShowPicker(false)} />
     </div>
   );
 }
