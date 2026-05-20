@@ -85,7 +85,7 @@ export function useActiveContextData(): UseActiveContextReturn {
         .eq('user_id', user.id),
       sb
         .from('user_club_access')
-        .select('club_id, clubs!inner(id, name)')
+        .select('club_id, clubs!inner(id, name, academy_id)')
         .eq('user_id', user.id),
       academyPromise,
     ]);
@@ -102,6 +102,25 @@ export function useActiveContextData(): UseActiveContextReturn {
         id: row.academy_id,
         clubId: acad.club_id,
         label: clubName ? `${clubName} Academy` : 'Academy',
+        userGroupTier: tier,
+      });
+    }
+
+    // 1b. Synthesise academy contexts from club access so academy-tier nav
+    //     items appear immediately for users with club admin access, even
+    //     before the Sync Academy job has populated user_academies.
+    const seenAcademyIds = new Set(contexts.map(c => c.id));
+    for (const row of (clubResult.data ?? [])) {
+      const club = row.clubs;
+      if (!club) continue;
+      const synthId = club.academy_id ?? row.club_id;
+      if (seenAcademyIds.has(synthId)) continue;
+      seenAcademyIds.add(synthId);
+      contexts.push({
+        kind: 'academy',
+        id: synthId,
+        clubId: row.club_id,
+        label: `${club.name} Academy`,
         userGroupTier: tier,
       });
     }
