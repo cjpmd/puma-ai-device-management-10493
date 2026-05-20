@@ -88,7 +88,7 @@ function AcademyProfileTab() {
     staleTime: 60_000,
     queryFn: async () => {
       const { data } = await sb.from('academies')
-        .select('id, name, fa_registration_number, eppp_category, founded_year, logo_url, head_of_academy_user_id, club_website_url, synced_at')
+        .select('id, name, fa_registration_number, eppp_category, founded_year, logo_url, head_of_academy_user_id, club_website_url, background_check_jurisdiction, synced_at')
         .eq('id', academyId).maybeSingle();
       return data ?? {};
     },
@@ -124,6 +124,7 @@ function AcademyProfileTab() {
     eppp_category: settings?.eppp_category ?? academy?.eppp_category ?? '',
     founded_year: academy?.founded_year ? String(academy.founded_year) : '',
     club_website_url: academy?.club_website_url ?? '',
+    background_check_jurisdiction: academy?.background_check_jurisdiction ?? 'england',
     academy_tier: prefs.academy_tier ?? '',
     license_expiry: prefs.license_expiry ?? '',
     address: prefs.address ?? '',
@@ -139,6 +140,7 @@ function AcademyProfileTab() {
       eppp_category: merged.eppp_category || null,
       founded_year: merged.founded_year ? Number(merged.founded_year) : null,
       club_website_url: merged.club_website_url || null,
+      background_check_jurisdiction: merged.background_check_jurisdiction || 'england',
     }).eq('id', academyId);
 
     // 2. Write extras to academy_settings (+ prefs jsonb)
@@ -175,6 +177,19 @@ function AcademyProfileTab() {
         <InputRow label="Academy tier" value={merged.academy_tier ?? ''} onChange={(v) => setForm((f) => ({ ...f, academy_tier: v }))} placeholder="1–3" />
         <InputRow label="License expiry" value={merged.license_expiry ?? ''} type="date" onChange={(v) => setForm((f) => ({ ...f, license_expiry: v }))} />
         <InputRow label="Club website" value={merged.club_website_url ?? ''} onChange={(v) => setForm((f) => ({ ...f, club_website_url: v }))} placeholder="https://yourclub.com" />
+        <div className="flex items-center gap-4">
+          <label className="text-slate-500 text-sm w-44 flex-shrink-0">Background check jurisdiction</label>
+          <select
+            value={merged.background_check_jurisdiction}
+            onChange={(e) => setForm((f) => ({ ...f, background_check_jurisdiction: e.target.value }))}
+            className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-violet-500"
+          >
+            <option value="england">England — DBS</option>
+            <option value="scotland">Scotland — PVG</option>
+            <option value="wales">Wales — DBS</option>
+            <option value="northern_ireland">Northern Ireland — AccessNI</option>
+          </select>
+        </div>
       </SectionCard>
       <SectionCard title="Contact">
         <div className="flex items-center gap-4">
