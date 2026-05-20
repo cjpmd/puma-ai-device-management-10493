@@ -10,19 +10,19 @@ interface MetricCardProps {
 
 const MetricCard = ({ title, value, unit, icon, subtitle }: MetricCardProps) => {
   return (
-    <Card className="bg-white border border-slate-200 border border-slate-200 backdrop-blur-md text-slate-900 shadow-none">
+    <Card className="bg-white/5 border border-white/10 backdrop-blur-md text-white shadow-none">
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-slate-600">
+        <CardTitle className="text-sm font-medium text-white/70">
           {title}
         </CardTitle>
-        {icon && <div className="text-slate-700">{icon}</div>}
+        {icon && <div className="text-white/70">{icon}</div>}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold text-slate-900">
+        <div className="text-2xl font-bold text-white">
           {value}
-          {unit && <span className="ml-1 text-sm text-slate-600">{unit}</span>}
+          {unit && <span className="ml-1 text-sm text-white/60">{unit}</span>}
         </div>
-        {subtitle && <div className="text-sm text-slate-600 mt-1">{subtitle}</div>}
+        {subtitle && <div className="text-sm text-white/60 mt-1">{subtitle}</div>}
       </CardContent>
     </Card>
   );
