@@ -64,6 +64,147 @@ export type Database = {
           },
         ]
       }
+      academy_settings: {
+        Row: {
+          academy_id: string
+          created_at: string
+          eppp_category: string | null
+          eppp_tier: string | null
+          fa_affiliation_number: string | null
+          founded_year: number | null
+          head_of_academy_user_id: string | null
+          id: string
+          name: string | null
+          prefs: Json
+          updated_at: string
+        }
+        Insert: {
+          academy_id: string
+          created_at?: string
+          eppp_category?: string | null
+          eppp_tier?: string | null
+          fa_affiliation_number?: string | null
+          founded_year?: number | null
+          head_of_academy_user_id?: string | null
+          id?: string
+          name?: string | null
+          prefs?: Json
+          updated_at?: string
+        }
+        Update: {
+          academy_id?: string
+          created_at?: string
+          eppp_category?: string | null
+          eppp_tier?: string | null
+          fa_affiliation_number?: string | null
+          founded_year?: number | null
+          head_of_academy_user_id?: string | null
+          id?: string
+          name?: string | null
+          prefs?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      attribute_definition: {
+        Row: {
+          category: string
+          created_at: string
+          descriptors: Json | null
+          id: string
+          is_active: boolean
+          max_value: number
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          descriptors?: Json | null
+          id?: string
+          is_active?: boolean
+          max_value?: number
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          descriptors?: Json | null
+          id?: string
+          is_active?: boolean
+          max_value?: number
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      attribute_snapshot: {
+        Row: {
+          created_at: string
+          id: string
+          is_final: boolean
+          notes: string | null
+          player_id: string
+          scores: Json
+          season: string | null
+          snapshot_date: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_final?: boolean
+          notes?: string | null
+          player_id: string
+          scores?: Json
+          season?: string | null
+          snapshot_date?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_final?: boolean
+          notes?: string | null
+          player_id?: string
+          scores?: Json
+          season?: string | null
+          snapshot_date?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      audit_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          id: string
+          metadata: Json | null
+          record_id: string | null
+          table_name: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          record_id?: string | null
+          table_name?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          record_id?: string | null
+          table_name?: string | null
+        }
+        Relationships: []
+      }
       biometric_readings: {
         Row: {
           created_at: string | null
@@ -171,6 +312,78 @@ export type Database = {
           },
         ]
       }
+      coach_observation: {
+        Row: {
+          author_id: string | null
+          body: string | null
+          category: string | null
+          created_at: string
+          id: string
+          observed_at: string
+          player_id: string
+          updated_at: string
+        }
+        Insert: {
+          author_id?: string | null
+          body?: string | null
+          category?: string | null
+          created_at?: string
+          id?: string
+          observed_at?: string
+          player_id: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string | null
+          body?: string | null
+          category?: string | null
+          created_at?: string
+          id?: string
+          observed_at?: string
+          player_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      curriculum_outcome: {
+        Row: {
+          age_group: string | null
+          created_at: string
+          description: string | null
+          id: string
+          outcome_description: string | null
+          outcome_title: string | null
+          season: string | null
+          tags: string[] | null
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          age_group?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          outcome_description?: string | null
+          outcome_title?: string | null
+          season?: string | null
+          tags?: string[] | null
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          age_group?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          outcome_description?: string | null
+          outcome_title?: string | null
+          season?: string | null
+          tags?: string[] | null
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       devices: {
         Row: {
           assigned_player_id: string | null
@@ -220,6 +433,84 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      fitness_benchmark: {
+        Row: {
+          age_group: string | null
+          created_at: string
+          id: string
+          percentile: number | null
+          sex: string | null
+          test_name: string
+          unit: string | null
+          updated_at: string
+          value: number | null
+        }
+        Insert: {
+          age_group?: string | null
+          created_at?: string
+          id?: string
+          percentile?: number | null
+          sex?: string | null
+          test_name: string
+          unit?: string | null
+          updated_at?: string
+          value?: number | null
+        }
+        Update: {
+          age_group?: string | null
+          created_at?: string
+          id?: string
+          percentile?: number | null
+          sex?: string | null
+          test_name?: string
+          unit?: string | null
+          updated_at?: string
+          value?: number | null
+        }
+        Relationships: []
+      }
+      fitness_test_result: {
+        Row: {
+          bio_age: number | null
+          created_at: string
+          id: string
+          notes: string | null
+          percentile: number | null
+          player_id: string
+          test_date: string
+          test_name: string
+          unit: string | null
+          updated_at: string
+          value: number | null
+        }
+        Insert: {
+          bio_age?: number | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          percentile?: number | null
+          player_id: string
+          test_date: string
+          test_name: string
+          unit?: string | null
+          updated_at?: string
+          value?: number | null
+        }
+        Update: {
+          bio_age?: number | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          percentile?: number | null
+          player_id?: string
+          test_date?: string
+          test_name?: string
+          unit?: string | null
+          updated_at?: string
+          value?: number | null
+        }
+        Relationships: []
       }
       gps_tracking: {
         Row: {
@@ -287,6 +578,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      injury_record: {
+        Row: {
+          body_part: string | null
+          created_at: string
+          id: string
+          injury_date: string
+          is_resolved: boolean
+          notes: string | null
+          player_id: string
+          resolved_at: string | null
+          rtp_phase: number
+          severity: string | null
+          updated_at: string
+        }
+        Insert: {
+          body_part?: string | null
+          created_at?: string
+          id?: string
+          injury_date: string
+          is_resolved?: boolean
+          notes?: string | null
+          player_id: string
+          resolved_at?: string | null
+          rtp_phase?: number
+          severity?: string | null
+          updated_at?: string
+        }
+        Update: {
+          body_part?: string | null
+          created_at?: string
+          id?: string
+          injury_date?: string
+          is_resolved?: boolean
+          notes?: string | null
+          player_id?: string
+          resolved_at?: string | null
+          rtp_phase?: number
+          severity?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       match_insights: {
         Row: {
@@ -503,6 +836,84 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      maturation_record: {
+        Row: {
+          bio_age_estimate: number | null
+          created_at: string
+          height_cm: number | null
+          id: string
+          method_used: string | null
+          player_id: string
+          recorded_date: string
+          seated_height_cm: number | null
+          updated_at: string
+          weight_kg: number | null
+        }
+        Insert: {
+          bio_age_estimate?: number | null
+          created_at?: string
+          height_cm?: number | null
+          id?: string
+          method_used?: string | null
+          player_id: string
+          recorded_date: string
+          seated_height_cm?: number | null
+          updated_at?: string
+          weight_kg?: number | null
+        }
+        Update: {
+          bio_age_estimate?: number | null
+          created_at?: string
+          height_cm?: number | null
+          id?: string
+          method_used?: string | null
+          player_id?: string
+          recorded_date?: string
+          seated_height_cm?: number | null
+          updated_at?: string
+          weight_kg?: number | null
+        }
+        Relationships: []
+      }
+      milestones: {
+        Row: {
+          achieved_date: string | null
+          category: string | null
+          created_at: string
+          description: string | null
+          id: string
+          is_upcoming: boolean
+          milestone_date: string | null
+          player_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          achieved_date?: string | null
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_upcoming?: boolean
+          milestone_date?: string | null
+          player_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          achieved_date?: string | null
+          category?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_upcoming?: boolean
+          milestone_date?: string | null
+          player_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       ml_models: {
         Row: {
@@ -723,6 +1134,36 @@ export type Database = {
           width?: number | null
           x_coord?: number | null
           y_coord?: number | null
+        }
+        Relationships: []
+      }
+      parent_communication: {
+        Row: {
+          created_at: string
+          direction: string | null
+          id: string
+          message: string | null
+          player_id: string
+          sent_at: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          direction?: string | null
+          id?: string
+          message?: string | null
+          player_id: string
+          sent_at?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          direction?: string | null
+          id?: string
+          message?: string | null
+          player_id?: string
+          sent_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1282,6 +1723,128 @@ export type Database = {
         }
         Relationships: []
       }
+      prospect: {
+        Row: {
+          academy_id: string
+          approach_date: string | null
+          competing_interest: string | null
+          created_at: string
+          current_club: string | null
+          dob: string | null
+          first_name: string
+          id: string
+          international_eligibility_confirmed: boolean
+          last_name: string
+          parent_contact: string | null
+          pipeline_stage: string
+          position: string | null
+          updated_at: string
+        }
+        Insert: {
+          academy_id: string
+          approach_date?: string | null
+          competing_interest?: string | null
+          created_at?: string
+          current_club?: string | null
+          dob?: string | null
+          first_name: string
+          id?: string
+          international_eligibility_confirmed?: boolean
+          last_name: string
+          parent_contact?: string | null
+          pipeline_stage?: string
+          position?: string | null
+          updated_at?: string
+        }
+        Update: {
+          academy_id?: string
+          approach_date?: string | null
+          competing_interest?: string | null
+          created_at?: string
+          current_club?: string | null
+          dob?: string | null
+          first_name?: string
+          id?: string
+          international_eligibility_confirmed?: boolean
+          last_name?: string
+          parent_contact?: string | null
+          pipeline_stage?: string
+          position?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      school_attendance: {
+        Row: {
+          academic_year: string | null
+          attendance_pct: number | null
+          created_at: string
+          id: string
+          player_id: string
+          term: string | null
+          updated_at: string
+        }
+        Insert: {
+          academic_year?: string | null
+          attendance_pct?: number | null
+          created_at?: string
+          id?: string
+          player_id: string
+          term?: string | null
+          updated_at?: string
+        }
+        Update: {
+          academic_year?: string | null
+          attendance_pct?: number | null
+          created_at?: string
+          id?: string
+          player_id?: string
+          term?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      scout_report: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string | null
+          prospect_id: string
+          rating: number | null
+          report_date: string
+          scout_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          prospect_id: string
+          rating?: number | null
+          report_date?: string
+          scout_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          prospect_id?: string
+          rating?: number | null
+          report_date?: string
+          scout_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scout_report_prospect_id_fkey"
+            columns: ["prospect_id"]
+            isOneToOne: false
+            referencedRelation: "prospect"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sensor_recordings: {
         Row: {
           created_at: string | null
@@ -1342,6 +1905,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      session_plan: {
+        Row: {
+          age_group: string | null
+          created_at: string
+          created_by: string | null
+          curriculum_tags: string[] | null
+          drills: Json | null
+          duration_minutes: number | null
+          id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          age_group?: string | null
+          created_at?: string
+          created_by?: string | null
+          curriculum_tags?: string[] | null
+          drills?: Json | null
+          duration_minutes?: number | null
+          id?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          age_group?: string | null
+          created_at?: string
+          created_by?: string | null
+          curriculum_tags?: string[] | null
+          drills?: Json | null
+          duration_minutes?: number | null
+          id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       sessions: {
         Row: {
@@ -1407,6 +2006,72 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      team_event_player_stats: {
+        Row: {
+          age_group: string | null
+          appearances: number | null
+          assists: number | null
+          created_at: string
+          event_id: string
+          external_id: string
+          goals: number | null
+          id: string
+          is_captain: boolean | null
+          is_substitute: boolean | null
+          minutes_played: number | null
+          period_number: number | null
+          player_id: string | null
+          position: string | null
+          season_start: number | null
+          substitution_time: string | null
+          synced_at: string | null
+          team_number: number | null
+          updated_at: string
+        }
+        Insert: {
+          age_group?: string | null
+          appearances?: number | null
+          assists?: number | null
+          created_at?: string
+          event_id: string
+          external_id: string
+          goals?: number | null
+          id?: string
+          is_captain?: boolean | null
+          is_substitute?: boolean | null
+          minutes_played?: number | null
+          period_number?: number | null
+          player_id?: string | null
+          position?: string | null
+          season_start?: number | null
+          substitution_time?: string | null
+          synced_at?: string | null
+          team_number?: number | null
+          updated_at?: string
+        }
+        Update: {
+          age_group?: string | null
+          appearances?: number | null
+          assists?: number | null
+          created_at?: string
+          event_id?: string
+          external_id?: string
+          goals?: number | null
+          id?: string
+          is_captain?: boolean | null
+          is_substitute?: boolean | null
+          minutes_played?: number | null
+          period_number?: number | null
+          player_id?: string | null
+          position?: string | null
+          season_start?: number | null
+          substitution_time?: string | null
+          synced_at?: string | null
+          team_number?: number | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       team_events: {
         Row: {
@@ -1646,6 +2311,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      training_load: {
+        Row: {
+          acwr_at_time: number | null
+          created_at: string
+          duration: number | null
+          id: string
+          load_au: number | null
+          notes: string | null
+          player_id: string
+          rpe: number | null
+          session_date: string
+          session_type: string | null
+          updated_at: string
+        }
+        Insert: {
+          acwr_at_time?: number | null
+          created_at?: string
+          duration?: number | null
+          id?: string
+          load_au?: number | null
+          notes?: string | null
+          player_id: string
+          rpe?: number | null
+          session_date: string
+          session_type?: string | null
+          updated_at?: string
+        }
+        Update: {
+          acwr_at_time?: number | null
+          created_at?: string
+          duration?: number | null
+          id?: string
+          load_au?: number | null
+          notes?: string | null
+          player_id?: string
+          rpe?: number | null
+          session_date?: string
+          session_type?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       travel_accommodation: {
         Row: {
@@ -2233,6 +2940,90 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      video_clip: {
+        Row: {
+          clip_date: string | null
+          created_at: string
+          description: string | null
+          external_id: string | null
+          id: string
+          player_id: string
+          source: string
+          tags: string[]
+          title: string | null
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          clip_date?: string | null
+          created_at?: string
+          description?: string | null
+          external_id?: string | null
+          id?: string
+          player_id: string
+          source: string
+          tags?: string[]
+          title?: string | null
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          clip_date?: string | null
+          created_at?: string
+          description?: string | null
+          external_id?: string | null
+          id?: string
+          player_id?: string
+          source?: string
+          tags?: string[]
+          title?: string | null
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
+      welfare_log: {
+        Row: {
+          author_id: string | null
+          created_at: string
+          id: string
+          is_restricted: boolean
+          log_date: string
+          log_type: string | null
+          notes: string | null
+          player_id: string
+          status: string | null
+          tags: string[]
+          updated_at: string
+        }
+        Insert: {
+          author_id?: string | null
+          created_at?: string
+          id?: string
+          is_restricted?: boolean
+          log_date?: string
+          log_type?: string | null
+          notes?: string | null
+          player_id: string
+          status?: string | null
+          tags?: string[]
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string | null
+          created_at?: string
+          id?: string
+          is_restricted?: boolean
+          log_date?: string
+          log_type?: string | null
+          notes?: string | null
+          player_id?: string
+          status?: string | null
+          tags?: string[]
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
