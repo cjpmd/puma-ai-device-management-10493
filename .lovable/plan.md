@@ -1,68 +1,74 @@
-## Problem
+## What I found
 
-The Travel Events feature is wired up in the UI but the underlying database tables don't exist yet. Creating a new event fails with `Could not find the table 'public.travel_event' in the schema cache`.
+I traced every `supabase.from(...)` call in `src/` and `supabase/functions/` and compared the list against the 41 tables currently in the database. Travel + match + GPS + ML tables are all in place. **20 tables that pages and edge functions read/write are missing**, which is why Compliance, Medical, Scouting, Welfare, Coaching, Fitness Testing, Development, Settings, Player Profile, Dashboard and the Hudl/performance-sync edge functions partially break.
 
-The code references 8 tables and 1 storage bucket:
+Four other names that show up in code (`events`, `match_events`, `event_player_stats`, `academy_clubs`) only live in the **external Football Central database** that the sync edge functions read from — they shouldn't be created locally.
 
-- `travel_event` — top-level event
-- `travel_itinerary_item` — daily schedule entries
-- `travel_transport_leg` — flights/coaches/etc.
-- `travel_accommodation` — hotels
-- `travel_budget_item` — line-item budget
-- `travel_player_consent` — per-player consent/passport/dietary info
-- `travel_document` — uploaded documents (linked to storage)
-- `travel_update` — posted updates / push messages
-- `travel-documents` storage bucket — file uploads
+## Plan — one migration that adds 20 tables + RLS + triggers
 
-## Plan
+### Helper for player-scoped policies
+Reuse the existing `public.user_can_access_player(_user_id, _player_id)` and `public.user_has_academy_access(_user_id, _academy_id)` security-definer functions. No new helpers needed.
 
-Create a single migration that adds all 8 tables, the storage bucket, and RLS policies scoped to the parent academy.
+### Tables grouped by feature area
 
-### Schema
+**Player development & performance** (RLS: `user_can_access_player(auth.uid(), player_id)` for all four CRUD ops)
 
-`travel_event` — `academy_id`, title, destination_city/country, departure_date, return_date, event_type, squads (text[]), total_budget (numeric), status (default `draft`), created_by, timestamps.
+- `attribute_snapshot` — `player_id`, `scores jsonb`, `snapshot_date`, `season`, `is_final bool default true`, `notes`
+- `fitness_test_result` — `player_id`, `test_date`, `test_name`, `value numeric`, `unit`, `percentile`, `bio_age numeric`, `notes`
+- `maturation_record` — `player_id`, `recorded_date`, `height_cm`, `weight_kg`, `seated_height_cm`, `bio_age_estimate numeric`, `method_used`
+- `milestones` — `player_id`, `title`, `description`, `category`, `milestone_date`, `achieved_date`, `is_upcoming bool default true`
+- `injury_record` — `player_id`, `injury_date`, `body_part`, `severity`, `rtp_phase int default 0`, `is_resolved bool default false`, `resolved_at`, `notes`
+- `training_load` — `player_id`, `session_date`, `session_type`, `rpe int`, `duration int`, `load_au numeric`, `acwr_at_time numeric`, `notes`
+- `welfare_log` — `player_id`, `author_id`, `log_date`, `log_type`, `status`, `notes`, `tags text[] default '{}'`, `is_restricted bool default false`
+- `parent_communication` — `player_id`, `message`, `direction`, `sent_at`
+- `coach_observation` — `player_id`, `author_id`, `observed_at`, `category`, `body`
+- `school_attendance` — `player_id`, `term`, `academic_year`, `attendance_pct numeric`
+- `video_clip` — `player_id`, `source`, `external_id`, `url`, `title`, `tags text[] default '{}'`, `clip_date`, `description`; unique on (`source`, `external_id`, `player_id`) to support the Hudl idempotency check
 
-`travel_itinerary_item` — `travel_event_id`, day_date, item_time, title, description, location, item_type, visible_to_parents (bool), sort_order (int), timestamps.
+**Scouting** (RLS: `user_has_academy_access(auth.uid(), academy_id)` on `prospect`; `scout_report` joins to prospect)
 
-`travel_transport_leg` — `travel_event_id`, leg_order, transport_type, provider, reference_number, departure_location, arrival_location, departure_datetime, arrival_datetime, status (default `provisional`), notes, timestamps.
+- `prospect` — `academy_id`, `first_name`, `last_name`, `dob`, `position`, `current_club`, `parent_contact`, `pipeline_stage default 'identified'`, `competing_interest`, `international_eligibility_confirmed bool default false`, `approach_date`
+- `scout_report` — `prospect_id` (CASCADE → prospect), `scout_id`, `report_date`, `rating int`, `notes`
 
-`travel_accommodation` — `travel_event_id`, hotel_name, address, phone, check_in, check_out, room_count, meal_plan, booking_reference, status (default `provisional`), notes, timestamps.
+**Coaching curriculum** (RLS: authenticated read/write — these are global definition tables, no academy scoping in current UI)
 
-`travel_budget_item` — `travel_event_id`, category, description, budgeted_amount, actual_amount, paid (bool), timestamps.
+- `curriculum_outcome` — `age_group`, `season`, `outcome_title`, `outcome_description`, `title`, `description`, `tags text[]`
+- `session_plan` — `title`, `age_group`, `curriculum_tags text[]`, `duration_minutes int`, `drills jsonb`, `created_by`
+- `fitness_benchmark` — `test_name`, `age_group`, `sex`, `percentile int`, `value numeric`, `unit`
 
-`travel_player_consent` — `travel_event_id`, `player_id` (→ players.id), travel_consent_signed, passport_submitted, medical_declaration_signed, photo_consent, emergency_contact_confirmed (booleans, default false), dietary_requirements, passport_expiry (date), signed_at, timestamps. Unique on (travel_event_id, player_id).
+**Settings & attributes** (RLS: `user_has_academy_access` for `academy_settings`; authenticated read/write for `attribute_definition`)
 
-`travel_document` — `travel_event_id`, title, document_type, file_url, is_restricted (bool), required (bool), uploaded_at, timestamps.
+- `academy_settings` — `academy_id unique`, common columns the Settings page writes (`name`, `fa_affiliation_number`, `eppp_category`, `eppp_tier`, `founded_year`, `head_of_academy_user_id`, plus a `prefs jsonb default '{}'` bag for toggles). I'll make all data columns nullable so the page's `...merged` upsert keeps working as it adds new fields.
+- `attribute_definition` — `name`, `category`, `max_value int default 10`, `descriptors jsonb`, `is_active bool default true`
 
-`travel_update` — `travel_event_id`, title, body, update_type, target_squads (text[]), sent_push (bool), posted_at (default now()), created_by, timestamps.
+**Sync targets** (already external — these are *local* destinations the sync writes to)
 
-All child tables: `travel_event_id` is `ON DELETE CASCADE` to `travel_event`.
+- `team_event_player_stats` — `external_id unique`, `event_id` (→ `team_events.id` CASCADE), `player_id` (→ `players.id`), `period_number`, `team_number`, `position`, `minutes_played`, `appearances`, `goals`, `assists`, `season_start`, `age_group`, `is_captain bool`, `is_substitute bool`, `substitution_time`, `synced_at`. RLS: authenticated read, service-role insert/update (mirrors `team_events`).
 
-### Security helper
+**Audit**
 
-Add a SECURITY DEFINER function `user_has_travel_event_access(_user_id, _event_id)` that returns true when the user has academy access (via `user_has_academy_access`) to the event's academy. Reuses existing helpers — no recursion issues.
-
-### RLS
-
-- `travel_event`: SELECT/INSERT/UPDATE/DELETE allowed when `user_has_academy_access(auth.uid(), academy_id)`.
-- All child tables: SELECT/INSERT/UPDATE/DELETE allowed when `user_has_travel_event_access(auth.uid(), travel_event_id)`.
-
-### Storage
-
-Create `travel-documents` bucket (public for read so the existing `getPublicUrl` calls work). Add policies so only authenticated users with academy access on the owning event can upload/update/delete. Path layout: `<travel_event_id>/<document_id>.<ext>`.
+- `audit_log` — `actor_id`, `action`, `table_name`, `record_id`, `metadata jsonb`, `created_at`. RLS: authenticated read; insert via service role (used by `sync-performance-summary` edge function).
 
 ### Triggers
+Standard `update_updated_at_column()` `BEFORE UPDATE` trigger on every table that has `updated_at`.
 
-Standard `updated_at` triggers using existing `public.update_updated_at_column()` on every table.
+### Indexes
+`player_id`, `academy_id`, `event_id`, `prospect_id` foreign-key columns get B-tree indexes; `video_clip(source, external_id, player_id)` gets the unique index for Hudl dedupe.
 
 ## Out of scope
 
-- No UI changes — `TravelEvents.tsx` and tabs work as-is once the schema exists.
-- No edits to `useActiveContext` / blank-screen work from prior turns.
-- Push notification delivery for `travel_update.sent_push` is just a flag; no backend job is added.
+- No UI changes — pages already query these tables correctly; they'll just start returning data.
+- I will **not** create `events`, `match_events`, `event_player_stats`, `academy_clubs` locally — those are read from the external Football Central Supabase by the sync edge functions and would be confusing to duplicate.
+- No role/permission table refactor for admin-only writes on `attribute_definition`, `curriculum_outcome`, `session_plan`, `fitness_benchmark`. Currently any authenticated user can edit them (matches today's UI which has no role gating). Happy to tighten later if you add a roles table.
+- Not migrating any existing data.
 
-## Verification
+## Verification after the migration
 
-1. Run the migration.
-2. From `/travel` create a new event for Dundee FC Academy — should succeed and appear in the list.
-3. Open the event, add an itinerary item, a transport leg, a budget line, and a document upload.
+1. Load `/scouting` — Add Prospect form should save and the pipeline view should populate (even if empty).
+2. Load `/welfare` — "Log welfare" should save.
+3. Load `/medical` — RPE log form (`/log-rpe`) inserts into `training_load`; injury list pulls from `injury_record`.
+4. Load `/coaching` and `/settings` — curriculum & attribute definitions can be added without errors.
+5. Open a player profile → add a fitness test, attribute snapshot, milestone, maturation record — each should write successfully.
+6. Run the `sync-performance-summary` edge function — should no longer fail on the `audit_log` insert.
+
+Approve and I'll run the single migration.
