@@ -18,10 +18,14 @@ type AuditEntry = {
 type CoachRecord = {
   id: string;
   name: string;
+  email: string | null;
   role: string;
   uefa_licence: string | null;
   fa_safeguarding_expiry: string | null;
   dbs_expiry: string | null;
+  pvg_expiry: string | null;
+  accessni_expiry: string | null;
+  background_check_type: string | null;
   first_aid_expiry: string | null;
 };
 
@@ -36,6 +40,17 @@ const EPPP_CHECKLIST = [
   { id: 'milestones', label: 'Player milestones recorded', table: 'milestones', weight: 10 },
   { id: 'parent_comms', label: 'Parent communications logged', table: 'parent_communication', weight: 10 },
 ];
+
+const JURISDICTION_LABELS: Record<string, { type: string; label: string }> = {
+  england: { type: 'dbs', label: 'DBS' },
+  scotland: { type: 'pvg', label: 'PVG' },
+  wales: { type: 'dbs', label: 'DBS' },
+  northern_ireland: { type: 'accessni', label: 'AccessNI' },
+};
+
+const BG_TYPE_LABEL: Record<string, string> = {
+  dbs: 'DBS', pvg: 'PVG', accessni: 'AccessNI',
+};
 
 const WARNING_DAYS = 30;
 
@@ -137,26 +152,63 @@ export default function Compliance() {
   });
 
   // Staff qualification records — academy-specific; empty for club/team contexts.
-  const { data: staff = [] } = useQuery({
+  const { data: staffData } = useQuery({
     queryKey: ['staff-qualifications', activeContext?.id],
     enabled: !!activeContext,
     staleTime: 300_000,
     queryFn: async () => {
-      if (activeContext?.kind !== 'academy') return [] as CoachRecord[];
-      const { data } = await sb.from('user_academies')
-        .select('user_id, role, profiles:user_id(full_name, fa_safeguarding_expiry, dbs_expiry, first_aid_expiry, uefa_licence)')
-        .eq('academy_id', activeContext.id);
-      return ((data ?? []) as any[]).map((r: any) => ({
+      if (activeContext?.kind !== 'academy') {
+        return { staff: [] as CoachRecord[], jurisdiction: 'england' };
+      }
+      const { data, error } = await supabase.functions.invoke('get-academy-staff', {
+        body: { academy_id: activeContext.id },
+      });
+      if (error) throw error;
+      const payload = data as any;
+      const staff = ((payload?.staff ?? []) as any[]).map((r) => ({
         id: r.user_id,
-        name: r.profiles?.full_name ?? r.user_id,
+        name: r.full_name ?? r.email ?? r.user_id,
+        email: r.email ?? null,
         role: r.role,
-        uefa_licence: r.profiles?.uefa_licence ?? null,
-        fa_safeguarding_expiry: r.profiles?.fa_safeguarding_expiry ?? null,
-        dbs_expiry: r.profiles?.dbs_expiry ?? null,
-        first_aid_expiry: r.profiles?.first_aid_expiry ?? null,
+        uefa_licence: r.uefa_licence ?? null,
+        fa_safeguarding_expiry: r.fa_safeguarding_expiry ?? null,
+        dbs_expiry: r.dbs_expiry ?? null,
+        pvg_expiry: r.pvg_expiry ?? null,
+        accessni_expiry: r.accessni_expiry ?? null,
+        background_check_type: r.background_check_type ?? null,
+        first_aid_expiry: r.first_aid_expiry ?? null,
       })) as CoachRecord[];
+      return {
+        staff,
+        jurisdiction: payload?.academy?.background_check_jurisdiction ?? 'england',
+      };
     },
   });
+  const staff = staffData?.staff ?? [];
+  const jurisdiction = staffData?.jurisdiction ?? 'england';
+  const defaultBg = JURISDICTION_LABELS[jurisdiction] ?? JURISDICTION_LABELS.england;
+
+  // Profile lookup for audit-trail actors
+  const actorIds = Array.from(new Set(
+    auditEntries.map((e) => e.user_id).filter(Boolean),
+  ));
+  const { data: actorProfiles = [] } = useQuery({
+    queryKey: ['audit-actor-profiles', actorIds.join(',')],
+    enabled: actorIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await sb.from('profiles')
+        .select('id, full_name, email').in('id', actorIds);
+      return (data ?? []) as { id: string; full_name: string | null; email: string | null }[];
+    },
+  });
+  const actorById = new Map(actorProfiles.map((p) => [p.id, p]));
+  function actorLabel(userId: string | null): { name: string; email: string | null } {
+    if (!userId) return { name: 'Unknown', email: null };
+    const p = actorById.get(userId);
+    if (p) return { name: p.full_name || p.email || `${userId.slice(0, 8)}…`, email: p.email };
+    return { name: `${userId.slice(0, 8)}…`, email: null };
+  }
 
   const readiness = epppData
     ? Math.round(
@@ -240,14 +292,24 @@ export default function Compliance() {
                   <th className="pb-2 font-medium">Role</th>
                   <th className="pb-2 font-medium">UEFA Licence</th>
                   <th className="pb-2 font-medium">FA Safeguarding</th>
-                  <th className="pb-2 font-medium">DBS</th>
+                  <th className="pb-2 font-medium">Background check</th>
                   <th className="pb-2 font-medium">First Aid</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {staff.map((s) => (
+                {staff.map((s) => {
+                  const resolvedType = s.background_check_type || defaultBg.type;
+                  const bgLabel = BG_TYPE_LABEL[resolvedType] ?? defaultBg.label;
+                  const bgExpiry =
+                    resolvedType === 'pvg' ? s.pvg_expiry
+                    : resolvedType === 'accessni' ? s.accessni_expiry
+                    : s.dbs_expiry;
+                  return (
                   <tr key={s.id}>
-                    <td className="py-3 text-slate-900">{s.name}</td>
+                    <td className="py-3 text-slate-900">
+                      <div>{s.name}</div>
+                      {s.email && <div className="text-xs text-slate-500">{s.email}</div>}
+                    </td>
                     <td className="py-3 text-slate-600 capitalize">{s.role?.replace(/_/g, ' ')}</td>
                     <td className="py-3">
                       {s.uefa_licence ? (
@@ -255,14 +317,20 @@ export default function Compliance() {
                           {s.uefa_licence}
                         </span>
                       ) : (
-                        <span className="text-xs text-slate-900/30">None</span>
+                        <span className="text-xs text-slate-500">None</span>
                       )}
                     </td>
                     <td className="py-3"><ExpiryBadge date={s.fa_safeguarding_expiry} /></td>
-                    <td className="py-3"><ExpiryBadge date={s.dbs_expiry} /></td>
+                    <td className="py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">{bgLabel}</span>
+                        <ExpiryBadge date={bgExpiry} />
+                      </div>
+                    </td>
                     <td className="py-3"><ExpiryBadge date={s.first_aid_expiry} /></td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -292,7 +360,14 @@ export default function Compliance() {
                       {new Date(e.created_at).toLocaleString()}
                     </td>
                     <td className="px-4 py-2 text-slate-900 font-mono text-xs">{e.action}</td>
-                    <td className="px-4 py-2 text-slate-600 font-mono text-xs">{e.user_id?.slice(0, 8)}…</td>
+                    <td className="px-4 py-2 text-slate-700 text-xs">
+                      {(() => { const a = actorLabel(e.user_id); return (
+                        <>
+                          <div>{a.name}</div>
+                          {a.email && <div className="text-slate-500">{a.email}</div>}
+                        </>
+                      ); })()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -358,7 +433,14 @@ export default function Compliance() {
                     </td>
                     <td className="px-4 py-2 text-slate-900 text-xs font-mono">{e.action}</td>
                     <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.record_id?.slice(0, 8)}…</td>
-                    <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.user_id?.slice(0, 8)}…</td>
+                    <td className="px-4 py-2 text-xs text-slate-700">
+                      {(() => { const a = actorLabel(e.user_id); return (
+                        <>
+                          <div>{a.name}</div>
+                          {a.email && <div className="text-[10px] text-slate-500">{a.email}</div>}
+                        </>
+                      ); })()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
