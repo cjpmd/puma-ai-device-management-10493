@@ -1668,6 +1668,8 @@ def run_analysis(job_input: dict) -> dict:
         analysed_fps     = native_fps / frame_step
         from touch_tracker import TouchTracker
         touch_tracker    = TouchTracker(pixels_per_metre=pixels_per_metre, fps=analysed_fps)
+        from pass_analyser import PassAnalyser
+        pass_analyser    = PassAnalyser(pixels_per_metre=pixels_per_metre, fps=analysed_fps, frame_w=frame_w)
 
         ball_positions: list[dict] = []
         stage_counts   = {"yolo": 0, "motion": 0, "kalman": 0, "none": 0}
@@ -1740,6 +1742,13 @@ def run_analysis(job_input: dict) -> dict:
                 prev_ball_speed_ms=prev_ball_speed_ms,
                 player_positions=current_positions,
             )
+            pass_analyser.update(
+                frame_idx=frame_idx,
+                ball_pos=ball_pos_px,
+                ball_speed_ms=ball_speed_ms,
+                player_positions=current_positions,
+                team_assignment={},  # back-filled after loop via assign_teams
+            )
             prev_ball_speed_ms = ball_speed_ms
 
             frame_idx += 1
@@ -1760,8 +1769,9 @@ def run_analysis(job_input: dict) -> dict:
         # ── Event detection, team assignment, metrics ──
         team_assignment = TeamClassifier.assign_teams(player_tracker.tracks)
 
-        # Back-fill team onto all recorded touches now that assignment is known
+        # Back-fill team onto touches and passes now that assignment is known
         touch_tracker.assign_teams(team_assignment)
+        pass_analyser.assign_teams(team_assignment)
 
         events = EventDetector.detect(
             ball_positions=ball_positions,
@@ -1784,19 +1794,32 @@ def run_analysis(job_input: dict) -> dict:
             player_tracker.tracks, frame_w, frame_h, grid_w=20, grid_h=12
         )
 
-        # ── Merge touch breakdown into player_metrics ──
+        # ── Merge touch + pass breakdown into player_metrics ──
         for tid_str, pm in player_metrics.items():
-            tid = int(tid_str) if str(tid_str).isdigit() else tid_str
-            pm.update(touch_tracker.player_touch_summary(int(tid_str) if str(tid_str).isdigit() else 0))
+            tid = int(tid_str) if str(tid_str).isdigit() else 0
+            pm.update(touch_tracker.player_touch_summary(tid))
+            pm.update(pass_analyser.player_pass_summary(tid))
 
-        # ── Merge touch totals into team_metrics ──
+        # ── Merge touch + pass totals into team_metrics ──
         for team_id, tm in team_metrics.items():
             tm.update(touch_tracker.team_touch_summary(team_id))
+            tm.update(pass_analyser.team_pass_stats(team_id))
+
+        # ── Build pass networks ──
+        from movement_network import build_pass_network
+        pass_events_serialised = pass_analyser.pass_events_for_network()
+        home_pass_network = build_pass_network(
+            pass_events_serialised, player_tracker.tracks, "A", frame_w, frame_h
+        )
+        away_pass_network = build_pass_network(
+            pass_events_serialised, player_tracker.tracks, "B", frame_w, frame_h
+        )
 
         total_touches = sum(tm.get("total_touches", 0) for tm in team_metrics.values())
         print(f"  ✓ {len(events)} events  {len(team_metrics)} teams  "
               f"{len(player_metrics)} player metric sets  "
-              f"{len(touch_tracker.touches)} touch events ({total_touches} total)")
+              f"{len(touch_tracker.touches)} touch events ({total_touches} total)  "
+              f"{len(pass_analyser.passes)} passes detected")
 
         # ── Confidence score ──
         # Product of: fraction of expected players tracked × fraction of frames with ball
@@ -1824,7 +1847,10 @@ def run_analysis(job_input: dict) -> dict:
             # Not generated in analysis-only mode — follow-cam uses the stitch worker
             "output_video_path": None,
             "stitched_video_path": None,
-            # Pass/formation stubs — see docstring for why these are null
+            # Pass networks
+            "home_pass_network": home_pass_network,
+            "away_pass_network": away_pass_network,
+            # Formation detection not yet implemented
             "formation_home": None,
             "formation_away": None,
         }
