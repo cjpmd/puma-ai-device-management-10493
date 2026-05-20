@@ -10,6 +10,8 @@ import { useActiveTeam } from '@/hooks/useActiveTeam';
 import { supabase } from '@/integrations/supabase/client';
 import { syncAll } from '@/hooks/useUserTeams';
 import { useToast } from '@/hooks/use-toast';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
+import { groupContextsByClub } from '@/lib/groupContexts';
 
 const LAST_SYNC_KEY = 'origin.lastSyncedAt';
 const LAST_ACADEMY_SYNC_KEY = 'origin.lastAcademySyncedAt';
@@ -28,7 +30,12 @@ interface ProfileScreenProps {
 export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { teams, activeTeam, setActiveTeam, refresh } = useActiveTeam();
+  const { teams, activeTeam, refresh } = useActiveTeam();
+  const { activeContext, availableContexts, setActiveContext } = useActiveContext();
+  const clubGroups = React.useMemo(
+    () => groupContextsByClub(availableContexts),
+    [availableContexts],
+  );
   const [email, setEmail] = useState<string>('');
   const [deviceCount, setDeviceCount] = useState(0);
   const [matchCount, setMatchCount] = useState(0);
@@ -245,32 +252,98 @@ export function ProfileScreen({ onTabChange }: ProfileScreenProps) {
 
         {/* Team switcher */}
         <SectionHeader title="My Teams" />
-        <div style={{ padding: '0 16px 20px' }}>
-          <Glass r={20}>
-            {teams.length === 0 && (
+        <div style={{ padding: '0 16px 4px', ...tType('caption1'), color: T.fg2 }}>
+          Grouped by club
+        </div>
+        <div style={{ padding: '8px 16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {clubGroups.length === 0 && (
+            <Glass r={20}>
               <div style={{ padding: 18, ...tType('subhead'), color: T.fg2, textAlign: 'center' }}>
                 No teams yet. Tap Sync to pull from Origin Sports.
               </div>
-            )}
-            {teams.map((t, i) => (
-              <div key={t.id} onClick={() => setActiveTeam(t.id)} style={{
-                display: 'flex', alignItems: 'center', padding: '12px 16px',
-                borderBottom: i < teams.length - 1 ? `0.5px solid ${T.hairline}` : 'none',
-                gap: 12, cursor: 'pointer',
-              }}>
-                <Avatar initials={t.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()} size={36} hue={295} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ ...tType('headline'), color: T.fg }}>{t.name}</div>
-                  <div style={{ ...tType('footnote'), color: T.fg2 }}>
-                    {t.age_group || 'Senior'} · {t.role}
+            </Glass>
+          )}
+          {clubGroups.map(g => {
+            const initials = g.label.split(' ').map(w => w[0] ?? '').join('').slice(0, 2).toUpperCase();
+            const clubActive = activeContext?.kind === 'club' && activeContext.id === g.clubId;
+            return (
+              <Glass key={g.clubId} r={20}>
+                {/* Club row */}
+                <div
+                  onClick={() => g.clubCtx && setActiveContext(g.clubCtx)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '12px 16px',
+                    cursor: g.clubCtx ? 'pointer' : 'default',
+                    borderBottom: (g.academies.length + g.teams.length) > 0 ? `0.5px solid ${T.hairline}` : 'none',
+                  }}
+                >
+                  <Avatar initials={initials} size={38} hue={220} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ ...tType('headline'), color: T.fg }}>{g.label}</div>
+                    <div style={{ ...tType('footnote'), color: T.fg2 }}>
+                      Club · {g.academies.length} academ{g.academies.length === 1 ? 'y' : 'ies'} · {g.teams.length} team{g.teams.length === 1 ? '' : 's'}
+                    </div>
                   </div>
+                  {clubActive && (
+                    <div style={{ ...tType('caption1'), color: T.purple[300], fontWeight: 600 }}>ACTIVE</div>
+                  )}
                 </div>
-                {activeTeam?.id === t.id && (
-                  <div style={{ ...tType('caption1'), color: T.purple[300], fontWeight: 600 }}>ACTIVE</div>
-                )}
-              </div>
-            ))}
-          </Glass>
+
+                {/* Academies under this club */}
+                {g.academies.map(a => {
+                  const isActive = activeContext?.kind === 'academy' && activeContext.id === a.id;
+                  return (
+                    <div
+                      key={a.id}
+                      onClick={() => setActiveContext(a)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '10px 16px 10px 32px', cursor: 'pointer',
+                        borderBottom: `0.5px solid ${T.hairline}`,
+                      }}
+                    >
+                      <Avatar initials="AC" size={32} hue={270} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 600 }}>{a.label}</div>
+                        <div style={{ ...tType('caption2'), color: T.fg2 }}>Academy</div>
+                      </div>
+                      {isActive && (
+                        <div style={{ ...tType('caption1'), color: T.purple[300], fontWeight: 600 }}>ACTIVE</div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Teams under this club */}
+                {g.teams.map((t, i) => {
+                  const isActive = activeContext?.kind === 'team' && activeContext.id === t.id;
+                  const tInitials = t.label.split(' ').map(w => w[0] ?? '').join('').slice(0, 2).toUpperCase();
+                  const last = i === g.teams.length - 1;
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => setActiveContext(t)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '10px 16px 10px 32px', cursor: 'pointer',
+                        borderBottom: last ? 'none' : `0.5px solid ${T.hairline}`,
+                      }}
+                    >
+                      <Avatar initials={tInitials} size={32} hue={295} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ ...tType('subhead'), color: T.fg, fontWeight: 600 }}>{t.label}</div>
+                        <div style={{ ...tType('caption2'), color: T.fg2 }}>Team</div>
+                      </div>
+                      {isActive && (
+                        <div style={{ ...tType('caption1'), color: T.purple[300], fontWeight: 600 }}>ACTIVE</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </Glass>
+            );
+          })}
         </div>
 
         <SectionHeader title="Settings" />

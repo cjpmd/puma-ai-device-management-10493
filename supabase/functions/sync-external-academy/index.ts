@@ -72,21 +72,69 @@ Deno.serve(async (req) => {
     }
 
     // ── 3. Fetch academy_clubs from FC and link local clubs ─────────────────
+    //   Derive academy↔club pairs from THREE possible FC schemas:
+    //     (a) academy_clubs join table
+    //     (b) academies.club_id column
+    //     (c) clubs.academy_id column
+    //   We try all three so the link works regardless of how FC models it.
+    const pairs: { academy_ext: string; club_ext: string }[] = [];
+
+    // (a) join table
     const { data: academyClubs, error: linkErr } = await externalSupabase
       .from("academy_clubs")
       .select("academy_id, club_id");
+    if (linkErr) console.warn("FC academy_clubs unavailable:", linkErr.message);
+    for (const link of academyClubs || []) {
+      pairs.push({ academy_ext: link.academy_id, club_ext: link.club_id });
+    }
 
-    if (linkErr) {
-      console.error("Error fetching academy_clubs:", linkErr);
+    // (b) academies.club_id (re-fetch with that column; tolerate failure)
+    const { data: acsWithClub, error: acsErr } = await externalSupabase
+      .from("academies")
+      .select("id, club_id");
+    if (acsErr) {
+      console.warn("FC academies.club_id unavailable:", acsErr.message);
     } else {
-      for (const link of academyClubs || []) {
-        const { data: localAcademy } = await localSupabase
-          .from("academies").select("id").eq("external_id", link.academy_id).single();
-        if (!localAcademy) continue;
+      for (const a of acsWithClub || []) {
+        if (a.club_id) pairs.push({ academy_ext: a.id, club_ext: a.club_id });
+      }
+    }
 
-        const { error: updateErr } = await localSupabase
-          .from("clubs").update({ academy_id: localAcademy.id }).eq("external_id", link.club_id);
-        if (!updateErr) results.clubs_linked++;
+    // (c) clubs.academy_id
+    const { data: clubsWithAcademy, error: clubsErr } = await externalSupabase
+      .from("clubs")
+      .select("id, academy_id");
+    if (clubsErr) {
+      console.warn("FC clubs.academy_id unavailable:", clubsErr.message);
+    } else {
+      for (const c of clubsWithAcademy || []) {
+        if (c.academy_id) pairs.push({ academy_ext: c.academy_id, club_ext: c.id });
+      }
+    }
+
+    const seen = new Set<string>();
+    for (const p of pairs) {
+      const key = `${p.academy_ext}:${p.club_ext}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const { data: localAcademy } = await localSupabase
+        .from("academies").select("id").eq("external_id", p.academy_ext).maybeSingle();
+      if (!localAcademy) {
+        console.log(`skip: no local academy for external_id=${p.academy_ext}`);
+        continue;
+      }
+
+      const { error: updateErr, count } = await localSupabase
+        .from("clubs")
+        .update({ academy_id: localAcademy.id }, { count: "exact" })
+        .eq("external_id", p.club_ext);
+      if (updateErr) {
+        console.error("link update failed:", updateErr.message);
+      } else if ((count ?? 0) > 0) {
+        results.clubs_linked++;
+      } else {
+        console.log(`skip: no local club for external_id=${p.club_ext}`);
       }
     }
 

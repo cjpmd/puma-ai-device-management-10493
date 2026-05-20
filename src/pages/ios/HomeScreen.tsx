@@ -8,7 +8,6 @@ import { Rings } from '@/components/ios/Rings';
 import { SectionHeader } from '@/components/ios/SectionHeader';
 import { IOSStatusBar } from '@/components/ios/StatusBar';
 import { T, tType, Wallpapers } from '@/lib/ios-tokens';
-import { useActiveTeam } from '@/hooks/useActiveTeam';
 import { useActiveContext } from '@/contexts/ActiveContextContext';
 import { HierarchicalContextPicker } from '@/components/ios/HierarchicalContextPicker';
 import { supabase } from '@/integrations/supabase/client';
@@ -69,8 +68,7 @@ const initialsOf = (name: string) =>
   name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
 export function HomeScreen({ onTabChange }: HomeScreenProps) {
-  const { activeTeam, teams, setActiveTeam, loading } = useActiveTeam();
-  const { availableContexts } = useActiveContext();
+  const { activeContext, availableContexts, loading } = useActiveContext();
   const navigate = useNavigate();
   const [nextEvent, setNextEvent] = useState<NextEvent | null>(null);
   const [userInitials, setUserInitials] = useState('OS');
@@ -89,7 +87,7 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
   }, []);
 
   useEffect(() => {
-    if (!activeTeam) {
+    if (!activeContext) {
       setNextEvent(null);
       setPlayers([]);
       setPastFixtures([]);
@@ -98,28 +96,52 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
     const today = new Date().toISOString().split('T')[0];
 
     (async () => {
+      // Resolve which team_ids to query: a single team in team context,
+      // or all teams under the club for club/academy contexts.
+      let teamIds: string[] = [];
+      if (activeContext.kind === 'team') {
+        teamIds = [activeContext.id];
+      } else {
+        const { data: clubTeams } = await supabase
+          .from('teams')
+          .select('id')
+          .eq('club_id', activeContext.clubId);
+        teamIds = (clubTeams || []).map(t => t.id);
+      }
+
+      if (teamIds.length === 0) {
+        setNextEvent(null);
+        setPlayers([]);
+        setPastFixtures([]);
+        return;
+      }
+
       // Next event
       const { data: nextData } = await supabase
         .from('team_events')
         .select('title, date, start_time, is_home, opponent, event_type')
-        .eq('team_id', activeTeam.id)
+        .in('team_id', teamIds)
         .gte('date', today)
         .order('date', { ascending: true })
         .limit(1);
       setNextEvent(nextData?.[0] || null);
 
-      // Squad
-      const { data: playersData } = await supabase
+      // Squad — for club/academy contexts, scope by club_id directly so
+      // players linked to the club (not a specific team) are also included.
+      const playersQ = supabase
         .from('players')
-        .select('id, name, availability, expected_return_date')
-        .eq('team_id', activeTeam.id);
+        .select('id, name, availability, expected_return_date');
+      const playersFilter = activeContext.kind === 'team'
+        ? playersQ.eq('team_id', activeContext.id)
+        : playersQ.eq('club_id', activeContext.clubId);
+      const { data: playersData } = await playersFilter;
       setPlayers(playersData || []);
 
-      // Past fixtures — read scores directly from team_events
+      // Past fixtures — aggregate across teamIds
       const { data: pastEvents } = await supabase
         .from('team_events')
         .select('id, date, opponent, is_home, event_type, match_id, home_score, away_score')
-        .eq('team_id', activeTeam.id)
+        .in('team_id', teamIds)
         .lt('date', today)
         .in('event_type', ['match', 'friendly', 'fixture', 'Match', 'Friendly', 'Fixture'])
         .order('date', { ascending: false })
@@ -151,11 +173,15 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
         away_score: e.away_score ?? (e.match_id ? scoreMap[e.match_id]?.away ?? null : null),
       })));
     })();
-  }, [activeTeam]);
+  }, [activeContext?.kind, activeContext?.id, activeContext?.clubId]);
 
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  const teamName = activeTeam?.name || (loading ? '…' : 'No team linked');
-  const teamInitials = (activeTeam?.name || 'OS').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const teamName = activeContext?.label || (loading ? '…' : 'No team linked');
+  const teamInitials = (activeContext?.label || 'OS').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const contextCaption =
+    activeContext?.kind === 'club' ? 'Club view'
+    : activeContext?.kind === 'academy' ? 'Academy view'
+    : null;
   const daysUntil = nextEvent ? Math.max(0, Math.ceil((new Date(nextEvent.date).getTime() - Date.now()) / 86400000)) : null;
   const opponentInitials = nextEvent?.opponent
     ? nextEvent.opponent.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
@@ -196,7 +222,9 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
       {/* Header */}
       <div style={{ padding: '8px 20px 10px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>{today}</div>
+          <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>
+            {today}{contextCaption ? ` · ${contextCaption}` : ''}
+          </div>
           {availableContexts.length > 1 ? (
             <button
               onClick={() => setShowPicker(true)}
