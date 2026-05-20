@@ -106,19 +106,18 @@ export function useActiveContextData(): UseActiveContextReturn {
       });
     }
 
-    // 1b. Synthesise academy contexts from club access so academy-tier nav
-    //     items appear immediately for users with club admin access, even
-    //     before the Sync Academy job has populated user_academies.
+    // 1b. Surface academy contexts derived from club access — but ONLY when
+    //     the club is linked to a real academy row (clubs.academy_id is set).
+    //     We do NOT fabricate academies for clubs that have no academy.
     const seenAcademyIds = new Set(contexts.map(c => c.id));
     for (const row of (clubResult.data ?? [])) {
       const club = row.clubs;
-      if (!club) continue;
-      const synthId = club.academy_id ?? row.club_id;
-      if (seenAcademyIds.has(synthId)) continue;
-      seenAcademyIds.add(synthId);
+      if (!club?.academy_id) continue;
+      if (seenAcademyIds.has(club.academy_id)) continue;
+      seenAcademyIds.add(club.academy_id);
       contexts.push({
         kind: 'academy',
-        id: synthId,
+        id: club.academy_id,
         clubId: row.club_id,
         label: `${club.name} Academy`,
         userGroupTier: tier,

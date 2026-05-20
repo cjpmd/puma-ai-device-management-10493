@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
     const results = {
       academies: { updated: 0, errors: 0 },
       clubs_linked: 0,
-      user_academies: { fetched: 0, head_matched: 0 },
+      user_academies: { fetched: 0, head_matched: 0, auto_granted: 0 },
     };
 
     // ── 1. Fetch academies from FC ──────────────────────────────────────────
@@ -135,6 +135,71 @@ Deno.serve(async (req) => {
         results.clubs_linked++;
       } else {
         console.log(`skip: no local club for external_id=${p.club_ext}`);
+      }
+    }
+
+    // ── 3b. Name-match fallback ─────────────────────────────────────────────
+    //   For any local academy still not referenced by a local club, try to
+    //   link by name: "Dundee FC Academy" ↔ "Dundee FC".
+    const { data: allAcademies } = await localSupabase
+      .from("academies").select("id, name");
+    const { data: allClubs } = await localSupabase
+      .from("clubs").select("id, name, academy_id");
+    const linkedAcademyIds = new Set(
+      (allClubs || []).map(c => c.academy_id).filter(Boolean) as string[],
+    );
+    const norm = (s: string) =>
+      (s || "").toLowerCase().replace(/\s+academy$/, "").trim();
+    for (const a of allAcademies || []) {
+      if (linkedAcademyIds.has(a.id)) continue;
+      const aKey = norm(a.name);
+      if (!aKey) continue;
+      const match = (allClubs || []).find(c => !c.academy_id && norm(c.name) === aKey);
+      if (!match) {
+        console.log(`name-match: no club for academy "${a.name}"`);
+        continue;
+      }
+      const { error: linkErr } = await localSupabase
+        .from("clubs").update({ academy_id: a.id }).eq("id", match.id);
+      if (linkErr) {
+        console.error(`name-match link failed for ${match.name}:`, linkErr.message);
+      } else {
+        console.log(`name-match: linked club "${match.name}" → academy "${a.name}"`);
+        match.academy_id = a.id;
+        linkedAcademyIds.add(a.id);
+        results.clubs_linked++;
+      }
+    }
+
+    // ── 3c. Auto-grant user_academies from club access ──────────────────────
+    //   Anyone with access to a club that is now linked to an academy should
+    //   also have a user_academies row, so the academy view appears in their
+    //   picker.
+    const linkedClubs = (allClubs || []).filter(c => c.academy_id);
+    if (linkedClubs.length > 0) {
+      const { data: clubAccessRows } = await localSupabase
+        .from("user_club_access")
+        .select("user_id, club_id")
+        .in("club_id", linkedClubs.map(c => c.id));
+      const clubToAcademy = new Map(linkedClubs.map(c => [c.id, c.academy_id as string]));
+      const seen = new Set<string>();
+      for (const row of clubAccessRows || []) {
+        const academyId = clubToAcademy.get(row.club_id);
+        if (!academyId) continue;
+        const key = `${row.user_id}:${academyId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const { error: insErr, count } = await localSupabase
+          .from("user_academies")
+          .upsert(
+            { user_id: row.user_id, academy_id: academyId, role: "member" },
+            { onConflict: "user_id,academy_id", ignoreDuplicates: true, count: "exact" },
+          );
+        if (insErr) {
+          console.warn(`auto_grant failed for ${row.user_id}:`, insErr.message);
+        } else if ((count ?? 0) > 0) {
+          results.user_academies.auto_granted++;
+        }
       }
     }
 
