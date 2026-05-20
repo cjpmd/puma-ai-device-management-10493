@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { QrCode } from 'lucide-react';
+import { QrCode, Users, TrendingUp, HeartPulse, Search, ClipboardList, ShieldCheck, Plane } from 'lucide-react';
 import { Glass } from '@/components/ios/Glass';
 import { TabBar } from '@/components/ios/TabBar';
 import { Avatar } from '@/components/ios/Avatar';
@@ -384,6 +384,42 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
             </div>
           </Glass>
         </div>
+
+        {/* Academy pages (only in academy context) */}
+        {activeContext?.kind === 'academy' && (
+          <>
+            <SectionHeader title="Academy" />
+            <div style={{ padding: '4px 16px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {[
+                { t: 'Squads',      s: 'Players & groups',   hue: 270, icon: Users,         route: '/squads' },
+                { t: 'Development', s: 'Player progress',    hue: 200, icon: TrendingUp,    route: '/development' },
+                { t: 'Welfare',     s: 'Health & wellbeing', hue: 340, icon: HeartPulse,    route: '/welfare' },
+                { t: 'Scouting',    s: 'Prospects',          hue: 160, icon: Search,        route: '/scouting' },
+                { t: 'Coaching',    s: 'Plans & outcomes',   hue: 30,  icon: ClipboardList, route: '/coaching' },
+                { t: 'Compliance',  s: 'Records & audits',   hue: 220, icon: ShieldCheck,   route: '/compliance' },
+                { t: 'Travel',      s: 'Events & trips',     hue: 295, icon: Plane,         route: '/travel' },
+              ].map((a) => {
+                const Icon = a.icon;
+                return (
+                  <Glass key={a.route} r={20} onClick={() => navigate(a.route)}>
+                    <div style={{ padding: 14 }}>
+                      <div style={{
+                        width: 36, height: 36, borderRadius: 10, marginBottom: 14,
+                        background: `linear-gradient(135deg, oklch(0.6 0.18 ${a.hue}), oklch(0.42 0.18 ${a.hue}))`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: T.fg,
+                      }}>
+                        <Icon size={18} />
+                      </div>
+                      <div style={{ ...tType('headline'), color: T.fg }}>{a.t}</div>
+                      <div style={{ ...tType('footnote'), color: T.fg2, marginTop: 2 }}>{a.s}</div>
+                    </div>
+                  </Glass>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         {/* Activity rings (mock) */}
         <SectionHeader title="Today" action="Details" />
