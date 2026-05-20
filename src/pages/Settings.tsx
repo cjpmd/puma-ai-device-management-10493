@@ -608,8 +608,8 @@ function IntegrationsTab() {
               <span
                 className={`text-xs px-2 py-0.5 rounded-full ${
                   int.status === 'active'
-                    ? 'bg-emerald-500/20 text-emerald-400'
-                    : 'bg-slate-100 text-slate-400'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-slate-100 text-slate-500'
                 }`}
               >
                 {int.status === 'active' ? 'Active' : 'Coming soon'}
