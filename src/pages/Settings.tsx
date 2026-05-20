@@ -379,19 +379,26 @@ function StaffTab() {
           </button>
         </div>
       </SectionCard>
-      <SectionCard title={`Current Staff (${staff.length})`}>
-        {staff.length === 0 ? (
+      <SectionCard title={`Current Staff (${staffList.length})`}>
+        {staffList.length === 0 ? (
           <p className="text-slate-500 text-sm">No staff added yet.</p>
         ) : (
           <div className="divide-y divide-slate-100">
-            {staff.map((s) => {
+            {staffList.map((s) => {
               const name = s.full_name || s.email || `${s.user_id.slice(0, 8)}…`;
               const initials = (s.full_name || s.email || '?')
                 .split(/[\s@]+/).filter(Boolean).slice(0, 2)
                 .map((p) => p[0]?.toUpperCase()).join('') || '?';
               const synced = !!s.external_role_synced_at && s.external_role === s.role;
+              const isExpanded = expandedUserId === s.user_id;
+              const resolvedType =
+                (qualForm.background_check_type as any) ||
+                s.background_check_type ||
+                DEFAULT_BG_TYPE[jurisdiction] || 'dbs';
+              const bgLabel = resolvedType === 'pvg' ? 'PVG' : resolvedType === 'accessni' ? 'AccessNI' : 'DBS';
               return (
-                <div key={s.user_id} className="flex items-center gap-3 py-2.5">
+                <div key={s.user_id} className="py-2.5">
+                  <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center text-xs font-semibold flex-shrink-0">
                     {initials}
                   </div>
@@ -424,6 +431,84 @@ function StaffTab() {
                       Contact
                     </a>
                   ) : null}
+                  <button
+                    onClick={() => toggleExpand(s)}
+                    className="text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded-md hover:bg-slate-100"
+                  >
+                    {isExpanded ? 'Close' : 'Qualifications'}
+                  </button>
+                  </div>
+                  {isExpanded && (
+                    <div className="mt-3 ml-12 mr-2 p-3 bg-slate-50 rounded-lg space-y-2 border border-slate-200">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">UEFA Licence</span>
+                          <input
+                            type="text"
+                            value={qualForm.uefa_licence ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, uefa_licence: e.target.value }))}
+                            placeholder="e.g. UEFA A"
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">FA Safeguarding expiry</span>
+                          <input
+                            type="date"
+                            value={qualForm.fa_safeguarding_expiry ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, fa_safeguarding_expiry: e.target.value }))}
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">First Aid expiry</span>
+                          <input
+                            type="date"
+                            value={qualForm.first_aid_expiry ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, first_aid_expiry: e.target.value }))}
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">Background check type</span>
+                          <select
+                            value={qualForm.background_check_type ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, background_check_type: e.target.value }))}
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          >
+                            <option value="">Inherit academy ({(DEFAULT_BG_TYPE[jurisdiction] || 'dbs').toUpperCase()})</option>
+                            <option value="dbs">DBS</option>
+                            <option value="pvg">PVG</option>
+                            <option value="accessni">AccessNI</option>
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="text-xs text-slate-500">{bgLabel} expiry</span>
+                          <input
+                            type="date"
+                            value={qualForm.bg_expiry ?? ''}
+                            onChange={(e) => setQualForm((f) => ({ ...f, bg_expiry: e.target.value }))}
+                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                          />
+                        </label>
+                      </div>
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          onClick={() => setExpandedUserId(null)}
+                          className="text-xs px-3 py-1.5 rounded-md text-slate-600 hover:bg-slate-200"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => saveQuals(s)}
+                          disabled={savingQuals}
+                          className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50"
+                        >
+                          {savingQuals ? 'Saving…' : 'Save qualifications'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
