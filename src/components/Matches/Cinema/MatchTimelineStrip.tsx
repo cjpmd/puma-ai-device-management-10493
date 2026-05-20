@@ -12,9 +12,11 @@ import { cn } from '@/lib/utils';
 interface MatchEvent {
   time: number;
   type: string;
+  source?: 'cv' | 'coach';
   player_track_id?: number;
   team?: string | null;
   outcome?: string;
+  notes?: string;
 }
 
 interface MatchTimelineStripProps {
@@ -27,12 +29,21 @@ interface MatchTimelineStripProps {
 type GroupMode = 'tags' | 'players';
 
 const TYPE_COLORS: Record<string, string> = {
+  // CV events
   goal: 'hsl(48 95% 55%)',
   shot: 'hsl(340 82% 60%)',
   pass: 'hsl(210 90% 60%)',
   tackle: 'hsl(140 60% 50%)',
   possession_change: 'hsl(280 60% 60%)',
   other: 'hsl(0 0% 60%)',
+  // Coach tags
+  yellow_card: '#eab308',
+  red_card: '#ef4444',
+  substitution: '#06b6d4',
+  key_moment: '#a855f7',
+  foul: '#f97316',
+  corner: '#14b8a6',
+  penalty: '#dc2626',
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -42,6 +53,13 @@ const TYPE_LABEL: Record<string, string> = {
   tackle: 'Tackle',
   possession_change: 'Possession',
   other: 'Other',
+  yellow_card: 'Yellow Card',
+  red_card: 'Red Card',
+  substitution: 'Substitution',
+  key_moment: 'Key Moment',
+  foul: 'Foul',
+  corner: 'Corner',
+  penalty: 'Penalty',
 };
 
 const formatTime = (t: number) => {
@@ -78,7 +96,11 @@ export function MatchTimelineStrip({
         if (!byType.has(k)) byType.set(k, []);
         byType.get(k)!.push(e);
       });
-      const order = ['goal', 'shot', 'pass', 'tackle', 'possession_change', 'other'];
+      const order = [
+        'goal', 'shot', 'pass', 'tackle', 'possession_change',
+        'yellow_card', 'red_card', 'substitution', 'key_moment', 'foul', 'corner', 'penalty',
+        'other',
+      ];
       return order
         .filter((k) => byType.has(k))
         .map((k) => ({ key: k, label: TYPE_LABEL[k] || k, color: TYPE_COLORS[k], events: byType.get(k)! }));
@@ -229,7 +251,7 @@ export function MatchTimelineStrip({
                     <button
                       key={`${ev.time}-${i}`}
                       type="button"
-                      title={`${TYPE_LABEL[getEventKey(ev)] || ev.type} @ ${formatTime(ev.time)}`}
+                      title={`${TYPE_LABEL[getEventKey(ev)] || ev.type} @ ${formatTime(ev.time)}${(ev as any).notes ? ` — ${(ev as any).notes}` : ''}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         onSeek(ev.time);

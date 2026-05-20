@@ -1,22 +1,44 @@
 import { useMemo, useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { UserCircle2, Film, Play, Sparkles, Activity, Target, Shield, Footprints } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  UserCircle2,
+  Film,
+  Play,
+  Sparkles,
+  Activity,
+  Target,
+  Shield,
+  Footprints,
+  ChevronDown,
+  Map,
+} from 'lucide-react';
 import { useEventThumbnails } from './useEventThumbnails';
 import { supabase } from '@/integrations/supabase/client';
+import type { HeatmapData } from '@/types/video-analysis';
 
 interface MatchEvent {
   time: number;
   type: string;
+  source?: 'cv' | 'coach';
   player_track_id?: number;
   team?: string | null;
   outcome?: string;
 }
 
+type SortMode = 'distance' | 'contribution' | 'sprints';
+
 interface PlayerSpotlightPanelProps {
   matchId: string;
   events: MatchEvent[];
   playerMetrics: Record<string, any> | null;
+  heatmaps?: Record<string, HeatmapData> | null;
   videoUrl: string | null;
   onSeek: (time: number) => void;
 }
@@ -32,16 +54,90 @@ const EVENT_LABEL: Record<string, string> = {
   shot: 'Shot on goal',
   tackle: 'Tackle',
   possession_change: 'Possession change',
+  goal: 'Goal',
+  yellow_card: 'Yellow Card',
+  red_card: 'Red Card',
+  substitution: 'Substitution',
+  key_moment: 'Key Moment',
+  foul: 'Foul',
+  corner: 'Corner',
+  penalty: 'Penalty',
 };
+
+const SORT_LABELS: Record<SortMode, string> = {
+  distance: 'Distance',
+  contribution: 'Contribution',
+  sprints: 'Sprints',
+};
+
+// SVG heatmap on a football pitch outline (105×68m proportions)
+function PlayerHeatmap({ data }: { data: HeatmapData }) {
+  const W = 210;
+  const H = 136; // 2× for crisp rendering, scaled down via viewBox
+  const cellW = W / data.grid_w;
+  const cellH = H / data.grid_h;
+
+  const maxCount = useMemo(
+    () => Math.max(1, ...data.cells.map(([, , c]) => c)),
+    [data.cells],
+  );
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full rounded-lg overflow-hidden"
+      style={{ background: '#1a3a1a' }}
+      aria-label="Player heatmap"
+    >
+      {/* Pitch outline */}
+      <rect x={2} y={2} width={W - 4} height={H - 4} fill="none" stroke="#2d5a2d" strokeWidth={1.5} />
+      {/* Centre line */}
+      <line x1={W / 2} y1={2} x2={W / 2} y2={H - 2} stroke="#2d5a2d" strokeWidth={0.8} />
+      {/* Centre circle */}
+      <circle cx={W / 2} cy={H / 2} r={18} fill="none" stroke="#2d5a2d" strokeWidth={0.8} />
+      {/* Left penalty box */}
+      <rect x={2} y={H / 2 - 26} width={28} height={52} fill="none" stroke="#2d5a2d" strokeWidth={0.8} />
+      {/* Right penalty box */}
+      <rect x={W - 30} y={H / 2 - 26} width={28} height={52} fill="none" stroke="#2d5a2d" strokeWidth={0.8} />
+      {/* Left goal */}
+      <rect x={2} y={H / 2 - 9} width={6} height={18} fill="none" stroke="#2d5a2d" strokeWidth={0.8} />
+      {/* Right goal */}
+      <rect x={W - 8} y={H / 2 - 9} width={6} height={18} fill="none" stroke="#2d5a2d" strokeWidth={0.8} />
+
+      {/* Heat cells */}
+      {data.cells.map(([gx, gy, count]) => {
+        const intensity = count / maxCount;
+        // interpolate dark-blue → amber → red
+        const r = Math.round(255 * Math.min(1, intensity * 2));
+        const g = Math.round(180 * Math.max(0, 1 - Math.abs(intensity - 0.5) * 2));
+        const b = Math.round(255 * Math.max(0, 1 - intensity * 2));
+        return (
+          <rect
+            key={`${gx}-${gy}`}
+            x={gx * cellW}
+            y={gy * cellH}
+            width={cellW}
+            height={cellH}
+            fill={`rgb(${r},${g},${b})`}
+            opacity={0.55 + intensity * 0.4}
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
 export function PlayerSpotlightPanel({
   matchId,
   events,
   playerMetrics,
+  heatmaps,
   videoUrl,
   onSeek,
 }: PlayerSpotlightPanelProps) {
   const [mapping, setMapping] = useState<Record<number, { name?: string; squad_number?: number }>>({});
+  const [sort, setSort] = useState<SortMode>('contribution');
+  const [showHeatmap, setShowHeatmap] = useState(false);
 
   // All track IDs that appear in events
   const trackIds = useMemo(() => {
@@ -49,13 +145,32 @@ export function PlayerSpotlightPanel({
     events.forEach((e) => {
       if (typeof e.player_track_id === 'number') set.add(e.player_track_id);
     });
-    return Array.from(set).sort((a, b) => a - b);
-  }, [events]);
+    // also include any ids in playerMetrics that aren't in events
+    if (playerMetrics) {
+      Object.keys(playerMetrics).forEach((k) => {
+        const n = Number(k);
+        if (!isNaN(n)) set.add(n);
+      });
+    }
+    return Array.from(set);
+  }, [events, playerMetrics]);
 
-  const [selected, setSelected] = useState<number | null>(trackIds[0] ?? null);
+  // Sort track IDs by chosen metric
+  const sortedTrackIds = useMemo(() => {
+    if (!playerMetrics) return trackIds.sort((a, b) => a - b);
+    return [...trackIds].sort((a, b) => {
+      const pa = playerMetrics[String(a)] || playerMetrics[a] || {};
+      const pb = playerMetrics[String(b)] || playerMetrics[b] || {};
+      if (sort === 'distance') return (pb.distance_m ?? 0) - (pa.distance_m ?? 0);
+      if (sort === 'sprints') return (pb.sprints ?? 0) - (pa.sprints ?? 0);
+      return (pb.contribution_score ?? 0) - (pa.contribution_score ?? 0);
+    });
+  }, [trackIds, playerMetrics, sort]);
+
+  const [selected, setSelected] = useState<number | null>(sortedTrackIds[0] ?? null);
   useEffect(() => {
-    if (selected === null && trackIds.length > 0) setSelected(trackIds[0]);
-  }, [trackIds, selected]);
+    if (selected === null && sortedTrackIds.length > 0) setSelected(sortedTrackIds[0]);
+  }, [sortedTrackIds, selected]);
 
   // Load track→player name/jersey mapping
   useEffect(() => {
@@ -89,18 +204,21 @@ export function PlayerSpotlightPanel({
 
   const stats = useMemo(() => {
     if (selected === null) return null;
-    const evs = playerEvents;
     const fromMetrics = playerMetrics?.[String(selected)] || playerMetrics?.[selected];
     return {
-      passes: evs.filter((e) => e.type === 'pass').length,
-      shots: evs.filter((e) => e.type === 'shot').length,
-      tackles: evs.filter((e) => e.type === 'tackle').length,
-      goals: evs.filter((e) => e.outcome === 'goal').length,
-      distance: fromMetrics?.distance_m ?? fromMetrics?.distance ?? null,
+      passes: playerEvents.filter((e) => e.type === 'pass').length,
+      shots: playerEvents.filter((e) => e.type === 'shot').length,
+      tackles: playerEvents.filter((e) => e.type === 'tackle').length,
+      goals: playerEvents.filter((e) => e.outcome === 'goal' || e.type === 'goal').length,
+      distance: fromMetrics?.distance_m ?? null,
       sprints: fromMetrics?.sprints ?? null,
       top_speed: fromMetrics?.top_speed_kmh ?? fromMetrics?.top_speed ?? null,
+      contribution_score: fromMetrics?.contribution_score ?? null,
     };
   }, [selected, playerEvents, playerMetrics]);
+
+  const selectedHeatmap: HeatmapData | null =
+    selected !== null ? (heatmaps?.[String(selected)] ?? heatmaps?.[selected] ?? null) : null;
 
   const labelFor = (id: number) => {
     const m = mapping[id];
@@ -116,15 +234,30 @@ export function PlayerSpotlightPanel({
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <UserCircle2 className="h-4 w-4" /> Player Spotlight
           </h2>
-          <Badge variant="secondary" className="text-xs">{trackIds.length} players</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-xs">{trackIds.length} players</Badge>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="h-7 text-xs rounded-full">
+                  Sort: {SORT_LABELS[sort]}
+                  <ChevronDown className="h-3 w-3 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setSort('contribution')}>Contribution</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSort('distance')}>Distance</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSort('sprints')}>Sprints</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {/* Player picker */}
         <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-          {trackIds.length === 0 && (
+          {sortedTrackIds.length === 0 && (
             <p className="text-xs text-muted-foreground">No tracked players in this match.</p>
           )}
-          {trackIds.map((id) => (
+          {sortedTrackIds.map((id) => (
             <Button
               key={id}
               size="sm"
@@ -138,7 +271,7 @@ export function PlayerSpotlightPanel({
         </div>
       </div>
 
-      {selected !== null && (
+      {selected !== null ? (
         <>
           {/* Player header + stats */}
           <div className="px-5 py-4 border-b border-border/40 bg-card/30">
@@ -146,27 +279,48 @@ export function PlayerSpotlightPanel({
               <div className="w-12 h-12 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center font-mono font-bold text-sm">
                 {labelFor(selected)}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="font-semibold truncate">{nameFor(selected)}</p>
                 <p className="text-xs text-muted-foreground">{playerEvents.length} events</p>
               </div>
+              {selectedHeatmap && (
+                <Button
+                  size="sm"
+                  variant={showHeatmap ? 'default' : 'outline'}
+                  className="h-7 text-xs rounded-full shrink-0"
+                  onClick={() => setShowHeatmap((v) => !v)}
+                >
+                  <Map className="h-3.5 w-3.5 mr-1" />
+                  Heatmap
+                </Button>
+              )}
             </div>
 
-            <div className="grid grid-cols-4 gap-2">
-              <StatCell icon={Sparkles} label="Goals" value={stats?.goals ?? 0} />
-              <StatCell icon={Target} label="Shots" value={stats?.shots ?? 0} />
-              <StatCell icon={Activity} label="Passes" value={stats?.passes ?? 0} />
-              <StatCell icon={Shield} label="Tackles" value={stats?.tackles ?? 0} />
-              {stats?.distance != null && (
-                <StatCell icon={Footprints} label="Distance" value={`${Math.round(stats.distance)}m`} />
-              )}
-              {stats?.sprints != null && (
-                <StatCell icon={Activity} label="Sprints" value={stats.sprints} />
-              )}
-              {stats?.top_speed != null && (
-                <StatCell icon={Activity} label="Top spd" value={`${stats.top_speed.toFixed?.(1) ?? stats.top_speed} km/h`} />
-              )}
-            </div>
+            {showHeatmap && selectedHeatmap ? (
+              <div className="mb-3">
+                <PlayerHeatmap data={selectedHeatmap} />
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-2">
+                <StatCell icon={Sparkles} label="Goals" value={stats?.goals ?? 0} />
+                <StatCell icon={Target} label="Shots" value={stats?.shots ?? 0} />
+                <StatCell icon={Activity} label="Passes" value={stats?.passes ?? 0} />
+                <StatCell icon={Shield} label="Tackles" value={stats?.tackles ?? 0} />
+                {stats?.distance != null && (
+                  <StatCell icon={Footprints} label="Distance" value={`${Math.round(stats.distance)}m`} />
+                )}
+                {stats?.sprints != null && (
+                  <StatCell icon={Activity} label="Sprints" value={stats.sprints} />
+                )}
+                {stats?.top_speed != null && (
+                  <StatCell
+                    icon={Activity}
+                    label="Top spd"
+                    value={`${(stats.top_speed as number).toFixed(1)} km/h`}
+                  />
+                )}
+              </div>
+            )}
           </div>
 
           {/* Clip list */}
@@ -204,7 +358,7 @@ export function PlayerSpotlightPanel({
                   <div className="flex-1 min-w-0 py-1">
                     <div className="flex items-start justify-between gap-2">
                       <p className="font-medium text-sm truncate">{label}</p>
-                      {ev.outcome === 'goal' && (
+                      {(ev.outcome === 'goal' || ev.type === 'goal') && (
                         <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                       )}
                     </div>
@@ -213,12 +367,19 @@ export function PlayerSpotlightPanel({
                         {ev.outcome.replace('_', ' ')}
                       </span>
                     )}
+                    {ev.source === 'coach' && (
+                      <span className="text-[10px] text-purple-400">Coach tag</span>
+                    )}
                   </div>
                 </button>
               );
             })}
           </div>
         </>
+      ) : (
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-sm text-muted-foreground">Select a player above to view their spotlight.</p>
+        </div>
       )}
     </div>
   );

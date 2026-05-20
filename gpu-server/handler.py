@@ -1353,8 +1353,12 @@ class EventDetector:
                         })
 
         # Shot detection — high ball speed entering goal zone
+        # Ball within DEEP_GOAL_ZONE_PCT of the edge is considered a goal (crossed the line)
+        DEEP_GOAL_ZONE_PCT = 0.015
         left_zone = pano_w * EventDetector.GOAL_ZONE_PCT
         right_zone = pano_w * (1 - EventDetector.GOAL_ZONE_PCT)
+        left_deep = pano_w * DEEP_GOAL_ZONE_PCT
+        right_deep = pano_w * (1 - DEEP_GOAL_ZONE_PCT)
         prev_in_zone = False
         for f, t, tid, bx, by, speed in possessor_per_frame:
             in_zone = bx <= left_zone or bx >= right_zone
@@ -1373,6 +1377,9 @@ class EventDetector:
                 # Simple xG: closer + more central = higher; clamped 0.02..0.6
                 centrality = 1 - min(1, abs(by - goal_y) / (pano_h / 2))
                 xg = max(0.02, min(0.6, (1 - norm_dist) * 0.7 * (0.4 + 0.6 * centrality)))
+                # Ball reaching the deep goal zone (within 1.5% of edge) = crossed the line
+                crossed_line = bx <= left_deep or bx >= right_deep
+                outcome = "goal" if crossed_line else "attempt"
                 events.append({
                     "time": round(t, 2),
                     "frame": f,
@@ -1382,7 +1389,7 @@ class EventDetector:
                     "position": [round(bx, 1), round(by, 1)],
                     "speed": round(speed, 1),
                     "xg": round(xg, 3),
-                    "outcome": "attempt",
+                    "outcome": outcome,
                 })
             prev_in_zone = in_zone
 
@@ -1429,17 +1436,45 @@ class MetricsAggregator:
             tm["xg"] = round(tm["xg"], 3)
 
         # ── Player metrics ──
+        # Sprint threshold: ~4.5 m/s (~16 km/h), needs 5+ consecutive frames
+        SPRINT_SPEED_MS = 4.5
+        SPRINT_MIN_FRAMES = 5
+
         player_metrics: dict = {}
         for tid, positions in player_tracks.items():
             if len(positions) < 5:
                 continue
             xs = [p[1] for p in positions]
             ys = [p[2] for p in positions]
-            dist_px = sum(((xs[i] - xs[i - 1]) ** 2 + (ys[i] - ys[i - 1]) ** 2) ** 0.5
-                          for i in range(1, len(xs)))
             # crude px → metres: assume pano width = ~105m (full-pitch)
             px_per_m = pano_w / 105.0
-            distance_m = round(dist_px / px_per_m, 0) if px_per_m else 0
+            m_per_px = 1.0 / px_per_m if px_per_m else 0
+
+            # Per-frame speed in m/s
+            frame_speeds = []
+            for i in range(1, len(xs)):
+                d_px = ((xs[i] - xs[i - 1]) ** 2 + (ys[i] - ys[i - 1]) ** 2) ** 0.5
+                d_m = d_px * m_per_px
+                frame_speeds.append(d_m * fps)
+
+            dist_m = sum(s / fps for s in frame_speeds)
+            top_speed_ms = max(frame_speeds) if frame_speeds else 0.0
+            top_speed_kmh = round(top_speed_ms * 3.6, 1)
+
+            # Count sprint bouts: consecutive frames above SPRINT_SPEED_MS threshold
+            sprints = 0
+            run_len = 0
+            in_sprint = False
+            for s in frame_speeds:
+                if s >= SPRINT_SPEED_MS:
+                    run_len += 1
+                    if run_len >= SPRINT_MIN_FRAMES and not in_sprint:
+                        sprints += 1
+                        in_sprint = True
+                else:
+                    run_len = 0
+                    in_sprint = False
+
             player_metrics[str(tid)] = {
                 "track_id": tid,
                 "team": team_assignment.get(tid),
@@ -1448,7 +1483,9 @@ class MetricsAggregator:
                 "shots": 0,
                 "tackles": 0,
                 "xg": 0.0,
-                "distance_m": distance_m,
+                "distance_m": round(dist_m, 0),
+                "top_speed_kmh": top_speed_kmh,
+                "sprints": sprints,
                 "minutes_played": round((positions[-1][0] - positions[0][0]) / fps / 60, 1),
             }
 
