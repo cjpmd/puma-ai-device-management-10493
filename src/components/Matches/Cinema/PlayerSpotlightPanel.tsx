@@ -32,7 +32,7 @@ interface MatchEvent {
   outcome?: string;
 }
 
-type SortMode = 'distance' | 'contribution' | 'sprints';
+type SortMode = 'distance' | 'contribution' | 'sprints' | 'touches';
 
 interface PlayerSpotlightPanelProps {
   matchId: string;
@@ -68,6 +68,7 @@ const SORT_LABELS: Record<SortMode, string> = {
   distance: 'Distance',
   contribution: 'Contribution',
   sprints: 'Sprints',
+  touches: 'Touches',
 };
 
 // SVG heatmap on a football pitch outline (105×68m proportions)
@@ -163,6 +164,7 @@ export function PlayerSpotlightPanel({
       const pb = playerMetrics[String(b)] || playerMetrics[b] || {};
       if (sort === 'distance') return (pb.distance_m ?? 0) - (pa.distance_m ?? 0);
       if (sort === 'sprints') return (pb.sprints ?? 0) - (pa.sprints ?? 0);
+      if (sort === 'touches') return (pb.touches_total ?? pb.touches ?? 0) - (pa.touches_total ?? pa.touches ?? 0);
       return (pb.contribution_score ?? 0) - (pa.contribution_score ?? 0);
     });
   }, [trackIds, playerMetrics, sort]);
@@ -214,6 +216,18 @@ export function PlayerSpotlightPanel({
       sprints: fromMetrics?.sprints ?? null,
       top_speed: fromMetrics?.top_speed_kmh ?? fromMetrics?.top_speed ?? null,
       contribution_score: fromMetrics?.contribution_score ?? null,
+      touches_total:   fromMetrics?.touches_total   ?? fromMetrics?.touches ?? null,
+      touches_receive: fromMetrics?.touches_receive  ?? null,
+      touches_control: fromMetrics?.touches_control  ?? null,
+      touches_pass:    fromMetrics?.touches_pass     ?? null,
+      touches_shot:    fromMetrics?.touches_shot     ?? null,
+      touches_dribble: fromMetrics?.touches_dribble  ?? null,
+      // Pass direction breakdown from PassAnalyser
+      passes_attempted:  fromMetrics?.passes_attempted  ?? null,
+      passes_forward:    fromMetrics?.passes_forward    ?? null,
+      passes_sideways:   fromMetrics?.passes_sideways   ?? null,
+      passes_back:       fromMetrics?.passes_back       ?? null,
+      pass_accuracy:     fromMetrics?.pass_accuracy     ?? null,
     };
   }, [selected, playerEvents, playerMetrics]);
 
@@ -247,6 +261,7 @@ export function PlayerSpotlightPanel({
                 <DropdownMenuItem onClick={() => setSort('contribution')}>Contribution</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setSort('distance')}>Distance</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setSort('sprints')}>Sprints</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSort('touches')}>Touches</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -301,23 +316,106 @@ export function PlayerSpotlightPanel({
                 <PlayerHeatmap data={selectedHeatmap} />
               </div>
             ) : (
-              <div className="grid grid-cols-4 gap-2">
-                <StatCell icon={Sparkles} label="Goals" value={stats?.goals ?? 0} />
-                <StatCell icon={Target} label="Shots" value={stats?.shots ?? 0} />
-                <StatCell icon={Activity} label="Passes" value={stats?.passes ?? 0} />
-                <StatCell icon={Shield} label="Tackles" value={stats?.tackles ?? 0} />
-                {stats?.distance != null && (
-                  <StatCell icon={Footprints} label="Distance" value={`${Math.round(stats.distance)}m`} />
+              <div className="space-y-2">
+                <div className="grid grid-cols-4 gap-2">
+                  <StatCell icon={Sparkles} label="Goals" value={stats?.goals ?? 0} />
+                  <StatCell icon={Target} label="Shots" value={stats?.shots ?? 0} />
+                  <StatCell icon={Activity} label="Passes" value={stats?.passes ?? 0} />
+                  <StatCell icon={Shield} label="Tackles" value={stats?.tackles ?? 0} />
+                  {stats?.distance != null && (
+                    <StatCell icon={Footprints} label="Distance" value={`${Math.round(stats.distance)}m`} />
+                  )}
+                  {stats?.sprints != null && (
+                    <StatCell icon={Activity} label="Sprints" value={stats.sprints} />
+                  )}
+                  {stats?.top_speed != null && (
+                    <StatCell
+                      icon={Activity}
+                      label="Top spd"
+                      value={`${(stats.top_speed as number).toFixed(1)} km/h`}
+                    />
+                  )}
+                </div>
+
+                {/* Touch breakdown — shown when TouchTracker data is available */}
+                {stats?.touches_total != null && (
+                  <div className="border-t border-border/40 pt-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Ball touches</span>
+                      <span className="text-xs font-semibold tabular-nums">{stats.touches_total}</span>
+                    </div>
+                    <div className="flex gap-1">
+                      {(
+                        [
+                          { key: 'touches_receive',  label: 'Recv', color: '#a78bfa' },
+                          { key: 'touches_control',  label: 'Ctrl', color: '#38bdf8' },
+                          { key: 'touches_pass',     label: 'Pass', color: '#34d399' },
+                          { key: 'touches_shot',     label: 'Shot', color: '#f87171' },
+                          { key: 'touches_dribble',  label: 'Drib', color: '#fbbf24' },
+                        ] as const
+                      ).map(({ key, label, color }) => {
+                        const count = (stats as Record<string, number | null>)[key] ?? 0;
+                        const total = stats.touches_total ?? 1;
+                        const pct = Math.round((count / total) * 100);
+                        return (
+                          <div key={key} className="flex-1 text-center" title={`${label}: ${count} (${pct}%)`}>
+                            <div className="text-xs font-bold tabular-nums" style={{ color }}>{count}</div>
+                            <div className="h-1 rounded-full mt-0.5 mx-0.5 opacity-60" style={{ background: color, width: `${pct}%`, minWidth: count > 0 ? 2 : 0 }} />
+                            <div className="text-[9px] text-muted-foreground mt-0.5">{label}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
-                {stats?.sprints != null && (
-                  <StatCell icon={Activity} label="Sprints" value={stats.sprints} />
-                )}
-                {stats?.top_speed != null && (
-                  <StatCell
-                    icon={Activity}
-                    label="Top spd"
-                    value={`${(stats.top_speed as number).toFixed(1)} km/h`}
-                  />
+
+                {/* Pass direction bar — shown when PassAnalyser data is available */}
+                {stats?.passes_attempted != null && stats.passes_attempted > 0 && (
+                  <div className="border-t border-border/40 pt-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Pass direction</span>
+                      <span className="text-xs font-semibold tabular-nums">
+                        {stats.pass_accuracy != null ? `${stats.pass_accuracy}% acc` : `${stats.passes_attempted} att`}
+                      </span>
+                    </div>
+                    <div className="flex h-2 rounded-full overflow-hidden w-full">
+                      {(
+                        [
+                          { key: 'passes_forward',  color: '#22c55e' },
+                          { key: 'passes_sideways', color: '#3b82f6' },
+                          { key: 'passes_back',     color: '#f97316' },
+                        ] as const
+                      ).map(({ key, color }) => {
+                        const count = (stats as Record<string, number | null>)[key] ?? 0;
+                        const total = stats.passes_attempted ?? 1;
+                        const pct = (count / total) * 100;
+                        return pct > 0 ? (
+                          <div
+                            key={key}
+                            style={{ width: `${pct}%`, background: color }}
+                            title={`${key.replace('passes_', '')}: ${count} (${Math.round(pct)}%)`}
+                          />
+                        ) : null;
+                      })}
+                    </div>
+                    <div className="flex gap-2 mt-1">
+                      {(
+                        [
+                          { key: 'passes_forward',  label: 'Fwd',  color: '#22c55e' },
+                          { key: 'passes_sideways', label: 'Side', color: '#3b82f6' },
+                          { key: 'passes_back',     label: 'Back', color: '#f97316' },
+                        ] as const
+                      ).map(({ key, label, color }) => {
+                        const count = (stats as Record<string, number | null>)[key] ?? 0;
+                        return (
+                          <span key={key} className="text-[9px] flex items-center gap-0.5">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: color }} />
+                            {label} {count}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
               </div>
             )}

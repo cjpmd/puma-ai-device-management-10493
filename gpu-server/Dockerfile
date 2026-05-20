@@ -19,6 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # for sports footage where players are small relative to frame size.
 RUN python -c "from ultralytics import YOLO; YOLO('yolov8m.pt')"
 
+# Pre-download EasyOCR English model (~100 MB) for jersey number recognition.
+RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=True, verbose=False)"
+
 COPY handler.py .
 
 CMD ["python", "-u", "handler.py"]

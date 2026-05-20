@@ -1663,9 +1663,20 @@ def run_analysis(job_input: dict) -> dict:
         player_tracker  = PlayerTracker()
         ball_pipeline   = BallTrackingPipeline(fps=native_fps / frame_step)
 
+        # Touch tracker: pixels_per_metre assumes panoramic width ≈ 105m pitch length
+        pixels_per_metre = frame_w / 105.0
+        analysed_fps     = native_fps / frame_step
+        from touch_tracker import TouchTracker
+        touch_tracker    = TouchTracker(pixels_per_metre=pixels_per_metre, fps=analysed_fps)
+        from pass_analyser import PassAnalyser
+        pass_analyser    = PassAnalyser(pixels_per_metre=pixels_per_metre, fps=analysed_fps, frame_w=frame_w)
+        from jersey_ocr import JerseyNumberTracker
+        jersey_tracker   = JerseyNumberTracker()
+
         ball_positions: list[dict] = []
         stage_counts   = {"yolo": 0, "motion": 0, "kalman": 0, "none": 0}
         frame_idx      = 0
+        prev_ball_speed_ms = 0.0
 
         while True:
             ret, frame = cap.read()
@@ -1675,6 +1686,8 @@ def run_analysis(job_input: dict) -> dict:
             if frame_idx % frame_step != 0:
                 frame_idx += 1
                 continue
+
+            timestamp_ms = int((frame_idx / native_fps) * 1000)
 
             # ── YOLO inference ──
             results = model(frame, verbose=False)
@@ -1686,21 +1699,26 @@ def run_analysis(job_input: dict) -> dict:
                 if ball_dets else None
             )
             ball = ball_pipeline.update(yolo_ball, frame)
+            ball_pos_px: tuple[float, float] | None = None
+            ball_speed_ms = 0.0
             if ball is not None:
                 bx, by, bconf, stage = ball
+                ball_pos_px = (bx, by)
                 stage_counts[stage] = stage_counts.get(stage, 0) + 1
                 prev_bp = ball_positions[-1] if ball_positions else None
-                speed = 0.0
+                speed_px = 0.0
                 if prev_bp:
                     dx = bx - prev_bp["x"]
                     dy = by - prev_bp["y"]
-                    speed = float(np.sqrt(dx ** 2 + dy ** 2))
+                    speed_px = float(np.sqrt(dx ** 2 + dy ** 2))
+                # Convert px/analysed-frame to m/s
+                ball_speed_ms = (speed_px / pixels_per_metre) * analysed_fps
                 ball_positions.append({
                     "frame": frame_idx,
                     "time": round(frame_idx / native_fps, 2),
                     "x": round(bx, 1),
                     "y": round(by, 1),
-                    "speed": round(speed, 1),
+                    "speed": round(speed_px, 1),
                     "stage": stage,
                     "confidence": round(bconf, 3),
                 })
@@ -1710,6 +1728,41 @@ def run_analysis(job_input: dict) -> dict:
             # ── Players ──
             person_dets = parse_detections(results, PERSON_CLASSES)
             player_tracker.update_from_detections(person_dets, frame_idx)
+
+            # ── Jersey OCR — run on confirmed tracked players every N frames ──
+            for tid, positions in player_tracker.tracks.items():
+                if positions and positions[-1][0] == frame_idx:
+                    # Find matching detection for this track's centroid
+                    tx, ty = positions[-1][1], positions[-1][2]
+                    for det in person_dets:
+                        cx, cy, x1, y1, x2, y2 = det[0], det[1], det[2], det[3], det[4], det[5]
+                        if abs(cx - tx) < 20 and abs(cy - ty) < 20:
+                            jersey_tracker.update(frame, tid, (x1, y1, x2, y2))
+                            break
+
+            # ── Touch detection ──
+            # Build current frame's player positions from latest tracker state
+            current_positions: dict[int, tuple[float, float]] = {
+                tid: (positions[-1][1], positions[-1][2])
+                for tid, positions in player_tracker.tracks.items()
+                if positions and positions[-1][0] == frame_idx
+            }
+            touch_tracker.update(
+                frame_idx=frame_idx,
+                timestamp_ms=timestamp_ms,
+                ball_pos=ball_pos_px,
+                ball_speed_ms=ball_speed_ms,
+                prev_ball_speed_ms=prev_ball_speed_ms,
+                player_positions=current_positions,
+            )
+            pass_analyser.update(
+                frame_idx=frame_idx,
+                ball_pos=ball_pos_px,
+                ball_speed_ms=ball_speed_ms,
+                player_positions=current_positions,
+                team_assignment={},  # back-filled after loop via assign_teams
+            )
+            prev_ball_speed_ms = ball_speed_ms
 
             frame_idx += 1
 
@@ -1728,29 +1781,87 @@ def run_analysis(job_input: dict) -> dict:
 
         # ── Event detection, team assignment, metrics ──
         team_assignment = TeamClassifier.assign_teams(player_tracker.tracks)
+
+        # Back-fill team onto touches and passes now that assignment is known
+        touch_tracker.assign_teams(team_assignment)
+        pass_analyser.assign_teams(team_assignment)
+
+        # Exclude referee tracks from all downstream analytics
+        from referee_filter import filter_referees
+        referee_track_ids = filter_referees(
+            tracks=player_tracker.tracks,
+            team_assignment=team_assignment,
+            frame_w=frame_w,
+            frame_h=frame_h,
+        )
+        if referee_track_ids:
+            print(f"  🟡 Referee exclusion: {len(referee_track_ids)} track(s) excluded {sorted(referee_track_ids)}")
+
+        # Strip referee tracks from analytics inputs
+        player_tracks_filtered = {
+            tid: pos for tid, pos in player_tracker.tracks.items()
+            if tid not in referee_track_ids
+        }
+        team_assignment_filtered = {
+            tid: team for tid, team in team_assignment.items()
+            if tid not in referee_track_ids
+        }
+
         events = EventDetector.detect(
             ball_positions=ball_positions,
-            player_tracks=player_tracker.tracks,
-            team_assignment=team_assignment,
+            player_tracks=player_tracks_filtered,
+            team_assignment=team_assignment_filtered,
             pano_w=frame_w,
             pano_h=frame_h,
             fps=native_fps,
         )
         team_metrics, player_metrics = MetricsAggregator.compute(
             events=events,
-            player_tracks=player_tracker.tracks,
-            team_assignment=team_assignment,
+            player_tracks=player_tracks_filtered,
+            team_assignment=team_assignment_filtered,
             ball_positions=ball_positions,
             pano_w=frame_w,
             pano_h=frame_h,
             fps=native_fps,
         )
         heatmaps = MetricsAggregator.build_heatmaps(
-            player_tracker.tracks, frame_w, frame_h, grid_w=20, grid_h=12
+            player_tracks_filtered, frame_w, frame_h, grid_w=20, grid_h=12
         )
 
+        # ── Merge touch + pass + identity into player_metrics ──
+        jersey_identities = jersey_tracker.confirmed_identities()
+        for tid_str, pm in player_metrics.items():
+            tid = int(tid_str) if str(tid_str).isdigit() else 0
+            pm.update(touch_tracker.player_touch_summary(tid))
+            pm.update(pass_analyser.player_pass_summary(tid))
+            pm.update(jersey_tracker.player_identity_summary(tid))
+
+        print(f"  ✓ Jersey OCR: {len(jersey_identities)} players identified")
+
+        # ── Merge touch + pass totals into team_metrics ──
+        for team_id, tm in team_metrics.items():
+            tm.update(touch_tracker.team_touch_summary(team_id))
+            tm.update(pass_analyser.team_pass_stats(team_id))
+
+        # ── Build pass networks (annotate nodes with jersey numbers) ──
+        from movement_network import build_pass_network
+        pass_events_serialised = pass_analyser.pass_events_for_network()
+        home_pass_network = build_pass_network(
+            pass_events_serialised, player_tracker.tracks, "A", frame_w, frame_h
+        )
+        away_pass_network = build_pass_network(
+            pass_events_serialised, player_tracker.tracks, "B", frame_w, frame_h
+        )
+        for network in (home_pass_network, away_pass_network):
+            for node in network.get("nodes", []):
+                tid = node["track_id"]
+                node["jersey_number"] = jersey_identities.get(tid)
+
+        total_touches = sum(tm.get("total_touches", 0) for tm in team_metrics.values())
         print(f"  ✓ {len(events)} events  {len(team_metrics)} teams  "
-              f"{len(player_metrics)} player metric sets")
+              f"{len(player_metrics)} player metric sets  "
+              f"{len(touch_tracker.touches)} touch events ({total_touches} total)  "
+              f"{len(pass_analyser.passes)} passes detected")
 
         # ── Confidence score ──
         # Product of: fraction of expected players tracked × fraction of frames with ball
@@ -1778,7 +1889,10 @@ def run_analysis(job_input: dict) -> dict:
             # Not generated in analysis-only mode — follow-cam uses the stitch worker
             "output_video_path": None,
             "stitched_video_path": None,
-            # Pass/formation stubs — see docstring for why these are null
+            # Pass networks
+            "home_pass_network": home_pass_network,
+            "away_pass_network": away_pass_network,
+            # Formation detection not yet implemented
             "formation_home": None,
             "formation_away": None,
         }

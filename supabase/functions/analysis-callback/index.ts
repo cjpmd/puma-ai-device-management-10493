@@ -98,6 +98,8 @@ Deno.serve(async (req) => {
         event_data: {
           events: output.events ?? [],
           highlights: output.auto_highlights ?? [],
+          home_pass_network: output.home_pass_network ?? null,
+          away_pass_network: output.away_pass_network ?? null,
         },
         player_metrics: output.player_metrics ?? null,
         // The GPU handler returns 'team_stats'; DB column is 'team_metrics'
@@ -151,6 +153,65 @@ Deno.serve(async (req) => {
               ignoreDuplicates: true,
             });
         }
+      }
+
+      // Upsert player_match_stats with touch + pass direction + identity
+      const playerMetrics: Record<string, any> = output.player_metrics ?? {};
+      if (Object.keys(playerMetrics).length > 0) {
+        // Resolve jersey numbers → player_identity_id for all confirmed identities
+        const jerseyEntries: Array<{ track_id: number; jersey_number: number }> = [];
+        for (const [trackIdStr, pm] of Object.entries(playerMetrics)) {
+          if ((pm as any).jersey_number != null) {
+            jerseyEntries.push({ track_id: Number(trackIdStr), jersey_number: (pm as any).jersey_number });
+          }
+        }
+
+        // We don't have a team_id from the analysis payload (track teams are 'A'/'B', not UUIDs).
+        // Store jersey_number directly on player_match_stats for now; identity resolution
+        // (team_id FK → player_identities) is deferred to a separate lookup flow.
+
+        const statsRows = Object.entries(playerMetrics).map(([trackIdStr, pm]: [string, any]) => ({
+          match_id:          job!.match_id,
+          processing_job_id: job!.id,
+          track_id:          Number(trackIdStr),
+          team:              pm.team ?? null,
+          distance_m:        pm.distance_m ?? null,
+          top_speed_kmh:     pm.top_speed_kmh ?? null,
+          sprints:           pm.sprints ?? null,
+          minutes_played:    pm.minutes_played ?? null,
+          passes:            pm.passes ?? null,
+          passes_completed:  pm.passes_completed ?? null,
+          pass_success_pct:  pm.pass_success_pct ?? null,
+          shots:             pm.shots ?? null,
+          tackles:           pm.tackles ?? null,
+          goals:             0,
+          xg:                pm.xg ?? null,
+          contribution_score: pm.contribution_score ?? null,
+          // Touch breakdown from TouchTracker
+          touches_total:          pm.touches_total   ?? pm.touches   ?? null,
+          touches_receive:        pm.touches_receive  ?? null,
+          touches_control:        pm.touches_control  ?? null,
+          touches_pass:           pm.touches_pass     ?? null,
+          touches_shot:           pm.touches_shot     ?? null,
+          touches_dribble:        pm.touches_dribble  ?? null,
+          // Pass direction breakdown from PassAnalyser
+          jersey_number:          pm.jersey_number    ?? null,
+          passes_attempted:       pm.passes_attempted ?? null,
+          passes_completed_count: pm.passes_completed_count ?? pm.passes_attempted != null
+            ? (pm.passes_attempted * (pm.pass_accuracy ?? 0) / 100) | 0
+            : null,
+          pass_accuracy:          pm.pass_accuracy    ?? null,
+          passes_forward:         pm.passes_forward   ?? null,
+          passes_sideways:        pm.passes_sideways  ?? null,
+          passes_back:            pm.passes_back      ?? null,
+        }));
+
+        await adminClient
+          .from("player_match_stats")
+          .upsert(statsRows, {
+            onConflict: "match_id,processing_job_id,track_id",
+            ignoreDuplicates: false,
+          });
       }
 
       await adminClient

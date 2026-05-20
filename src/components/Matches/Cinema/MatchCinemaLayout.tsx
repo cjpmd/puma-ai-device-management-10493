@@ -7,6 +7,7 @@ import { SummaryPanel } from './SummaryPanel';
 import { AnalyticsPanel } from './AnalyticsPanel';
 import { TeamPanel } from './TeamPanel';
 import { PlayerSpotlightPanel } from './PlayerSpotlightPanel';
+import { PassNetworkPanel } from './PassNetworkPanel';
 import { MatchTimelineStrip } from './MatchTimelineStrip';
 import { supabase } from '@/integrations/supabase/client';
 import type { TimelineEvent } from '@/types/video-analysis';
@@ -46,6 +47,8 @@ export function MatchCinemaLayout({
 
   const playerMetrics = job?.player_metrics || null;
   const heatmaps = job?.heatmaps || null;
+  const homePassNetwork = job?.event_data?.home_pass_network ?? null;
+  const awayPassNetwork = job?.event_data?.away_pass_network ?? null;
   const handleSeek = (t: number) => videoRef.current?.seekTo(t);
 
   // Fetch coach tags once on mount
@@ -155,6 +158,12 @@ export function MatchCinemaLayout({
               heatmaps={heatmaps}
               videoUrl={videoUrl}
               onSeek={handleSeek}
+            />
+          )}
+          {active === 'network' && (
+            <PassNetworkPanel
+              homePassNetwork={homePassNetwork}
+              awayPassNetwork={awayPassNetwork}
             />
           )}
           {active === 'team' && <TeamPanel matchId={matchId} job={job} />}
