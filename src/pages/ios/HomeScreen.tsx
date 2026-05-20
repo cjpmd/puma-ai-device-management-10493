@@ -222,7 +222,9 @@ export function HomeScreen({ onTabChange }: HomeScreenProps) {
       {/* Header */}
       <div style={{ padding: '8px 20px 10px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>{today}</div>
+          <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>
+            {today}{contextCaption ? ` · ${contextCaption}` : ''}
+          </div>
           {availableContexts.length > 1 ? (
             <button
               onClick={() => setShowPicker(true)}
