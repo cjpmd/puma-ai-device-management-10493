@@ -53,8 +53,16 @@ Deno.serve(async (req) => {
 
     const userIds = (members || []).map((m: any) => m.user_id);
     const { data: profiles } = userIds.length
-      ? await admin.from("profiles").select("id, full_name, email").in("id", userIds)
+      ? await admin.from("profiles").select(
+          "id, full_name, email, uefa_licence, fa_safeguarding_expiry, first_aid_expiry, dbs_expiry, pvg_expiry, accessni_expiry, background_check_type",
+        ).in("id", userIds)
       : { data: [] };
+
+    const { data: academyRow } = await admin
+      .from("academies")
+      .select("background_check_jurisdiction")
+      .eq("id", academy_id)
+      .maybeSingle();
 
     const profileById = new Map((profiles || []).map((p: any) => [p.id, p]));
     const staff = (members || []).map((m: any) => {
@@ -65,12 +73,24 @@ Deno.serve(async (req) => {
         created_at: m.created_at,
         full_name: p?.full_name ?? null,
         email: p?.email ?? null,
+        uefa_licence: p?.uefa_licence ?? null,
+        fa_safeguarding_expiry: p?.fa_safeguarding_expiry ?? null,
+        first_aid_expiry: p?.first_aid_expiry ?? null,
+        dbs_expiry: p?.dbs_expiry ?? null,
+        pvg_expiry: p?.pvg_expiry ?? null,
+        accessni_expiry: p?.accessni_expiry ?? null,
+        background_check_type: p?.background_check_type ?? null,
         external_role: m.external_role ?? null,
         external_role_synced_at: m.external_role_synced_at ?? null,
       };
     });
 
-    return new Response(JSON.stringify({ staff }), {
+    return new Response(JSON.stringify({
+      staff,
+      academy: {
+        background_check_jurisdiction: (academyRow as any)?.background_check_jurisdiction ?? 'england',
+      },
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
