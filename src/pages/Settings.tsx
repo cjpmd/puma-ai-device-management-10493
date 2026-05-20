@@ -488,15 +488,42 @@ function StaffTab() {
                             <option value="accessni">AccessNI</option>
                           </select>
                         </label>
-                        <label className="flex flex-col gap-1">
-                          <span className="text-xs text-slate-500">{bgLabel} expiry</span>
-                          <input
-                            type="date"
-                            value={qualForm.bg_expiry ?? ''}
-                            onChange={(e) => setQualForm((f) => ({ ...f, bg_expiry: e.target.value }))}
-                            className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
-                          />
-                        </label>
+                        {resolvedType === 'pvg' ? (
+                          <>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs text-slate-500">PVG status</span>
+                              <label className="flex items-center gap-2 bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={pvgApproved}
+                                  onChange={(e) => setPvgApproved(e.target.checked)}
+                                  className="accent-violet-600"
+                                />
+                                <span>PVG approved</span>
+                              </label>
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-xs text-slate-500">Approved on (optional)</span>
+                              <input
+                                type="date"
+                                value={qualForm.pvg_approved_at ?? ''}
+                                onChange={(e) => setQualForm((f) => ({ ...f, pvg_approved_at: e.target.value }))}
+                                disabled={!pvgApproved}
+                                className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900 disabled:opacity-50"
+                              />
+                            </label>
+                          </>
+                        ) : (
+                          <label className="flex flex-col gap-1">
+                            <span className="text-xs text-slate-500">{bgLabel} expiry</span>
+                            <input
+                              type="date"
+                              value={qualForm.bg_expiry ?? ''}
+                              onChange={(e) => setQualForm((f) => ({ ...f, bg_expiry: e.target.value }))}
+                              className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-sm text-slate-900"
+                            />
+                          </label>
+                        )}
                       </div>
                       <div className="flex justify-end gap-2 pt-1">
                         <button
