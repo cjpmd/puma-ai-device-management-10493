@@ -454,6 +454,17 @@ function EPPPConfigTab() {
   const { activeContext } = useActiveContext();
   const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
 
+  const { data: academy } = useQuery({
+    queryKey: ['academy-row', academyId],
+    enabled: !!academyId,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await sb.from('academies')
+        .select('id, eppp_category').eq('id', academyId).maybeSingle();
+      return data ?? {};
+    },
+  });
+
   const { data: settings } = useQuery({
     queryKey: ['academy-settings', academyId],
     enabled: !!academyId,
@@ -465,13 +476,46 @@ function EPPPConfigTab() {
     },
   });
 
+  const prefs = (settings?.prefs ?? {}) as Record<string, string>;
   const [form, setForm] = useState<Record<string, string>>({});
-  const merged = { ...settings, ...form };
+  const merged = {
+    eppp_category: settings?.eppp_category ?? academy?.eppp_category ?? '',
+    eppp_tier: settings?.eppp_tier ?? '',
+    pdc_target: prefs.pdc_target ?? '',
+    eppp_assessor: prefs.eppp_assessor ?? '',
+    eppp_next_review: prefs.eppp_next_review ?? '',
+    min_snapshots: prefs.min_snapshots ?? '2',
+    min_rpe_sessions: prefs.min_rpe_sessions ?? '8',
+    acwr_amber: prefs.acwr_amber ?? '1.3',
+    acwr_red: prefs.acwr_red ?? '1.5',
+    ...form,
+  };
 
   async function save() {
-    await sb.from('academy_settings')
-      .upsert({ id: settings?.id ?? undefined, academy_id: academyId, ...merged });
+    if (!academyId) return;
+    const nextPrefs = {
+      ...prefs,
+      pdc_target: merged.pdc_target || undefined,
+      eppp_assessor: merged.eppp_assessor || undefined,
+      eppp_next_review: merged.eppp_next_review || undefined,
+      min_snapshots: merged.min_snapshots || undefined,
+      min_rpe_sessions: merged.min_rpe_sessions || undefined,
+      acwr_amber: merged.acwr_amber || undefined,
+      acwr_red: merged.acwr_red || undefined,
+    };
+    await sb.from('academy_settings').upsert({
+      id: settings?.id ?? undefined,
+      academy_id: academyId,
+      eppp_category: merged.eppp_category || null,
+      eppp_tier: merged.eppp_tier || null,
+      prefs: nextPrefs,
+    });
+    // Mirror eppp_category back to academies for consistency
+    if (merged.eppp_category) {
+      await sb.from('academies').update({ eppp_category: merged.eppp_category }).eq('id', academyId);
+    }
     qc.invalidateQueries({ queryKey: ['academy-settings', academyId] });
+    qc.invalidateQueries({ queryKey: ['academy-row', academyId] });
     setForm({});
   }
 
@@ -479,6 +523,7 @@ function EPPPConfigTab() {
     <div className="space-y-4">
       <SectionCard title="EPPP Category & Tier">
         <InputRow label="Category" value={merged.eppp_category ?? ''} onChange={(v) => setForm((f) => ({ ...f, eppp_category: v }))} placeholder="e.g. Category 1" />
+        <InputRow label="Tier" value={merged.eppp_tier ?? ''} onChange={(v) => setForm((f) => ({ ...f, eppp_tier: v }))} placeholder="e.g. 1" />
         <InputRow label="PDC target" value={merged.pdc_target ?? ''} onChange={(v) => setForm((f) => ({ ...f, pdc_target: v }))} placeholder="e.g. 800 hours" />
         <InputRow label="Assessor name" value={merged.eppp_assessor ?? ''} onChange={(v) => setForm((f) => ({ ...f, eppp_assessor: v }))} />
         <InputRow label="Next review date" value={merged.eppp_next_review ?? ''} type="date" onChange={(v) => setForm((f) => ({ ...f, eppp_next_review: v }))} />
