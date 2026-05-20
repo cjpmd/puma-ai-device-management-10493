@@ -309,7 +309,7 @@ function AttributesTab() {
     staleTime: 300_000,
     queryFn: async () => {
       const { data } = await sb.from('attribute_definition').select('*').order('category').order('name');
-      return (data ?? []) as { id: string; name: string; category: string; max_value: number; is_active: boolean }[];
+      return (data ?? []) as { id: string; name: string; category: string; max_value: number; is_active: boolean; source?: string }[];
     },
   });
 
@@ -371,19 +371,24 @@ function AttributesTab() {
       {byCategory.map(({ cat, items }) => (
         <SectionCard key={cat} title={`${cat.charAt(0).toUpperCase() + cat.slice(1)} (${items.length})`}>
           {items.length === 0 ? (
-            <p className="text-slate-900/30 text-sm">No attributes in this category.</p>
+            <p className="text-slate-500 text-sm">No attributes in this category.</p>
           ) : (
             <div className="space-y-1">
               {items.map((def) => (
                 <div key={def.id} className="flex items-center gap-3 py-1">
-                  <span className={`flex-1 text-sm ${def.is_active ? 'text-slate-900' : 'text-slate-900/30 line-through'}`}>{def.name}</span>
-                  <span className="text-xs text-slate-900/30">max {def.max_value}</span>
+                  <span className={`flex-1 text-sm ${def.is_active ? 'text-slate-900' : 'text-slate-400 line-through'}`}>{def.name}</span>
+                  {def.source === 'origin_sports' && (
+                    <span className="text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded-full font-medium">
+                      Origin Sports
+                    </span>
+                  )}
+                  <span className="text-xs text-slate-400">max {def.max_value}</span>
                   <button
                     onClick={() => toggleActive(def.id, def.is_active)}
                     className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
                       def.is_active
-                        ? 'bg-emerald-500/20 text-emerald-400 hover:bg-red-500/20 hover:text-red-400'
-                        : 'bg-slate-100 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-400'
+                        ? 'bg-emerald-100 text-emerald-700 hover:bg-red-100 hover:text-red-700'
+                        : 'bg-slate-100 text-slate-500 hover:bg-emerald-100 hover:text-emerald-700'
                     }`}
                   >
                     {def.is_active ? 'Active' : 'Inactive'}
