@@ -53,7 +53,7 @@ export function MatchCinemaLayout({
     if (!matchId || matchId === 'demo') return;
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from('match_event_tags')
         .select('id, event_type, timestamp_ms, notes, tagged_by')
         .eq('match_id', matchId)
@@ -76,7 +76,7 @@ export function MatchCinemaLayout({
   // Poll video_footage every 15s for stitched path
   const pollStitched = useCallback(async () => {
     if (!matchId || matchId === 'demo') return;
-    const { data } = await supabase
+    const { data } = await (supabase as any)
       .from('video_footage')
       .select('stitched_path, processing_status')
       .eq('match_id', matchId)

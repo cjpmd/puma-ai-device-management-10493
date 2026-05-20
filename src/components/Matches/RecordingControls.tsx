@@ -161,12 +161,12 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
 
     // Create a recording_session record; non-blocking — recording proceeds even if this fails
     try {
-      const { data: session } = await supabase
+      const { data: session } = await (supabase as any)
         .from('recording_sessions')
         .insert({ match_id: matchId, status: 'active', started_at: new Date().toISOString() })
         .select('id')
         .single();
-      if (session?.id) setSessionId(session.id);
+      if (session?.id) setSessionId(String(session.id));
     } catch {}
 
     channelRef.current?.send({
@@ -201,7 +201,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
     if (sessionId) {
       const dur = elapsedRef.current;
       try {
-        await supabase.from('recording_sessions').update({
+        await (supabase as any).from('recording_sessions').update({
           status: 'completed',
           ended_at: new Date().toISOString(),
           duration_seconds: dur,
@@ -239,7 +239,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
     setEventTags((prev) => [...prev, optimisticTag]);
 
     try {
-      const { data } = await supabase.from('match_event_tags').insert({
+      const { data } = await (supabase as any).from('match_event_tags').insert({
         match_id: matchId,
         session_id: sessionId,
         event_type: eventType,
@@ -248,7 +248,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
       if (data?.id) {
         setEventTags((prev) =>
           prev.map((t) =>
-            t === optimisticTag ? { ...t, id: data.id } : t
+            t === optimisticTag ? { ...t, id: String(data.id) } : t
           )
         );
       }
