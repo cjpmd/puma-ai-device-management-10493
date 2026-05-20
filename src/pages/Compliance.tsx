@@ -24,6 +24,8 @@ type CoachRecord = {
   fa_safeguarding_expiry: string | null;
   dbs_expiry: string | null;
   pvg_expiry: string | null;
+  pvg_approved: boolean | null;
+  pvg_approved_at: string | null;
   accessni_expiry: string | null;
   background_check_type: string | null;
   first_aid_expiry: string | null;
@@ -174,6 +176,8 @@ export default function Compliance() {
         fa_safeguarding_expiry: r.fa_safeguarding_expiry ?? null,
         dbs_expiry: r.dbs_expiry ?? null,
         pvg_expiry: r.pvg_expiry ?? null,
+        pvg_approved: r.pvg_approved ?? null,
+        pvg_approved_at: r.pvg_approved_at ?? null,
         accessni_expiry: r.accessni_expiry ?? null,
         background_check_type: r.background_check_type ?? null,
         first_aid_expiry: r.first_aid_expiry ?? null,
