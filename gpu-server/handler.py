@@ -1670,6 +1670,8 @@ def run_analysis(job_input: dict) -> dict:
         touch_tracker    = TouchTracker(pixels_per_metre=pixels_per_metre, fps=analysed_fps)
         from pass_analyser import PassAnalyser
         pass_analyser    = PassAnalyser(pixels_per_metre=pixels_per_metre, fps=analysed_fps, frame_w=frame_w)
+        from jersey_ocr import JerseyNumberTracker
+        jersey_tracker   = JerseyNumberTracker()
 
         ball_positions: list[dict] = []
         stage_counts   = {"yolo": 0, "motion": 0, "kalman": 0, "none": 0}
@@ -1726,6 +1728,17 @@ def run_analysis(job_input: dict) -> dict:
             # ── Players ──
             person_dets = parse_detections(results, PERSON_CLASSES)
             player_tracker.update_from_detections(person_dets, frame_idx)
+
+            # ── Jersey OCR — run on confirmed tracked players every N frames ──
+            for tid, positions in player_tracker.tracks.items():
+                if positions and positions[-1][0] == frame_idx:
+                    # Find matching detection for this track's centroid
+                    tx, ty = positions[-1][1], positions[-1][2]
+                    for det in person_dets:
+                        cx, cy, x1, y1, x2, y2 = det[0], det[1], det[2], det[3], det[4], det[5]
+                        if abs(cx - tx) < 20 and abs(cy - ty) < 20:
+                            jersey_tracker.update(frame, tid, (x1, y1, x2, y2))
+                            break
 
             # ── Touch detection ──
             # Build current frame's player positions from latest tracker state
@@ -1794,18 +1807,22 @@ def run_analysis(job_input: dict) -> dict:
             player_tracker.tracks, frame_w, frame_h, grid_w=20, grid_h=12
         )
 
-        # ── Merge touch + pass breakdown into player_metrics ──
+        # ── Merge touch + pass + identity into player_metrics ──
+        jersey_identities = jersey_tracker.confirmed_identities()
         for tid_str, pm in player_metrics.items():
             tid = int(tid_str) if str(tid_str).isdigit() else 0
             pm.update(touch_tracker.player_touch_summary(tid))
             pm.update(pass_analyser.player_pass_summary(tid))
+            pm.update(jersey_tracker.player_identity_summary(tid))
+
+        print(f"  ✓ Jersey OCR: {len(jersey_identities)} players identified")
 
         # ── Merge touch + pass totals into team_metrics ──
         for team_id, tm in team_metrics.items():
             tm.update(touch_tracker.team_touch_summary(team_id))
             tm.update(pass_analyser.team_pass_stats(team_id))
 
-        # ── Build pass networks ──
+        # ── Build pass networks (annotate nodes with jersey numbers) ──
         from movement_network import build_pass_network
         pass_events_serialised = pass_analyser.pass_events_for_network()
         home_pass_network = build_pass_network(
@@ -1814,6 +1831,10 @@ def run_analysis(job_input: dict) -> dict:
         away_pass_network = build_pass_network(
             pass_events_serialised, player_tracker.tracks, "B", frame_w, frame_h
         )
+        for network in (home_pass_network, away_pass_network):
+            for node in network.get("nodes", []):
+                tid = node["track_id"]
+                node["jersey_number"] = jersey_identities.get(tid)
 
         total_touches = sum(tm.get("total_touches", 0) for tm in team_metrics.values())
         print(f"  ✓ {len(events)} events  {len(team_metrics)} teams  "
