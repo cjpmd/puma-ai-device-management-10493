@@ -1786,25 +1786,46 @@ def run_analysis(job_input: dict) -> dict:
         touch_tracker.assign_teams(team_assignment)
         pass_analyser.assign_teams(team_assignment)
 
+        # Exclude referee tracks from all downstream analytics
+        from referee_filter import filter_referees
+        referee_track_ids = filter_referees(
+            tracks=player_tracker.tracks,
+            team_assignment=team_assignment,
+            frame_w=frame_w,
+            frame_h=frame_h,
+        )
+        if referee_track_ids:
+            print(f"  🟡 Referee exclusion: {len(referee_track_ids)} track(s) excluded {sorted(referee_track_ids)}")
+
+        # Strip referee tracks from analytics inputs
+        player_tracks_filtered = {
+            tid: pos for tid, pos in player_tracker.tracks.items()
+            if tid not in referee_track_ids
+        }
+        team_assignment_filtered = {
+            tid: team for tid, team in team_assignment.items()
+            if tid not in referee_track_ids
+        }
+
         events = EventDetector.detect(
             ball_positions=ball_positions,
-            player_tracks=player_tracker.tracks,
-            team_assignment=team_assignment,
+            player_tracks=player_tracks_filtered,
+            team_assignment=team_assignment_filtered,
             pano_w=frame_w,
             pano_h=frame_h,
             fps=native_fps,
         )
         team_metrics, player_metrics = MetricsAggregator.compute(
             events=events,
-            player_tracks=player_tracker.tracks,
-            team_assignment=team_assignment,
+            player_tracks=player_tracks_filtered,
+            team_assignment=team_assignment_filtered,
             ball_positions=ball_positions,
             pano_w=frame_w,
             pano_h=frame_h,
             fps=native_fps,
         )
         heatmaps = MetricsAggregator.build_heatmaps(
-            player_tracker.tracks, frame_w, frame_h, grid_w=20, grid_h=12
+            player_tracks_filtered, frame_w, frame_h, grid_w=20, grid_h=12
         )
 
         # ── Merge touch + pass + identity into player_metrics ──
