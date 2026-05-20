@@ -1647,6 +1647,425 @@ export type Database = {
           },
         ]
       }
+      travel_accommodation: {
+        Row: {
+          address: string | null
+          booking_reference: string | null
+          check_in: string | null
+          check_out: string | null
+          created_at: string
+          hotel_name: string
+          id: string
+          meal_plan: string | null
+          notes: string | null
+          phone: string | null
+          room_count: number | null
+          status: string
+          travel_event_id: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          booking_reference?: string | null
+          check_in?: string | null
+          check_out?: string | null
+          created_at?: string
+          hotel_name: string
+          id?: string
+          meal_plan?: string | null
+          notes?: string | null
+          phone?: string | null
+          room_count?: number | null
+          status?: string
+          travel_event_id: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          booking_reference?: string | null
+          check_in?: string | null
+          check_out?: string | null
+          created_at?: string
+          hotel_name?: string
+          id?: string
+          meal_plan?: string | null
+          notes?: string | null
+          phone?: string | null
+          room_count?: number | null
+          status?: string
+          travel_event_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "travel_accommodation_travel_event_id_fkey"
+            columns: ["travel_event_id"]
+            isOneToOne: false
+            referencedRelation: "travel_event"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      travel_budget_item: {
+        Row: {
+          actual_amount: number | null
+          budgeted_amount: number | null
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          paid: boolean
+          travel_event_id: string
+          updated_at: string
+        }
+        Insert: {
+          actual_amount?: number | null
+          budgeted_amount?: number | null
+          category: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          paid?: boolean
+          travel_event_id: string
+          updated_at?: string
+        }
+        Update: {
+          actual_amount?: number | null
+          budgeted_amount?: number | null
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          paid?: boolean
+          travel_event_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "travel_budget_item_travel_event_id_fkey"
+            columns: ["travel_event_id"]
+            isOneToOne: false
+            referencedRelation: "travel_event"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      travel_document: {
+        Row: {
+          created_at: string
+          document_type: string
+          file_url: string | null
+          id: string
+          is_restricted: boolean
+          required: boolean
+          title: string
+          travel_event_id: string
+          updated_at: string
+          uploaded_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          document_type: string
+          file_url?: string | null
+          id?: string
+          is_restricted?: boolean
+          required?: boolean
+          title: string
+          travel_event_id: string
+          updated_at?: string
+          uploaded_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          document_type?: string
+          file_url?: string | null
+          id?: string
+          is_restricted?: boolean
+          required?: boolean
+          title?: string
+          travel_event_id?: string
+          updated_at?: string
+          uploaded_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "travel_document_travel_event_id_fkey"
+            columns: ["travel_event_id"]
+            isOneToOne: false
+            referencedRelation: "travel_event"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      travel_event: {
+        Row: {
+          academy_id: string
+          created_at: string
+          created_by: string | null
+          departure_date: string
+          destination_city: string
+          destination_country: string
+          event_type: string
+          id: string
+          return_date: string
+          squads: string[]
+          status: string
+          title: string
+          total_budget: number | null
+          updated_at: string
+        }
+        Insert: {
+          academy_id: string
+          created_at?: string
+          created_by?: string | null
+          departure_date: string
+          destination_city: string
+          destination_country: string
+          event_type: string
+          id?: string
+          return_date: string
+          squads?: string[]
+          status?: string
+          title: string
+          total_budget?: number | null
+          updated_at?: string
+        }
+        Update: {
+          academy_id?: string
+          created_at?: string
+          created_by?: string | null
+          departure_date?: string
+          destination_city?: string
+          destination_country?: string
+          event_type?: string
+          id?: string
+          return_date?: string
+          squads?: string[]
+          status?: string
+          title?: string
+          total_budget?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      travel_itinerary_item: {
+        Row: {
+          created_at: string
+          day_date: string
+          description: string | null
+          id: string
+          item_time: string | null
+          item_type: string
+          location: string | null
+          sort_order: number
+          title: string
+          travel_event_id: string
+          updated_at: string
+          visible_to_parents: boolean
+        }
+        Insert: {
+          created_at?: string
+          day_date: string
+          description?: string | null
+          id?: string
+          item_time?: string | null
+          item_type: string
+          location?: string | null
+          sort_order?: number
+          title: string
+          travel_event_id: string
+          updated_at?: string
+          visible_to_parents?: boolean
+        }
+        Update: {
+          created_at?: string
+          day_date?: string
+          description?: string | null
+          id?: string
+          item_time?: string | null
+          item_type?: string
+          location?: string | null
+          sort_order?: number
+          title?: string
+          travel_event_id?: string
+          updated_at?: string
+          visible_to_parents?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "travel_itinerary_item_travel_event_id_fkey"
+            columns: ["travel_event_id"]
+            isOneToOne: false
+            referencedRelation: "travel_event"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      travel_player_consent: {
+        Row: {
+          created_at: string
+          dietary_requirements: string | null
+          emergency_contact_confirmed: boolean
+          id: string
+          medical_declaration_signed: boolean
+          passport_expiry: string | null
+          passport_submitted: boolean
+          photo_consent: boolean
+          player_id: string
+          signed_at: string | null
+          travel_consent_signed: boolean
+          travel_event_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          dietary_requirements?: string | null
+          emergency_contact_confirmed?: boolean
+          id?: string
+          medical_declaration_signed?: boolean
+          passport_expiry?: string | null
+          passport_submitted?: boolean
+          photo_consent?: boolean
+          player_id: string
+          signed_at?: string | null
+          travel_consent_signed?: boolean
+          travel_event_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          dietary_requirements?: string | null
+          emergency_contact_confirmed?: boolean
+          id?: string
+          medical_declaration_signed?: boolean
+          passport_expiry?: string | null
+          passport_submitted?: boolean
+          photo_consent?: boolean
+          player_id?: string
+          signed_at?: string | null
+          travel_consent_signed?: boolean
+          travel_event_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "travel_player_consent_travel_event_id_fkey"
+            columns: ["travel_event_id"]
+            isOneToOne: false
+            referencedRelation: "travel_event"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      travel_transport_leg: {
+        Row: {
+          arrival_datetime: string | null
+          arrival_location: string | null
+          created_at: string
+          departure_datetime: string | null
+          departure_location: string | null
+          id: string
+          leg_order: number
+          notes: string | null
+          provider: string | null
+          reference_number: string | null
+          status: string
+          transport_type: string
+          travel_event_id: string
+          updated_at: string
+        }
+        Insert: {
+          arrival_datetime?: string | null
+          arrival_location?: string | null
+          created_at?: string
+          departure_datetime?: string | null
+          departure_location?: string | null
+          id?: string
+          leg_order?: number
+          notes?: string | null
+          provider?: string | null
+          reference_number?: string | null
+          status?: string
+          transport_type: string
+          travel_event_id: string
+          updated_at?: string
+        }
+        Update: {
+          arrival_datetime?: string | null
+          arrival_location?: string | null
+          created_at?: string
+          departure_datetime?: string | null
+          departure_location?: string | null
+          id?: string
+          leg_order?: number
+          notes?: string | null
+          provider?: string | null
+          reference_number?: string | null
+          status?: string
+          transport_type?: string
+          travel_event_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "travel_transport_leg_travel_event_id_fkey"
+            columns: ["travel_event_id"]
+            isOneToOne: false
+            referencedRelation: "travel_event"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      travel_update: {
+        Row: {
+          body: string
+          created_at: string
+          created_by: string | null
+          id: string
+          posted_at: string
+          sent_push: boolean
+          target_squads: string[]
+          title: string
+          travel_event_id: string
+          update_type: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          posted_at?: string
+          sent_push?: boolean
+          target_squads?: string[]
+          title: string
+          travel_event_id: string
+          update_type: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          posted_at?: string
+          sent_push?: boolean
+          target_squads?: string[]
+          title?: string
+          travel_event_id?: string
+          update_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "travel_update_travel_event_id_fkey"
+            columns: ["travel_event_id"]
+            isOneToOne: false
+            referencedRelation: "travel_event"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       upload_tokens: {
         Row: {
           camera_side: string
@@ -1834,6 +2253,10 @@ export type Database = {
       }
       user_has_team_access: {
         Args: { _team_id: string; _user_id: string }
+        Returns: boolean
+      }
+      user_has_travel_event_access: {
+        Args: { _event_id: string; _user_id: string }
         Returns: boolean
       }
     }
