@@ -38,6 +38,7 @@ import LogRPE from "./pages/LogRPE";
 import FitnessTesting from "./pages/FitnessTesting";
 import TravelEvents from "./pages/TravelEvents";
 import TravelEventDetail from "./pages/TravelEventDetail";
+import Squads from "./pages/Squads";
 
 const queryClient = new QueryClient();
 
@@ -105,7 +106,7 @@ const AppRoutes = () => {
       <Route path="/dashboard"       element={<PrivateRoute><AppShell><Dashboard /></AppShell></PrivateRoute>} />
       <Route path="/players"         element={<PrivateRoute><AppShell><Players /></AppShell></PrivateRoute>} />
       <Route path="/players/:id"     element={<PrivateRoute><AppShell><PlayerProfile /></AppShell></PrivateRoute>} />
-      <Route path="/squads"          element={<PrivateRoute><TierRoute kind="academy"><AppShell><PlaceholderPage module="Squads" /></AppShell></TierRoute></PrivateRoute>} />
+      <Route path="/squads"          element={<PrivateRoute><TierRoute kind="academy"><AppShell><Squads /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/development"     element={<PrivateRoute><TierRoute kind="academy"><AppShell><PlaceholderPage module="Development" /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/medical"         element={<PrivateRoute><AppShell><Medical /></AppShell></PrivateRoute>} />
       <Route path="/welfare"         element={<PrivateRoute><TierRoute kind="academy"><AppShell><Welfare /></AppShell></TierRoute></PrivateRoute>} />
