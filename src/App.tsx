@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useDeepLinkHandler } from "@/hooks/useDeepLinkHandler";
 import { OrgTypeProvider } from "@/contexts/OrgTypeContext";
+import { ActiveContextProvider, useActiveContext } from "@/contexts/ActiveContextContext";
 import { AppShell } from "@/components/layout/AppShell";
 import { PlaceholderPage } from "@/components/layout/PlaceholderPage";
 import { IOSApp } from "./pages/ios/IOSApp";
@@ -37,6 +38,9 @@ import LogRPE from "./pages/LogRPE";
 import FitnessTesting from "./pages/FitnessTesting";
 import TravelEvents from "./pages/TravelEvents";
 import TravelEventDetail from "./pages/TravelEventDetail";
+import Squads from "./pages/Squads";
+import Development from "./pages/Development";
+import Coaching from "./pages/Coaching";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +63,19 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
 
   if (loading) return <div className="flex items-center justify-center h-screen text-slate-400">Loading…</div>;
   if (!session) return <Navigate to="/auth" replace />;
+  return <>{children}</>;
+};
+
+const TierRoute = ({
+  kind,
+  children,
+}: {
+  kind: 'academy' | 'club' | 'team';
+  children: React.ReactNode;
+}) => {
+  const { activeContext, loading } = useActiveContext();
+  if (loading) return <div className="flex items-center justify-center h-screen text-slate-400">Loading…</div>;
+  if (!activeContext || activeContext.kind !== kind) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 };
 
@@ -91,16 +108,16 @@ const AppRoutes = () => {
       <Route path="/dashboard"       element={<PrivateRoute><AppShell><Dashboard /></AppShell></PrivateRoute>} />
       <Route path="/players"         element={<PrivateRoute><AppShell><Players /></AppShell></PrivateRoute>} />
       <Route path="/players/:id"     element={<PrivateRoute><AppShell><PlayerProfile /></AppShell></PrivateRoute>} />
-      <Route path="/squads"          element={<PrivateRoute><AppShell><PlaceholderPage module="Squads" /></AppShell></PrivateRoute>} />
-      <Route path="/development"     element={<PrivateRoute><AppShell><PlaceholderPage module="Development" /></AppShell></PrivateRoute>} />
+      <Route path="/squads"          element={<PrivateRoute><TierRoute kind="academy"><AppShell><Squads /></AppShell></TierRoute></PrivateRoute>} />
+      <Route path="/development"     element={<PrivateRoute><TierRoute kind="academy"><AppShell><Development /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/medical"         element={<PrivateRoute><AppShell><Medical /></AppShell></PrivateRoute>} />
-      <Route path="/welfare"         element={<PrivateRoute><AppShell><Welfare /></AppShell></PrivateRoute>} />
-      <Route path="/scouting"        element={<PrivateRoute><AppShell><Scouting /></AppShell></PrivateRoute>} />
+      <Route path="/welfare"         element={<PrivateRoute><TierRoute kind="academy"><AppShell><Welfare /></AppShell></TierRoute></PrivateRoute>} />
+      <Route path="/scouting"        element={<PrivateRoute><TierRoute kind="academy"><AppShell><Scouting /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/fitness-testing" element={<PrivateRoute><AppShell><FitnessTesting /></AppShell></PrivateRoute>} />
-      <Route path="/coaching"        element={<PrivateRoute><AppShell><PlaceholderPage module="Coaching" /></AppShell></PrivateRoute>} />
-      <Route path="/compliance"      element={<PrivateRoute><AppShell><Compliance /></AppShell></PrivateRoute>} />
-      <Route path="/travel"          element={<PrivateRoute><AppShell><TravelEvents /></AppShell></PrivateRoute>} />
-      <Route path="/travel/:id"      element={<PrivateRoute><AppShell><TravelEventDetail /></AppShell></PrivateRoute>} />
+      <Route path="/coaching"        element={<PrivateRoute><TierRoute kind="academy"><AppShell><Coaching /></AppShell></TierRoute></PrivateRoute>} />
+      <Route path="/compliance"      element={<PrivateRoute><TierRoute kind="academy"><AppShell><Compliance /></AppShell></TierRoute></PrivateRoute>} />
+      <Route path="/travel"          element={<PrivateRoute><TierRoute kind="academy"><AppShell><TravelEvents /></AppShell></TierRoute></PrivateRoute>} />
+      <Route path="/travel/:id"      element={<PrivateRoute><TierRoute kind="academy"><AppShell><TravelEventDetail /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/settings"        element={<PrivateRoute><AppShell><Settings /></AppShell></PrivateRoute>} />
 
       <Route path="*" element={<NotFound />} />
@@ -114,9 +131,11 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <OrgTypeProvider>
-          <AppRoutes />
-        </OrgTypeProvider>
+        <ActiveContextProvider>
+          <OrgTypeProvider>
+            <AppRoutes />
+          </OrgTypeProvider>
+        </ActiveContextProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

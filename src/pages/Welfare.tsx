@@ -26,13 +26,30 @@ export default function Welfare() {
   const [form, setForm]         = useState<LogForm>(blankLog());
   const [saving, setSaving]     = useState(false);
 
+  // Resolve club_id for this academy once; all player-linked queries depend on it
+  const { data: clubId = null } = useQuery<string | null>({
+    queryKey: ['academy-club-id', academyId],
+    enabled: !!academyId,
+    staleTime: Infinity,
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('academies')
+        .select('club_id')
+        .eq('id', academyId)
+        .single();
+      return (data?.club_id as string | null) ?? null;
+    },
+  });
+
   const { data: attendance = [] } = useQuery({
-    queryKey: ['attendance'],
+    queryKey: ['attendance', clubId],
+    enabled: !!clubId,
     staleTime: 60_000,
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from('school_attendance')
-        .select('player_id, attendance_pct, term, academic_year, players(name)')
+        .select('player_id, attendance_pct, term, academic_year, players!inner(name, club_id)')
+        .eq('players.club_id', clubId)
         .order('recorded_at', { ascending: false });
       // Latest per player
       const seen = new Map<string, any>();
@@ -42,12 +59,14 @@ export default function Welfare() {
   });
 
   const { data: logs = [] } = useQuery({
-    queryKey: ['welfare-logs'],
+    queryKey: ['welfare-logs', clubId],
+    enabled: !!clubId,
     staleTime: 30_000,
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from('welfare_log')
-        .select('id, player_id, log_date, log_type, status, notes, tags, is_restricted, players(name)')
+        .select('id, player_id, log_date, log_type, status, notes, tags, is_restricted, players!inner(name, club_id)')
+        .eq('players.club_id', clubId)
         .order('log_date', { ascending: false })
         .limit(50);
       return data ?? [];
@@ -55,12 +74,14 @@ export default function Welfare() {
   });
 
   const { data: comms = [] } = useQuery({
-    queryKey: ['parent-comms'],
+    queryKey: ['parent-comms', clubId],
+    enabled: !!clubId,
     staleTime: 60_000,
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from('parent_communication')
-        .select('id, player_id, message, direction, sent_at, players(name)')
+        .select('id, player_id, message, direction, sent_at, players!inner(name, club_id)')
+        .eq('players.club_id', clubId)
         .order('sent_at', { ascending: false })
         .limit(20);
       return data ?? [];
@@ -68,9 +89,14 @@ export default function Welfare() {
   });
 
   const { data: players = [] } = useQuery({
-    queryKey: ['players-list'],
+    queryKey: ['players-list', clubId],
+    enabled: !!clubId,
     queryFn: async () => {
-      const { data } = await (supabase as any).from('players').select('id, name').order('name');
+      const { data } = await (supabase as any)
+        .from('players')
+        .select('id, name')
+        .eq('club_id', clubId)
+        .order('name');
       return data ?? [];
     },
   });

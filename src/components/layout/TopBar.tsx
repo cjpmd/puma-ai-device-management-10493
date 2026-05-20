@@ -1,5 +1,4 @@
 import React from 'react';
-import { useOrgType } from '@/contexts/OrgTypeContext';
 
 interface TopBarProps {
   orgName?: string;
@@ -9,7 +8,6 @@ interface TopBarProps {
 }
 
 export function TopBar({ orgName, userName, userRole, fcUrl }: TopBarProps) {
-  const { orgType } = useOrgType();
 
   const fcHref = fcUrl ||
     (typeof window !== 'undefined'

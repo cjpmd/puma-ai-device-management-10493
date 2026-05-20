@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useActiveContext } from "@/contexts/ActiveContextContext";
 import {
   Command,
   CommandEmpty,
@@ -33,8 +34,8 @@ interface MultiPlayerSelectorProps {
   teamId?: string;
 }
 
-const MultiPlayerSelector = ({ 
-  onSelectionChange, 
+const MultiPlayerSelector = ({
+  onSelectionChange,
   selectedPlayerIds = [],
   clubId,
   teamId,
@@ -42,6 +43,10 @@ const MultiPlayerSelector = ({
   const [open, setOpen] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
+  const { activeContext } = useActiveContext();
+
+  const effectiveTeamId = teamId ?? (activeContext?.kind === 'team' ? activeContext.id : undefined);
+  const effectiveClubId = clubId ?? activeContext?.clubId;
 
   useEffect(() => {
     const fetchPlayers = async () => {
@@ -51,11 +56,11 @@ const MultiPlayerSelector = ({
           .from('players')
           .select('id, name, player_type')
           .order('name');
-        
-        if (teamId) {
-          query = query.eq('team_id', teamId);
-        } else if (clubId) {
-          query = query.eq('club_id', clubId);
+
+        if (effectiveTeamId) {
+          query = query.eq('team_id', effectiveTeamId);
+        } else if (effectiveClubId) {
+          query = query.eq('club_id', effectiveClubId);
         }
           
         const { data, error } = await query;
@@ -103,7 +108,7 @@ const MultiPlayerSelector = ({
     };
 
     fetchPlayers();
-  }, [clubId, teamId]);
+  }, [effectiveTeamId, effectiveClubId]);
 
   const selectedPlayers = players.filter(player => 
     selectedPlayerIds.includes(player.id)

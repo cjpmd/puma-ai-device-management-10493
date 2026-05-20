@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import FitnessTestModal from '../components/fitness/FitnessTestModal';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
 
 const sb = supabase as any;
 
@@ -28,24 +29,51 @@ function interpolatePercentile(value: number, bm: Benchmark, testName: string): 
 
 export default function FitnessTesting() {
   const qc = useQueryClient();
+  const { activeContext } = useActiveContext();
+  const clubId = activeContext?.clubId ?? null;
+  const teamId = activeContext?.kind === 'team' ? activeContext.id : null;
+  const col = teamId ? 'team_id' : 'club_id';
+  const val = teamId ?? clubId;
+
   const [showModal, setShowModal]   = useState(false);
   const [activeTest, setActiveTest] = useState<string | null>(null);
 
   const { data: players = [] } = useQuery({
-    queryKey: ['fitness-players'],
-    queryFn: async () => { const { data } = await sb.from('players').select('id, name, position, date_of_birth').order('name'); return (data ?? []) as Player[]; },
+    queryKey: ['fitness-players', activeContext?.id],
+    enabled: !!activeContext,
+    queryFn: async () => {
+      const { data } = await sb.from('players')
+        .select('id, name, position, date_of_birth')
+        .eq(col, val)
+        .order('name');
+      return (data ?? []) as Player[];
+    },
   });
   const { data: results = [], refetch: refetchResults } = useQuery({
-    queryKey: ['fitness-results'],
-    queryFn: async () => { const { data } = await sb.from('fitness_test_result').select('id, player_id, test_date, test_name, value, unit, percentile, bio_age').order('test_date', { ascending: false }); return (data ?? []) as FitnessResult[]; },
+    queryKey: ['fitness-results', activeContext?.id],
+    enabled: !!activeContext,
+    queryFn: async () => {
+      const { data } = await sb.from('fitness_test_result')
+        .select('id, player_id, test_date, test_name, value, unit, percentile, bio_age, players!inner(club_id, team_id)')
+        .eq(`players.${col}`, val)
+        .order('test_date', { ascending: false });
+      return (data ?? []) as FitnessResult[];
+    },
   });
   const { data: benchmarks = [] } = useQuery({
     queryKey: ['fitness-benchmarks'],
     queryFn: async () => { const { data } = await sb.from('fitness_benchmark').select('*'); return (data ?? []) as Benchmark[]; },
   });
   const { data: bioAgeRows = [] } = useQuery({
-    queryKey: ['bio-ages-fitness'],
-    queryFn: async () => { const { data } = await sb.from('maturation_record').select('player_id, bio_age_estimate, recorded_date').order('recorded_date', { ascending: false }); return (data ?? []) as Array<{ player_id: string; bio_age_estimate: number }>; },
+    queryKey: ['bio-ages-fitness', activeContext?.id],
+    enabled: !!activeContext,
+    queryFn: async () => {
+      const { data } = await sb.from('maturation_record')
+        .select('player_id, bio_age_estimate, recorded_date, players!inner(club_id, team_id)')
+        .eq(`players.${col}`, val)
+        .order('recorded_date', { ascending: false });
+      return (data ?? []) as Array<{ player_id: string; bio_age_estimate: number }>;
+    },
   });
 
   const bioAgeMap = new Map<string, number>();

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
 
 const sb = supabase as any;
 
@@ -61,11 +62,16 @@ function InputRow({ label, value, onChange, type = 'text', placeholder = '' }: {
 // ---- Academy Profile Tab ----
 function AcademyProfileTab() {
   const qc = useQueryClient();
+  const { activeContext } = useActiveContext();
+  const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
+
   const { data: settings } = useQuery({
-    queryKey: ['academy-settings'],
+    queryKey: ['academy-settings', academyId],
+    enabled: !!academyId,
     staleTime: 300_000,
     queryFn: async () => {
-      const { data } = await sb.from('academy_settings').select('*').limit(1).maybeSingle();
+      const { data } = await sb.from('academy_settings')
+        .select('*').eq('academy_id', academyId).limit(1).maybeSingle();
       return data ?? {};
     },
   });
@@ -74,8 +80,9 @@ function AcademyProfileTab() {
   const merged = { ...settings, ...form };
 
   async function save() {
-    await sb.from('academy_settings').upsert({ id: settings?.id ?? undefined, ...merged });
-    qc.invalidateQueries({ queryKey: ['academy-settings'] });
+    await sb.from('academy_settings')
+      .upsert({ id: settings?.id ?? undefined, academy_id: academyId, ...merged });
+    qc.invalidateQueries({ queryKey: ['academy-settings', academyId] });
     setForm({});
   }
 
@@ -100,11 +107,16 @@ function AcademyProfileTab() {
 
 // ---- Staff Tab ----
 function StaffTab() {
+  const { activeContext } = useActiveContext();
+  const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
+
   const { data: staff = [] } = useQuery({
-    queryKey: ['staff-list'],
+    queryKey: ['staff-list', academyId],
+    enabled: !!academyId,
     staleTime: 60_000,
     queryFn: async () => {
-      const { data } = await sb.from('user_academies').select('user_id, role, created_at');
+      const { data } = await sb.from('user_academies')
+        .select('user_id, role, created_at').eq('academy_id', academyId);
       return (data ?? []) as { user_id: string; role: string; created_at: string }[];
     },
   });
@@ -336,11 +348,16 @@ function CurriculumTab() {
 // ---- EPPP Config Tab ----
 function EPPPConfigTab() {
   const qc = useQueryClient();
+  const { activeContext } = useActiveContext();
+  const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
+
   const { data: settings } = useQuery({
-    queryKey: ['academy-settings'],
+    queryKey: ['academy-settings', academyId],
+    enabled: !!academyId,
     staleTime: 300_000,
     queryFn: async () => {
-      const { data } = await sb.from('academy_settings').select('*').limit(1).maybeSingle();
+      const { data } = await sb.from('academy_settings')
+        .select('*').eq('academy_id', academyId).limit(1).maybeSingle();
       return data ?? {};
     },
   });
@@ -349,8 +366,9 @@ function EPPPConfigTab() {
   const merged = { ...settings, ...form };
 
   async function save() {
-    await sb.from('academy_settings').upsert({ id: settings?.id ?? undefined, ...merged });
-    qc.invalidateQueries({ queryKey: ['academy-settings'] });
+    await sb.from('academy_settings')
+      .upsert({ id: settings?.id ?? undefined, academy_id: academyId, ...merged });
+    qc.invalidateQueries({ queryKey: ['academy-settings', academyId] });
     setForm({});
   }
 
@@ -439,11 +457,16 @@ function IntegrationsTab() {
 // ---- Notifications Tab ----
 function NotificationsTab() {
   const qc = useQueryClient();
+  const { activeContext } = useActiveContext();
+  const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
+
   const { data: settings } = useQuery({
-    queryKey: ['academy-settings'],
+    queryKey: ['academy-settings', academyId],
+    enabled: !!academyId,
     staleTime: 300_000,
     queryFn: async () => {
-      const { data } = await sb.from('academy_settings').select('*').limit(1).maybeSingle();
+      const { data } = await sb.from('academy_settings')
+        .select('*').eq('academy_id', academyId).limit(1).maybeSingle();
       return data ?? {};
     },
   });
@@ -463,8 +486,9 @@ function NotificationsTab() {
   ];
 
   async function save() {
-    await sb.from('academy_settings').upsert({ id: settings?.id ?? undefined, ...merged });
-    qc.invalidateQueries({ queryKey: ['academy-settings'] });
+    await sb.from('academy_settings')
+      .upsert({ id: settings?.id ?? undefined, academy_id: academyId, ...merged });
+    qc.invalidateQueries({ queryKey: ['academy-settings', academyId] });
     setPrefs({});
   }
 

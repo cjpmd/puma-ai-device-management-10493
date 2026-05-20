@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import InjuryLogModal from '../components/medical/InjuryLogModal';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
 
 const sb = supabase as any;
 
@@ -20,7 +21,7 @@ interface InjuryRecord {
   body_part: string;
   severity?: string;
   rtp_phase?: number;
-  resolved_at?: string | null;
+  is_resolved?: boolean;
 }
 
 interface AcwrAlert {
@@ -41,41 +42,53 @@ type PlayerStatus = keyof typeof STATUS_CONFIG;
 
 export default function Medical() {
   const qc = useQueryClient();
+  const { activeContext } = useActiveContext();
+  const clubId = activeContext?.clubId ?? null;
+  const teamId = activeContext?.kind === 'team' ? activeContext.id : null;
+
   const [statusFilter, setStatusFilter] = useState<PlayerStatus | 'all'>('all');
   const [showInjuryModal, setShowInjuryModal] = useState(false);
   const [modalPlayerId, setModalPlayerId] = useState<string | null>(null);
 
   const { data: players = [] } = useQuery({
-    queryKey: ['medical-players'],
+    queryKey: ['medical-players', activeContext?.id],
+    enabled: !!activeContext,
     queryFn: async () => {
-      const { data } = await sb.from('players').select('id, name, position, date_of_birth').order('name');
+      let q = sb.from('players').select('id, name, position, date_of_birth');
+      q = teamId ? q.eq('team_id', teamId) : q.eq('club_id', clubId);
+      const { data } = await q.order('name');
       return (data ?? []) as Player[];
     },
   });
 
   const { data: activeInjuries = [], refetch: refetchInjuries } = useQuery({
-    queryKey: ['active-injuries'],
+    queryKey: ['active-injuries', activeContext?.id],
+    enabled: !!activeContext,
     queryFn: async () => {
-      const { data } = await sb
+      let q = sb
         .from('injury_record')
-        .select('id, player_id, injury_date, body_part, severity, rtp_phase, resolved_at')
-        .is('resolved_at', null)
+        .select('id, player_id, injury_date, body_part, severity, rtp_phase, is_resolved, players!inner(club_id, team_id)')
+        .eq('is_resolved', false)
         .order('injury_date', { ascending: false });
+      q = teamId ? q.eq('players.team_id', teamId) : q.eq('players.club_id', clubId);
+      const { data } = await q;
       return (data ?? []) as InjuryRecord[];
     },
   });
 
   const { data: acwrAlerts = [] } = useQuery({
-    queryKey: ['acwr-alerts'],
+    queryKey: ['acwr-alerts', activeContext?.id],
+    enabled: !!activeContext,
     queryFn: async () => {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - 7);
-      const { data } = await sb
+      let q = sb
         .from('training_load')
-        .select('player_id, acwr_at_time, session_date, players(name)')
+        .select('player_id, acwr_at_time, session_date, players!inner(name, club_id, team_id)')
         .gte('session_date', cutoff.toISOString().split('T')[0])
         .not('acwr_at_time', 'is', null)
         .order('session_date', { ascending: false });
+      q = teamId ? q.eq('players.team_id', teamId) : q.eq('players.club_id', clubId);
 
       const seen = new Map<string, AcwrAlert>();
       for (const row of data ?? []) {
@@ -267,7 +280,7 @@ function RtpStepper({ injury, onUpdate }: { injury: InjuryRecord; onUpdate: () =
   async function markResolved() {
     setSaving(true);
     await sb.from('injury_record')
-      .update({ rtp_phase: 5, resolved_at: new Date().toISOString() })
+      .update({ rtp_phase: 5, is_resolved: true })
       .eq('id', injury.id);
     setSaving(false);
     onUpdate();

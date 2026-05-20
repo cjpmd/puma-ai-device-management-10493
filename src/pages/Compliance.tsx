@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
 
 const sb = supabase as any;
 
@@ -10,9 +11,8 @@ type AuditEntry = {
   action: string;
   table_name: string;
   record_id: string;
-  actor_id: string;
+  user_id: string;
   created_at: string;
-  metadata: Record<string, unknown>;
 };
 
 type CoachRecord = {
@@ -53,12 +53,21 @@ function ExpiryBadge({ date }: { date: string | null }) {
 }
 
 export default function Compliance() {
+  const { activeContext } = useActiveContext();
+  const clubId = activeContext?.clubId ?? null;
+  const teamId = activeContext?.kind === 'team' ? activeContext.id : null;
+  const academyId = activeContext?.kind === 'academy' ? activeContext.id : null;
+  const col = teamId ? 'team_id' : 'club_id';
+  const val = teamId ?? clubId;
+
   const [auditFilter, setAuditFilter] = useState('');
   const [auditTable, setAuditTable] = useState('');
 
-  // EPPP counts
+  // EPPP counts — scoped to active context via players!inner join.
+  // session_plan scoped directly via academy_id (confirmed in schema).
   const { data: epppData } = useQuery({
-    queryKey: ['eppp-counts'],
+    queryKey: ['eppp-counts', activeContext?.id],
+    enabled: !!activeContext,
     staleTime: 120_000,
     queryFn: async () => {
       const season_start = new Date();
@@ -69,15 +78,33 @@ export default function Compliance() {
 
       const [players, snapshots, mats, welfare, injuries, loads, sessions, milestones, comms] =
         await Promise.all([
-          sb.from('players').select('id', { count: 'exact', head: true }),
-          sb.from('attribute_snapshot').select('id', { count: 'exact', head: true }).eq('is_final', true).gte('snapshot_date', seasonStr),
-          sb.from('maturation_record').select('id', { count: 'exact', head: true }).gte('recorded_date', seasonStr),
-          sb.from('welfare_log').select('id', { count: 'exact', head: true }),
-          sb.from('injury_record').select('id', { count: 'exact', head: true }),
-          sb.from('training_load').select('id', { count: 'exact', head: true }).gte('session_date', cutoff14),
-          sb.from('session_plan').select('id', { count: 'exact', head: true }),
-          sb.from('milestones').select('id', { count: 'exact', head: true }),
-          sb.from('parent_communication').select('id', { count: 'exact', head: true }),
+          sb.from('players')
+            .select('id', { count: 'exact', head: true })
+            .eq(col, val),
+          sb.from('attribute_snapshot')
+            .select('players!inner(club_id, team_id)', { count: 'exact', head: true })
+            .eq(`players.${col}`, val).eq('is_final', true).gte('snapshot_date', seasonStr),
+          sb.from('maturation_record')
+            .select('players!inner(club_id, team_id)', { count: 'exact', head: true })
+            .eq(`players.${col}`, val).gte('recorded_date', seasonStr),
+          sb.from('welfare_log')
+            .select('players!inner(club_id, team_id)', { count: 'exact', head: true })
+            .eq(`players.${col}`, val),
+          sb.from('injury_record')
+            .select('players!inner(club_id, team_id)', { count: 'exact', head: true })
+            .eq(`players.${col}`, val),
+          sb.from('training_load')
+            .select('players!inner(club_id, team_id)', { count: 'exact', head: true })
+            .eq(`players.${col}`, val).gte('session_date', cutoff14),
+          sb.from('session_plan')
+            .select('id', { count: 'exact', head: true })
+            .eq('academy_id', academyId!),
+          sb.from('milestones')
+            .select('players!inner(club_id, team_id)', { count: 'exact', head: true })
+            .eq(`players.${col}`, val),
+          sb.from('parent_communication')
+            .select('players!inner(club_id, team_id)', { count: 'exact', head: true })
+            .eq(`players.${col}`, val),
         ]);
 
       return {
@@ -94,9 +121,11 @@ export default function Compliance() {
     },
   });
 
-  // Audit log
+  // Audit log — scoped by RLS policy "al_select_academy_members": authenticated
+  // users see their own entries plus entries from co-members of any shared academy.
+  // activeContext?.id in the queryKey busts cache on context switch.
   const { data: auditEntries = [] } = useQuery({
-    queryKey: ['audit-log', auditFilter, auditTable],
+    queryKey: ['audit-log', activeContext?.id, auditFilter, auditTable],
     staleTime: 30_000,
     queryFn: async () => {
       let q = sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(200);
@@ -107,13 +136,16 @@ export default function Compliance() {
     },
   });
 
-  // Staff qualification records (from user metadata / staff table)
+  // Staff qualification records — academy-specific; empty for club/team contexts.
   const { data: staff = [] } = useQuery({
-    queryKey: ['staff-qualifications'],
+    queryKey: ['staff-qualifications', activeContext?.id],
+    enabled: !!activeContext,
     staleTime: 300_000,
     queryFn: async () => {
+      if (activeContext?.kind !== 'academy') return [] as CoachRecord[];
       const { data } = await sb.from('user_academies')
-        .select('user_id, role, profiles:user_id(full_name, fa_safeguarding_expiry, dbs_expiry, first_aid_expiry, uefa_licence)');
+        .select('user_id, role, profiles:user_id(full_name, fa_safeguarding_expiry, dbs_expiry, first_aid_expiry, uefa_licence)')
+        .eq('academy_id', activeContext.id);
       return ((data ?? []) as any[]).map((r: any) => ({
         id: r.user_id,
         name: r.profiles?.full_name ?? r.user_id,
@@ -142,7 +174,7 @@ export default function Compliance() {
   const uniqueTables = [...new Set(auditEntries.map((e) => e.table_name))].sort();
 
   const safeguardingAudit = auditEntries.filter(
-    (e) => e.table_name === 'welfare_log' || (e.metadata as any)?.is_restricted
+    (e) => e.table_name === 'welfare_log'
   );
 
   return (
@@ -260,7 +292,7 @@ export default function Compliance() {
                       {new Date(e.created_at).toLocaleString()}
                     </td>
                     <td className="px-4 py-2 text-slate-900 font-mono text-xs">{e.action}</td>
-                    <td className="px-4 py-2 text-slate-600 font-mono text-xs">{e.actor_id?.slice(0, 8)}…</td>
+                    <td className="px-4 py-2 text-slate-600 font-mono text-xs">{e.user_id?.slice(0, 8)}…</td>
                   </tr>
                 ))}
               </tbody>
@@ -326,7 +358,7 @@ export default function Compliance() {
                     </td>
                     <td className="px-4 py-2 text-slate-900 text-xs font-mono">{e.action}</td>
                     <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.record_id?.slice(0, 8)}…</td>
-                    <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.actor_id?.slice(0, 8)}…</td>
+                    <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.user_id?.slice(0, 8)}…</td>
                   </tr>
                 ))}
               </tbody>
