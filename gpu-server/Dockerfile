@@ -1,28 +1,24 @@
-# Use NVIDIA CUDA base image
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+# RunPod PyTorch base includes CUDA 11.8 + cuDNN, matching torch cu118 wheels
+FROM runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    python3-pip \
-    python3-dev \
+# System dependencies — ffmpeg for audio sync and re-encode steps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
     libgl1-mesa-glx \
     libglib2.0-0 \
-    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages with CUDA-matched PyTorch
+# Python dependencies — torch is already in the base image; install the rest
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir torch==2.1.1 torchvision==0.16.1 --index-url https://download.pytorch.org/whl/cu118
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download YOLO weights to avoid cold-start latency
-RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
+# Pre-download YOLOv8m weights at build time to avoid cold-start latency.
+# yolov8m.pt (~52 MB) gives a better precision/speed tradeoff than yolov8n.pt
+# for sports footage where players are small relative to frame size.
+RUN python -c "from ultralytics import YOLO; YOLO('yolov8m.pt')"
 
-# Copy application code
-COPY . .
+COPY handler.py .
 
-# RunPod serverless handler — no port needed
-CMD ["python3", "-u", "handler.py"]
+CMD ["python", "-u", "handler.py"]

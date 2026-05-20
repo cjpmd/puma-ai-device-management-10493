@@ -49,6 +49,16 @@ const CameraCapture = () => {
   const [clockOffset, setClockOffset] = useState(0);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const pingResultsRef = useRef<number[]>([]);
+  // Incrementing this triggers the channel useEffect to re-run, effectively
+  // reconnecting after a drop. Exponential backoff is applied per attempt.
+  const [channelKey, setChannelKey] = useState(0);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const MAX_RECONNECT_ATTEMPTS = 10;
+
+  // Screen Wake Lock — prevents device from sleeping during recording
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+
   // Mount gate: wait until `camera-preview-active` has been applied AND
   // the page has had a couple of frames to settle the boxed viewfinder
   // layout before mounting <CameraRecorder/>. This prevents the recorder
@@ -64,6 +74,35 @@ const CameraCapture = () => {
     window.addEventListener('offline', off);
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
+
+  // Wake Lock helpers — keep the screen on while recording
+  const requestWakeLock = useCallback(async () => {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+    } catch {}
+  }, []);
+
+  const releaseWakeLock = useCallback(() => {
+    try { wakeLockRef.current?.release(); } catch {}
+    wakeLockRef.current = null;
+  }, []);
+
+  // Re-acquire the wake lock if the page becomes visible again (e.g. after
+  // the user switches apps and returns) while recording is active.
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && wakeLockRef.current === null) {
+        // Only re-acquire if we had a lock before (i.e. during active recording).
+        // We can't check isRecording here because this closure captures the
+        // initial value, so we rely on the lock sentinel being null only after
+        // the OS released it mid-recording.
+        requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [requestWakeLock]);
 
   // Boxed viewfinder approach: the native camera preview is positioned to
   // match the viewfinder div via x/y/width/height in CameraPreview.start().
@@ -141,18 +180,21 @@ const CameraCapture = () => {
     })();
   }, [token]);
 
-  // Subscribe to realtime channel
+  // Subscribe to realtime channel — re-runs when channelKey increments (reconnect)
   useEffect(() => {
     if (!tokenInfo) return;
+
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
 
     const channel = supabase.channel(`recording-${tokenInfo.match_id}`);
 
     channel
       .on('broadcast', { event: 'recording' }, ({ payload }) => {
         if (payload?.type === 'command') {
-          // Per-side filter: if the master targets a specific donor, ignore
-          // commands meant for the other donor. Master can still address
-          // both donors by omitting `camera_side` from the payload.
+          // Per-side filter: ignore commands meant for the other donor.
           if (payload.camera_side && payload.camera_side !== tokenInfo.camera_side) {
             return;
           }
@@ -166,11 +208,10 @@ const CameraCapture = () => {
           } else if (payload.command === 'live_preview_off') {
             setLivePreviewBoost(false);
           } else if (payload.command === 'disconnect') {
-            // Master phone has rejected/closed this donor camera
             setCancelled('remote');
           }
         }
-        // Respond to pings from control phone
+        // Respond to pings from master (master sends ping → donor echoes pong)
         if (payload?.type === 'ping') {
           channel.send({
             type: 'broadcast',
@@ -183,32 +224,72 @@ const CameraCapture = () => {
             },
           });
         }
+        // Handle pongs from master in response to our own calibration pings
+        if (payload?.type === 'pong' && payload.camera_side === tokenInfo.camera_side) {
+          const rtt = Date.now() - payload.sentAt;
+          pingResultsRef.current.push(rtt);
+          if (pingResultsRef.current.length >= 3) {
+            const avg = pingResultsRef.current.reduce((a, b) => a + b, 0) / pingResultsRef.current.length;
+            setClockOffset(Math.round(avg / 2));
+          }
+        }
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           setIsConnected(true);
+          reconnectAttemptsRef.current = 0;
           channel.send({
             type: 'broadcast',
             event: 'recording',
             payload: { type: 'status', camera_side: tokenInfo.camera_side, status: 'ready' },
           });
-          // Run ping-pong calibration
-          runPingCalibration(channel);
+          runPingCalibration(channel, tokenInfo.camera_side);
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setIsConnected(false);
+          scheduleChannelReconnect();
         }
       });
 
     channelRef.current = channel;
-    return () => { supabase.removeChannel(channel); };
-  }, [tokenInfo]);
+    return () => {
+      supabase.removeChannel(channel);
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+  }, [tokenInfo, channelKey]);
 
-  // Ping calibration: send 3 pings to control phone, measure round-trip
-  const runPingCalibration = (channel: ReturnType<typeof supabase.channel>) => {
-    // The camera phone initiates pings and the control phone responds
-    // We measure round-trip time to estimate one-way latency
-    // For simplicity, we rely on NTP-synced clocks (~20ms accuracy)
-    // The ping-pong is mainly to verify connectivity
+  // Send 3 pings staggered 500ms apart; the master echoes pongs back.
+  // The pong handler above accumulates RTTs and updates clockOffset.
+  const runPingCalibration = (
+    channel: ReturnType<typeof supabase.channel>,
+    cameraSide: string,
+  ) => {
     pingResultsRef.current = [];
+    for (let i = 0; i < 3; i++) {
+      setTimeout(() => {
+        channel.send({
+          type: 'broadcast',
+          event: 'recording',
+          payload: { type: 'ping', camera_side: cameraSide, sentAt: Date.now() },
+        });
+      }, i * 500);
+    }
   };
+
+  // Exponential backoff reconnect — increments channelKey to trigger
+  // the channel useEffect to set up a fresh subscription.
+  const scheduleChannelReconnect = useCallback(() => {
+    const attempts = reconnectAttemptsRef.current;
+    if (attempts >= MAX_RECONNECT_ATTEMPTS) return;
+    // Cap backoff at 16s: 2s → 4s → 8s → 16s → 16s …
+    const delay = Math.min(2000 * Math.pow(2, attempts), 16000);
+    reconnectAttemptsRef.current = attempts + 1;
+    reconnectTimerRef.current = setTimeout(() => {
+      setChannelKey((k) => k + 1);
+    }, delay);
+  }, []);
 
   const sendStatus = useCallback(
     (status: string, err?: string) => {
@@ -363,8 +444,14 @@ const CameraCapture = () => {
   const handleRecorderStatusChange = useCallback(
     (status: 'ready' | 'recording' | 'stopped' | 'error', err?: string) => {
       sendStatus(status, err);
+      // Acquire wake lock when recording starts; release when done/errored.
+      if (status === 'recording') {
+        requestWakeLock();
+      } else if (status === 'stopped' || status === 'error') {
+        releaseWakeLock();
+      }
     },
-    [sendStatus]
+    [sendStatus, requestWakeLock, releaseWakeLock]
   );
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {

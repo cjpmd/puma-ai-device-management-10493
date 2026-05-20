@@ -3,10 +3,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Circle, Square, Radio, Battery, BatteryCharging, ImageOff, Wifi, HardDrive, Eye, EyeOff, X } from 'lucide-react';
+import {
+  Circle, Square, Radio, Battery, BatteryCharging, ImageOff, Wifi, HardDrive,
+  Eye, EyeOff, X, AlertTriangle, Tag,
+} from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 type CameraStatus = 'disconnected' | 'ready' | 'recording' | 'stopped' | 'error' | 'cancelled';
+
+type EventTagType =
+  | 'goal' | 'yellow_card' | 'red_card' | 'substitution'
+  | 'key_moment' | 'foul' | 'corner' | 'penalty';
+
+interface EventTag {
+  id?: string;
+  eventType: EventTagType;
+  timestampMs: number;
+}
 
 interface CameraCapabilities {
   resolution: string;
@@ -33,6 +46,14 @@ interface RecordingControlsProps {
   onCameraStatusChange?: (left: CameraStatus, right: CameraStatus) => void;
 }
 
+const EVENT_BUTTONS: Array<{ type: EventTagType; label: string; emoji: string; bg: string }> = [
+  { type: 'goal',         label: 'Goal',   emoji: '⚽', bg: 'bg-emerald-600 hover:bg-emerald-700' },
+  { type: 'yellow_card',  label: 'Yellow', emoji: '🟡', bg: 'bg-yellow-500 hover:bg-yellow-600' },
+  { type: 'red_card',     label: 'Red',    emoji: '🔴', bg: 'bg-red-600 hover:bg-red-700' },
+  { type: 'substitution', label: 'Sub',    emoji: '🔄', bg: 'bg-blue-600 hover:bg-blue-700' },
+  { type: 'key_moment',   label: 'Key',    emoji: '📌', bg: 'bg-purple-600 hover:bg-purple-700' },
+];
+
 export function RecordingControls({ matchId, onCameraStatusChange }: RecordingControlsProps) {
   const [leftCamera, setLeftCamera] = useState<CameraState>({ status: 'disconnected' });
   const [rightCamera, setRightCamera] = useState<CameraState>({ status: 'disconnected' });
@@ -40,27 +61,52 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
   const [elapsed, setElapsed] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [livePreview, setLivePreview] = useState(false);
+  const [matchTitle, setMatchTitle] = useState<string>('');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [eventTags, setEventTags] = useState<EventTag[]>([]);
+  const [showWarning, setShowWarning] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const elapsedRef = useRef(0); // always-current elapsed for use inside async handlers
+
+  // Keep elapsedRef in sync
+  useEffect(() => { elapsedRef.current = elapsed; }, [elapsed]);
 
   // Notify parent
   useEffect(() => {
     onCameraStatusChange?.(leftCamera.status, rightCamera.status);
   }, [leftCamera.status, rightCamera.status, onCameraStatusChange]);
 
-  // Subscribe to broadcast channel
+  // Fetch match title
+  useEffect(() => {
+    supabase.from('matches').select('title').eq('id', matchId).single()
+      .then(({ data }) => { if (data?.title) setMatchTitle(data.title); });
+  }, [matchId]);
+
+  // Subscribe to Supabase Realtime broadcast channel
   useEffect(() => {
     const channel = supabase.channel(`recording-${matchId}`);
 
     channel
       .on('broadcast', { event: 'recording' }, ({ payload }) => {
         if (!payload) return;
-        const side = payload.camera_side;
+
+        // Respond to donor pings for latency calibration — must be handled
+        // before the camera_side guard below since we need to echo immediately.
+        if (payload.type === 'ping') {
+          channelRef.current?.send({
+            type: 'broadcast',
+            event: 'recording',
+            payload: { type: 'pong', camera_side: payload.camera_side, sentAt: payload.sentAt },
+          });
+          return;
+        }
+
+        const side = payload.camera_side as 'left' | 'right' | undefined;
         const update = side === 'left' ? setLeftCamera : side === 'right' ? setRightCamera : null;
         if (!update) return;
 
         if (payload.type === 'status') {
-          // Treat 'cancelled' as a transition back to disconnected, but remember it briefly via status
           const next: CameraStatus = payload.status === 'cancelled' ? 'disconnected' : payload.status;
           update((prev) => ({ ...prev, status: next, error: payload.error }));
         } else if (payload.type === 'preview') {
@@ -88,6 +134,9 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
               native: payload.native,
             },
           }));
+        } else if (payload.type === 'recording_saved') {
+          // Donor finished recording and saved locally; awaiting upload
+          update((prev) => ({ ...prev, status: 'stopped' }));
         }
       })
       .subscribe();
@@ -107,8 +156,19 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isRecording]);
 
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback(async () => {
     const startAt = Date.now() + 3000;
+
+    // Create a recording_session record; non-blocking — recording proceeds even if this fails
+    try {
+      const { data: session } = await supabase
+        .from('recording_sessions')
+        .insert({ match_id: matchId, status: 'active', started_at: new Date().toISOString() })
+        .select('id')
+        .single();
+      if (session?.id) setSessionId(session.id);
+    } catch {}
+
     channelRef.current?.send({
       type: 'broadcast',
       event: 'recording',
@@ -127,18 +187,30 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
         setCountdown(remaining);
       }
     }, 1000);
-  }, []);
+  }, [matchId]);
 
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
     channelRef.current?.send({
       type: 'broadcast',
       event: 'recording',
       payload: { type: 'command', command: 'stop' },
     });
     setIsRecording(false);
-  }, []);
 
-  // Disconnect a single donor camera (master rejects)
+    // Close the recording session
+    if (sessionId) {
+      const dur = elapsedRef.current;
+      try {
+        await supabase.from('recording_sessions').update({
+          status: 'completed',
+          ended_at: new Date().toISOString(),
+          duration_seconds: dur,
+        }).eq('id', sessionId);
+      } catch {}
+      setSessionId(null);
+    }
+  }, [sessionId]);
+
   const handleDisconnect = useCallback((side: 'left' | 'right') => {
     if (!confirm(`Disconnect ${side === 'left' ? 'Left' : 'Right'} camera? They'll need to scan a new QR.`)) return;
     channelRef.current?.send({
@@ -146,7 +218,6 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
       event: 'recording',
       payload: { type: 'command', command: 'disconnect', camera_side: side },
     });
-    // Reset locally so the panel shows disconnected immediately
     if (side === 'left') setLeftCamera({ status: 'disconnected' });
     else setRightCamera({ status: 'disconnected' });
   }, []);
@@ -161,9 +232,34 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
     });
   }, [livePreview]);
 
+  // Tag an in-match event at the current recording timestamp
+  const handleTagEvent = useCallback(async (eventType: EventTagType) => {
+    const timestampMs = elapsedRef.current * 1000;
+    const optimisticTag: EventTag = { eventType, timestampMs };
+    setEventTags((prev) => [...prev, optimisticTag]);
+
+    try {
+      const { data } = await supabase.from('match_event_tags').insert({
+        match_id: matchId,
+        session_id: sessionId,
+        event_type: eventType,
+        timestamp_ms: timestampMs,
+      }).select('id').single();
+      if (data?.id) {
+        setEventTags((prev) =>
+          prev.map((t) =>
+            t === optimisticTag ? { ...t, id: data.id } : t
+          )
+        );
+      }
+    } catch {}
+  }, [matchId, sessionId]);
+
   const formatTime = (s: number) => {
-    const m = Math.floor(s / 60);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
     const sec = s % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
     return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
@@ -173,21 +269,39 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
     return `${(b / 1024).toFixed(0)} KB`;
   };
 
+  // Pre-recording safety flags
+  const batteryPct = (cam: CameraState) =>
+    cam.batteryLevel != null && cam.batteryLevel >= 0 ? Math.round(cam.batteryLevel * 100) : null;
+  const lowBattery = (cam: CameraState) => {
+    const p = batteryPct(cam);
+    return p !== null && p < 15 && !cam.isCharging;
+  };
+  const lowStorage = (cam: CameraState) =>
+    cam.storageFreeBytes != null && cam.storageFreeBytes < 2 * 1024 ** 3;
+
+  const hasPreRecordingWarnings =
+    (leftCamera.status !== 'disconnected' && (lowBattery(leftCamera) || lowStorage(leftCamera))) ||
+    (rightCamera.status !== 'disconnected' && (lowBattery(rightCamera) || lowStorage(rightCamera)));
+
   const bothReady = leftCamera.status === 'ready' && rightCamera.status === 'ready';
   const anyConnected = leftCamera.status !== 'disconnected' || rightCamera.status !== 'disconnected';
+  const canStart = bothReady;
 
   // Camera preview panel
-  const CameraPanel = ({ label, camera, side }: { label: string; camera: CameraState; side: 'left' | 'right' }) => {
-    const batteryPercent = camera.batteryLevel != null && camera.batteryLevel >= 0
-      ? Math.round(camera.batteryLevel * 100)
-      : null;
-
+  const CameraPanel = ({
+    label,
+    camera,
+    side,
+  }: {
+    label: string;
+    camera: CameraState;
+    side: 'left' | 'right';
+  }) => {
+    const bPct = batteryPct(camera);
     const storagePercent =
       camera.storageFreeBytes != null && camera.storageTotalBytes
         ? Math.round((camera.storageFreeBytes / camera.storageTotalBytes) * 100)
         : null;
-    const lowStorage = camera.storageFreeBytes != null && camera.storageFreeBytes < 2 * 1024 ** 3; // <2GB
-
     const previewStale = camera.lastPreviewAt && Date.now() - camera.lastPreviewAt > 8000;
     const isConnected = camera.status !== 'disconnected';
 
@@ -246,7 +360,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
           )}
         </div>
 
-        {/* Capability badges — resolution / fps / lens */}
+        {/* Capability badges */}
         {camera.capabilities && (
           <div className="flex flex-wrap gap-1">
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
@@ -266,10 +380,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
             ) : (
               <Badge
                 variant="outline"
-                className={`text-[10px] px-1.5 py-0 h-5 ${
-                  camera.capabilities.zoom > 1 ? 'text-orange-600 border-orange-300' : ''
-                }`}
-                title={camera.capabilities.zoom > 1 ? 'Narrow lens — less pitch coverage' : undefined}
+                className={`text-[10px] px-1.5 py-0 h-5 ${camera.capabilities.zoom > 1 ? 'text-orange-600 border-orange-300' : ''}`}
               >
                 {camera.capabilities.zoom}× lens
               </Badge>
@@ -278,16 +389,16 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
         )}
 
         {/* Battery */}
-        {batteryPercent !== null && (
+        {bPct !== null && (
           <div className="flex items-center gap-2">
             {camera.isCharging ? (
               <BatteryCharging className="h-4 w-4 text-emerald-600" />
             ) : (
-              <Battery className={`h-4 w-4 ${batteryPercent < 20 ? 'text-red-500' : 'text-muted-foreground'}`} />
+              <Battery className={`h-4 w-4 ${bPct < 15 ? 'text-red-500' : bPct < 30 ? 'text-orange-500' : 'text-muted-foreground'}`} />
             )}
-            <Progress value={batteryPercent} className="h-2 flex-1" />
-            <span className={`text-xs font-mono ${batteryPercent < 20 ? 'text-red-500 font-bold' : 'text-muted-foreground'}`}>
-              {batteryPercent}%
+            <Progress value={bPct} className="h-2 flex-1" />
+            <span className={`text-xs font-mono ${bPct < 15 && !camera.isCharging ? 'text-red-500 font-bold' : 'text-muted-foreground'}`}>
+              {bPct}%
             </span>
           </div>
         )}
@@ -295,9 +406,9 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
         {/* Storage */}
         {storagePercent !== null && camera.storageFreeBytes != null && (
           <div className="flex items-center gap-2">
-            <HardDrive className={`h-4 w-4 ${lowStorage ? 'text-red-500' : 'text-muted-foreground'}`} />
+            <HardDrive className={`h-4 w-4 ${lowStorage(camera) ? 'text-red-500' : 'text-muted-foreground'}`} />
             <Progress value={storagePercent} className="h-2 flex-1" />
-            <span className={`text-xs font-mono ${lowStorage ? 'text-red-500 font-bold' : 'text-muted-foreground'}`}>
+            <span className={`text-xs font-mono ${lowStorage(camera) ? 'text-red-500 font-bold' : 'text-muted-foreground'}`}>
               {formatBytes(camera.storageFreeBytes)}
             </span>
           </div>
@@ -311,11 +422,11 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
   const StatusBadge = ({ status }: { status: CameraStatus }) => {
     const config: Record<CameraStatus, { className: string; label: string }> = {
       disconnected: { className: 'bg-muted text-muted-foreground', label: 'Offline' },
-      ready: { className: 'bg-emerald-100 text-emerald-800', label: 'Ready' },
-      recording: { className: 'bg-red-100 text-red-800', label: 'Recording' },
-      stopped: { className: 'bg-blue-100 text-blue-800', label: 'Stopped' },
-      error: { className: 'bg-destructive/10 text-destructive', label: 'Error' },
-      cancelled: { className: 'bg-muted text-muted-foreground', label: 'Cancelled' },
+      ready:        { className: 'bg-emerald-100 text-emerald-800', label: 'Ready' },
+      recording:    { className: 'bg-red-100 text-red-800', label: 'Recording' },
+      stopped:      { className: 'bg-blue-100 text-blue-800', label: 'Stopped' },
+      error:        { className: 'bg-destructive/10 text-destructive', label: 'Error' },
+      cancelled:    { className: 'bg-muted text-muted-foreground', label: 'Cancelled' },
     };
     const c = config[status];
     return (
@@ -334,7 +445,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
         <CardTitle className="text-base flex items-center justify-between">
           <span className="flex items-center gap-2">
             <Radio className="h-4 w-4" />
-            Recording Control
+            {matchTitle ? `${matchTitle} — Recording` : 'Recording Control'}
           </span>
           <Button
             size="sm"
@@ -348,6 +459,7 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
           </Button>
         </CardTitle>
       </CardHeader>
+
       <CardContent className="space-y-4 px-3 sm:px-6">
         {/* Camera preview panels */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
@@ -355,11 +467,23 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
           <CameraPanel label="Right Camera" camera={rightCamera} side="right" />
         </div>
 
-        {/* Live preview note */}
         {livePreview && (
           <p className="text-xs text-muted-foreground text-center">
             Live preview ~2 fps. Uses extra battery and bandwidth on the capture phones.
           </p>
+        )}
+
+        {/* Pre-recording warnings — shown before start, non-blocking */}
+        {!isRecording && hasPreRecordingWarnings && (
+          <div className="rounded-lg border border-orange-300 bg-orange-50 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5 shrink-0" />
+            <div className="text-xs text-orange-800 space-y-0.5">
+              {lowBattery(leftCamera) && <p>⚠️ Left camera battery critically low ({batteryPct(leftCamera)}%). Risk of recording failure.</p>}
+              {lowBattery(rightCamera) && <p>⚠️ Right camera battery critically low ({batteryPct(rightCamera)}%). Risk of recording failure.</p>}
+              {lowStorage(leftCamera) && <p>⚠️ Left camera storage below 2 GB. May not complete a full match.</p>}
+              {lowStorage(rightCamera) && <p>⚠️ Right camera storage below 2 GB. May not complete a full match.</p>}
+            </div>
+          </div>
         )}
 
         {/* Countdown overlay */}
@@ -370,25 +494,68 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
           </div>
         )}
 
-        {/* Recording timer */}
+        {/* Recording timer + event tagging */}
         {isRecording && countdown === null && (
-          <div className="text-center">
-            <span className="text-3xl font-mono font-bold text-red-600">{formatTime(elapsed)}</span>
-            <div className="flex items-center justify-center gap-1 mt-1">
-              <Circle className="h-3 w-3 fill-red-500 text-red-500 animate-pulse" />
-              <span className="text-sm text-red-600 font-medium">Recording</span>
+          <div className="space-y-3">
+            {/* Timer */}
+            <div className="text-center">
+              <span className="text-4xl font-mono font-bold text-red-600 tabular-nums">
+                {formatTime(elapsed)}
+              </span>
+              <div className="flex items-center justify-center gap-1 mt-1">
+                <Circle className="h-3 w-3 fill-red-500 text-red-500 animate-pulse" />
+                <span className="text-sm text-red-600 font-medium">Recording in progress</span>
+              </div>
             </div>
+
+            {/* Event tagging strip */}
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+                <Tag className="h-3 w-3" />
+                Tap to tag event at current time
+              </p>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {EVENT_BUTTONS.map(({ type, label, emoji, bg }) => (
+                  <Button
+                    key={type}
+                    size="sm"
+                    className={`h-12 min-w-[72px] text-sm text-white ${bg} active:scale-95 transition-transform`}
+                    onClick={() => handleTagEvent(type)}
+                  >
+                    <span className="text-lg mr-1">{emoji}</span>
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* Recent tags */}
+            {eventTags.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Recent tags</p>
+                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                  {[...eventTags].reverse().slice(0, 10).map((tag, i) => {
+                    const btn = EVENT_BUTTONS.find((b) => b.type === tag.eventType);
+                    return (
+                      <Badge key={i} variant="outline" className="text-xs">
+                        {btn?.emoji} {formatTime(Math.floor(tag.timestampMs / 1000))}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Controls — sticky on mobile so always reachable */}
+        {/* Controls — sticky on mobile */}
         {countdown === null && (
           <div className="sticky bottom-0 -mx-3 sm:mx-0 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 px-3 sm:px-0 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-2 border-t sm:border-0">
             {!isRecording ? (
               <Button
                 size="lg"
                 className="w-full h-14 text-lg bg-red-600 hover:bg-red-700 text-white"
-                disabled={!bothReady}
+                disabled={!canStart}
                 onClick={handleStart}
               >
                 <Circle className="h-5 w-5 mr-2 fill-current" />
@@ -408,9 +575,9 @@ export function RecordingControls({ matchId, onCameraStatusChange }: RecordingCo
           </div>
         )}
 
-        {!bothReady && !isRecording && anyConnected && countdown === null && (
+        {!canStart && !isRecording && anyConnected && countdown === null && (
           <p className="text-xs text-muted-foreground text-center">
-            Waiting for both cameras to connect before recording can start.
+            Waiting for both cameras to be ready before recording can start.
           </p>
         )}
       </CardContent>
