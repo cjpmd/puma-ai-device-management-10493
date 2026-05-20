@@ -7,7 +7,7 @@ import { Rings } from '@/components/ios/Rings';
 import { SectionHeader } from '@/components/ios/SectionHeader';
 import { IOSStatusBar } from '@/components/ios/StatusBar';
 import { T, tType, Wallpapers } from '@/lib/ios-tokens';
-import { useActiveTeam } from '@/hooks/useActiveTeam';
+import { useActiveContext } from '@/contexts/ActiveContextContext';
 import { supabase } from '@/integrations/supabase/client';
 
 interface UltraScreenProps {
@@ -15,7 +15,7 @@ interface UltraScreenProps {
 }
 
 export function UltraScreen({ onTabChange }: UltraScreenProps) {
-  const { activeTeam } = useActiveTeam();
+  const { activeContext } = useActiveContext();
   const navigate = useNavigate();
   const [deviceCount, setDeviceCount] = useState(0);
   const [recentSpeed, setRecentSpeed] = useState<number | null>(null);
@@ -23,18 +23,64 @@ export function UltraScreen({ onTabChange }: UltraScreenProps) {
   const [recentHr, setRecentHr] = useState<number | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
+      // Reset
+      setDeviceCount(0);
+      setRecentSpeed(null);
+      setRecentDistance(null);
+      setRecentHr(null);
+
+      if (!activeContext) return;
+
+      // Resolve player ids in scope
+      let playerIds: string[] = [];
+      if (activeContext.kind === 'team') {
+        const { data: players } = await supabase
+          .from('players')
+          .select('id')
+          .eq('team_id', activeContext.id);
+        playerIds = (players ?? []).map((p: any) => p.id);
+      } else {
+        // club or academy → all teams under the club + direct club players
+        const { data: teams } = await supabase
+          .from('teams')
+          .select('id')
+          .eq('club_id', activeContext.clubId);
+        const teamIds = (teams ?? []).map((t: any) => t.id);
+        const [{ data: teamPlayers }, { data: clubPlayers }] = await Promise.all([
+          teamIds.length
+            ? supabase.from('players').select('id').in('team_id', teamIds)
+            : Promise.resolve({ data: [] as any[] }),
+          supabase.from('players').select('id').eq('club_id', activeContext.clubId),
+        ]);
+        const ids = new Set<string>();
+        for (const p of (teamPlayers ?? [])) ids.add(p.id);
+        for (const p of (clubPlayers ?? [])) ids.add(p.id);
+        playerIds = Array.from(ids);
+      }
+
+      if (cancelled) return;
+
+      if (playerIds.length === 0) {
+        return;
+      }
+
       const { count } = await supabase
         .from('devices')
         .select('id', { count: 'exact', head: true })
-        .eq('status', 'connected');
+        .eq('status', 'connected')
+        .in('assigned_player_id', playerIds);
+      if (cancelled) return;
       setDeviceCount(count || 0);
 
       const { data: bio } = await supabase
         .from('biometric_readings')
         .select('speed, distance, heart_rate, timestamp')
+        .in('player_id', playerIds)
         .order('timestamp', { ascending: false })
         .limit(20);
+      if (cancelled) return;
 
       if (bio && bio.length) {
         const speeds = bio.map(r => Number(r.speed) || 0);
@@ -45,7 +91,8 @@ export function UltraScreen({ onTabChange }: UltraScreenProps) {
         setRecentHr(hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : null);
       }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [activeContext?.kind, activeContext?.id, activeContext?.clubId]);
 
   const sparkSpeed = [4.2, 5.1, 6.8, 5.5, 7.2, 6.3, 8.1, 7.4, 6.9, 7.8];
 
@@ -56,7 +103,7 @@ export function UltraScreen({ onTabChange }: UltraScreenProps) {
       <div style={{ padding: '8px 20px 12px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
         <div>
           <div style={{ ...tType('footnote'), color: T.fg2, marginBottom: 2 }}>
-            {activeTeam?.name || 'Live performance'} · {deviceCount} wearable{deviceCount === 1 ? '' : 's'}
+            {activeContext?.label || 'Live performance'} · {deviceCount} wearable{deviceCount === 1 ? '' : 's'}
           </div>
           <div style={{ ...tType('largeTitle'), color: T.fg }}>Ultra</div>
         </div>
