@@ -1666,10 +1666,12 @@ export type Database = {
       }
       processing_jobs: {
         Row: {
+          analysis_job_id: string | null
           ball_tracking_data: Json | null
           completed_at: string | null
           created_at: string
           divergence_metrics: Json | null
+          error_message: string | null
           event_data: Json | null
           gpu_type: string | null
           heatmaps: Json | null
@@ -1687,10 +1689,12 @@ export type Database = {
           team_metrics: Json | null
         }
         Insert: {
+          analysis_job_id?: string | null
           ball_tracking_data?: Json | null
           completed_at?: string | null
           created_at?: string
           divergence_metrics?: Json | null
+          error_message?: string | null
           event_data?: Json | null
           gpu_type?: string | null
           heatmaps?: Json | null
@@ -1708,10 +1712,12 @@ export type Database = {
           team_metrics?: Json | null
         }
         Update: {
+          analysis_job_id?: string | null
           ball_tracking_data?: Json | null
           completed_at?: string | null
           created_at?: string
           divergence_metrics?: Json | null
+          error_message?: string | null
           event_data?: Json | null
           gpu_type?: string | null
           heatmaps?: Json | null

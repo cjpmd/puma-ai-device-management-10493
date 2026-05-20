@@ -1561,6 +1561,236 @@ class MetricsAggregator:
         }
 
 
+def _post_webhook(url: str, payload: dict):
+    """POST JSON payload to a webhook URL; log but don't raise on failure."""
+    try:
+        resp = requests.post(url, json=payload, timeout=15)
+        print(f"  Webhook {resp.status_code}: {resp.text[:120]}")
+    except Exception as exc:
+        print(f"  ⚠ Webhook POST failed: {exc}")
+
+
+def _download_video(url: str, dest: str, job_input: dict):
+    """
+    Download a video to *dest*.
+    Handles:
+      - Wasabi Wasabi path (no https://) → boto3 S3 download
+      - s3://bucket/key → boto3 S3 download
+      - https:// presigned URL → urllib download
+    """
+    import urllib.request as _urlreq
+
+    if url.startswith("https://") or url.startswith("http://"):
+        print(f"⬇ Downloading via HTTPS: {url[:80]}…")
+        _urlreq.urlretrieve(url, dest)
+        print(f"  ✓ {os.path.getsize(dest) / 1e6:.1f} MB")
+        return
+
+    # Wasabi S3 path
+    s3 = get_s3_client(job_input)
+    bucket = (
+        os.environ.get("WASABI_BUCKET")
+        or job_input.get("output_bucket")
+        or job_input.get("wasabi_bucket")
+    )
+    if not bucket:
+        raise RuntimeError("Cannot determine Wasabi bucket — set WASABI_BUCKET env or pass output_bucket")
+
+    key = url.replace(f"s3://{bucket}/", "").lstrip("/")
+    download_from_wasabi(s3, bucket, key, dest)
+
+
+# ─── Analysis-only pipeline ────────────────────────────────────────────────────
+
+def run_analysis(job_input: dict) -> dict:
+    """
+    Analyse a single video (already stitched panoramic or single-camera).
+    Skips stitching and follow-cam rendering; produces only structured analytics.
+
+    Returns a ProcessingJobResult dict directly — no Wasabi metadata upload
+    required. The result is sent via the analysis-callback webhook and also
+    returned synchronously to RunPod.
+
+    Known limitations (stubbed, not implemented in this sprint):
+      - Pass completion chains: requires ball→player→player chain; field is null.
+      - Formation detection: requires positional clustering at timed intervals.
+      - Player identity across sessions: tracker IDs reset each run; no jersey OCR.
+      - Referee exclusion: referees appear as player tracks (team=None, low distance).
+      - Single-camera half-pitch view: one team's heatmap always off-screen.
+
+    Estimated processing time:
+      90min match at target_fps=5: ~8–12 min on a 1× A4000 GPU.
+      At target_fps=2: ~3–5 min (faster, fewer events detected).
+    """
+    job_id     = job_input.get("job_id")
+    session_id = job_input.get("session_id")
+    video_url  = job_input.get("video_url")
+    target_fps = int(job_input.get("target_fps", 5))
+    webhook_url = job_input.get("webhook_url")
+
+    if not job_id or not video_url:
+        return {
+            "success": False,
+            "job_id": job_id,
+            "error": "run_analysis requires job_id and video_url",
+        }
+
+    print(f"🔬 Analysis job {job_id} | target_fps={target_fps}")
+    start_wall = time.time()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        local_video = os.path.join(tmpdir, "input.mp4")
+
+        print(f"⬇ Downloading video…")
+        _download_video(video_url, local_video, job_input)
+
+        cap = cv2.VideoCapture(local_video)
+        native_fps  = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        frame_w     = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_h     = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration_seconds = total_frames / native_fps if native_fps else 0.0
+
+        # Process every N-th frame to achieve target_fps
+        frame_step = max(1, round(native_fps / target_fps))
+
+        print(f"📐 Video: {frame_w}×{frame_h}, {native_fps:.1f}fps, "
+              f"{duration_seconds/60:.1f}min  →  step={frame_step} "
+              f"(~{native_fps/frame_step:.1f}fps analysed)")
+
+        # Initialise detection and tracking components
+        model           = YOLO("yolov8m.pt")
+        player_tracker  = PlayerTracker()
+        ball_pipeline   = BallTrackingPipeline(fps=native_fps / frame_step)
+
+        ball_positions: list[dict] = []
+        stage_counts   = {"yolo": 0, "motion": 0, "kalman": 0, "none": 0}
+        frame_idx      = 0
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            if frame_idx % frame_step != 0:
+                frame_idx += 1
+                continue
+
+            # ── YOLO inference ──
+            results = model(frame, verbose=False)
+
+            # ── Ball ──
+            ball_dets = parse_detections(results, BALL_CLASSES)
+            yolo_ball = (
+                (ball_dets[0][0], ball_dets[0][1], ball_dets[0][6])
+                if ball_dets else None
+            )
+            ball = ball_pipeline.update(yolo_ball, frame)
+            if ball is not None:
+                bx, by, bconf, stage = ball
+                stage_counts[stage] = stage_counts.get(stage, 0) + 1
+                prev_bp = ball_positions[-1] if ball_positions else None
+                speed = 0.0
+                if prev_bp:
+                    dx = bx - prev_bp["x"]
+                    dy = by - prev_bp["y"]
+                    speed = float(np.sqrt(dx ** 2 + dy ** 2))
+                ball_positions.append({
+                    "frame": frame_idx,
+                    "time": round(frame_idx / native_fps, 2),
+                    "x": round(bx, 1),
+                    "y": round(by, 1),
+                    "speed": round(speed, 1),
+                    "stage": stage,
+                    "confidence": round(bconf, 3),
+                })
+            else:
+                stage_counts["none"] = stage_counts.get("none", 0) + 1
+
+            # ── Players ──
+            person_dets = parse_detections(results, PERSON_CLASSES)
+            player_tracker.update_from_detections(person_dets, frame_idx)
+
+            frame_idx += 1
+
+            if frame_idx % max(1, (total_frames // 20)) == 0:
+                pct = int(frame_idx / total_frames * 100)
+                print(f"  {pct}% ({frame_idx}/{total_frames})")
+
+        cap.release()
+        processed_frames = frame_idx // frame_step
+
+        print(f"✅ Processed {processed_frames} frames  "
+              f"Ball: YOLO={stage_counts['yolo']} Motion={stage_counts['motion']} "
+              f"Kalman={stage_counts['kalman']} Lost={stage_counts['none']}")
+        print(f"👥 Tracked {len(player_tracker.tracks)} player IDs  "
+              f"🎯 {len(ball_positions)} ball detections")
+
+        # ── Event detection, team assignment, metrics ──
+        team_assignment = TeamClassifier.assign_teams(player_tracker.tracks)
+        events = EventDetector.detect(
+            ball_positions=ball_positions,
+            player_tracks=player_tracker.tracks,
+            team_assignment=team_assignment,
+            pano_w=frame_w,
+            pano_h=frame_h,
+            fps=native_fps,
+        )
+        team_metrics, player_metrics = MetricsAggregator.compute(
+            events=events,
+            player_tracks=player_tracker.tracks,
+            team_assignment=team_assignment,
+            ball_positions=ball_positions,
+            pano_w=frame_w,
+            pano_h=frame_h,
+            fps=native_fps,
+        )
+        heatmaps = MetricsAggregator.build_heatmaps(
+            player_tracker.tracks, frame_w, frame_h, grid_w=20, grid_h=12
+        )
+
+        print(f"  ✓ {len(events)} events  {len(team_metrics)} teams  "
+              f"{len(player_metrics)} player metric sets")
+
+        # ── Confidence score ──
+        # Product of: fraction of expected players tracked × fraction of frames with ball
+        players_tracked  = len([t for t in player_tracker.tracks if len(player_tracker.tracks[t]) >= 10])
+        ball_frame_ratio = len(ball_positions) / max(1, processed_frames)
+        confidence_score = round(
+            min(players_tracked / 22, 1.0) * 0.6 + ball_frame_ratio * 0.4, 2
+        )
+
+        wall_time = round(time.time() - start_wall, 1)
+        print(f"🏁 Analysis done in {wall_time}s  confidence={confidence_score}")
+
+        result = {
+            "success": True,
+            "job_id": job_id,
+            "session_id": session_id,
+            # ProcessingJobResult fields consumed by Cinema panels
+            "events": events,           # maps to processing_jobs.event_data.events
+            "player_metrics": player_metrics,
+            "team_stats": team_metrics, # analysis-callback maps this to team_metrics column
+            "heatmaps": heatmaps,
+            "duration_seconds": round(duration_seconds, 1),
+            "processed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "confidence_score": confidence_score,
+            # Not generated in analysis-only mode — follow-cam uses the stitch worker
+            "output_video_path": None,
+            "stitched_video_path": None,
+            # Pass/formation stubs — see docstring for why these are null
+            "formation_home": None,
+            "formation_away": None,
+        }
+
+    # POST to analysis-callback before returning to RunPod
+    # (RunPod also delivers via webhook but this is belt-and-suspenders)
+    if webhook_url:
+        _post_webhook(webhook_url, result)
+
+    return result
+
+
 def _merge_highlight_windows(switch_events: list) -> list:
     """Merge overlapping ±3s windows around switch events."""
     events_sorted = sorted(switch_events, key=lambda e: e.get("speed", 0), reverse=True)[:20]
@@ -1580,6 +1810,26 @@ def _merge_highlight_windows(switch_events: list) -> list:
 
 def handler(job):
     job_input = job["input"]
+    job_type = job_input.get("job_type", "follow_cam")
+
+    if job_type == "analyse":
+        try:
+            return run_analysis(job_input)
+        except Exception as exc:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"run_analysis FAILED:\n{tb}")
+            result = {
+                "success": False,
+                "job_id": job_input.get("job_id"),
+                "session_id": job_input.get("session_id"),
+                "error": str(exc),
+            }
+            if webhook_url := job_input.get("webhook_url"):
+                _post_webhook(webhook_url, result)
+            return result
+
+    # ── follow_cam path (original behaviour) ──
     match_id = job_input["match_id"]
     bucket = os.environ.get("WASABI_BUCKET") or job_input.get("output_bucket")
     config = job_input.get("config", {})
