@@ -11,9 +11,8 @@ type AuditEntry = {
   action: string;
   table_name: string;
   record_id: string;
-  actor_id: string;
+  user_id: string;
   created_at: string;
-  metadata: Record<string, unknown>;
 };
 
 type CoachRecord = {
@@ -122,10 +121,9 @@ export default function Compliance() {
     },
   });
 
-  // Audit log — audit_log has no direct club/team/academy column so full scoping
-  // requires DB-level RLS policies joining actor_id through membership tables.
-  // TODO: implement RLS on audit_log to restrict by org membership.
-  // activeContext?.id is included in the queryKey to bust the cache on context switch.
+  // Audit log — scoped by RLS policy "al_select_academy_members": authenticated
+  // users see their own entries plus entries from co-members of any shared academy.
+  // activeContext?.id in the queryKey busts cache on context switch.
   const { data: auditEntries = [] } = useQuery({
     queryKey: ['audit-log', activeContext?.id, auditFilter, auditTable],
     staleTime: 30_000,
@@ -176,7 +174,7 @@ export default function Compliance() {
   const uniqueTables = [...new Set(auditEntries.map((e) => e.table_name))].sort();
 
   const safeguardingAudit = auditEntries.filter(
-    (e) => e.table_name === 'welfare_log' || (e.metadata as any)?.is_restricted
+    (e) => e.table_name === 'welfare_log'
   );
 
   return (
@@ -294,7 +292,7 @@ export default function Compliance() {
                       {new Date(e.created_at).toLocaleString()}
                     </td>
                     <td className="px-4 py-2 text-slate-900 font-mono text-xs">{e.action}</td>
-                    <td className="px-4 py-2 text-slate-600 font-mono text-xs">{e.actor_id?.slice(0, 8)}…</td>
+                    <td className="px-4 py-2 text-slate-600 font-mono text-xs">{e.user_id?.slice(0, 8)}…</td>
                   </tr>
                 ))}
               </tbody>
@@ -360,7 +358,7 @@ export default function Compliance() {
                     </td>
                     <td className="px-4 py-2 text-slate-900 text-xs font-mono">{e.action}</td>
                     <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.record_id?.slice(0, 8)}…</td>
-                    <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.actor_id?.slice(0, 8)}…</td>
+                    <td className="px-4 py-2 text-slate-400 text-xs font-mono">{e.user_id?.slice(0, 8)}…</td>
                   </tr>
                 ))}
               </tbody>
