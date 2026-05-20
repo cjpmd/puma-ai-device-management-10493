@@ -88,7 +88,7 @@ function AcademyProfileTab() {
     staleTime: 60_000,
     queryFn: async () => {
       const { data } = await sb.from('academies')
-        .select('id, name, fa_registration_number, eppp_category, founded_year, logo_url, head_of_academy_user_id, synced_at')
+        .select('id, name, fa_registration_number, eppp_category, founded_year, logo_url, head_of_academy_user_id, club_website_url, synced_at')
         .eq('id', academyId).maybeSingle();
       return data ?? {};
     },
@@ -123,6 +123,7 @@ function AcademyProfileTab() {
     fa_affiliation_number: settings?.fa_affiliation_number ?? academy?.fa_registration_number ?? '',
     eppp_category: settings?.eppp_category ?? academy?.eppp_category ?? '',
     founded_year: academy?.founded_year ? String(academy.founded_year) : '',
+    club_website_url: academy?.club_website_url ?? '',
     academy_tier: prefs.academy_tier ?? '',
     license_expiry: prefs.license_expiry ?? '',
     address: prefs.address ?? '',
@@ -137,6 +138,7 @@ function AcademyProfileTab() {
       fa_registration_number: merged.fa_affiliation_number || null,
       eppp_category: merged.eppp_category || null,
       founded_year: merged.founded_year ? Number(merged.founded_year) : null,
+      club_website_url: merged.club_website_url || null,
     }).eq('id', academyId);
 
     // 2. Write extras to academy_settings (+ prefs jsonb)
@@ -172,6 +174,7 @@ function AcademyProfileTab() {
         <InputRow label="Founded year" value={merged.founded_year ?? ''} type="number" onChange={(v) => setForm((f) => ({ ...f, founded_year: v }))} />
         <InputRow label="Academy tier" value={merged.academy_tier ?? ''} onChange={(v) => setForm((f) => ({ ...f, academy_tier: v }))} placeholder="1–3" />
         <InputRow label="License expiry" value={merged.license_expiry ?? ''} type="date" onChange={(v) => setForm((f) => ({ ...f, license_expiry: v }))} />
+        <InputRow label="Club website" value={merged.club_website_url ?? ''} onChange={(v) => setForm((f) => ({ ...f, club_website_url: v }))} placeholder="https://yourclub.com" />
       </SectionCard>
       <SectionCard title="Contact">
         <div className="flex items-center gap-4">
