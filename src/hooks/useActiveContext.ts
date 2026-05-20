@@ -69,12 +69,14 @@ export function useActiveContextData(): UseActiveContextReturn {
       .maybeSingle();
     const tier: UserGroupTier = profile?.user_group_tier ?? 'amateur_professional';
 
-    // Academy memberships — only fetched for amateur_professional users
+    // Academy memberships — only fetched for amateur_professional users.
+    // Note: academies has no club_id column; the relationship lives on
+    // clubs.academy_id, so we resolve the owning club via a follow-up query.
     const academyPromise: Promise<{ data: any[] | null }> =
       tier === 'amateur_professional'
         ? sb
             .from('user_academies')
-            .select('academy_id, academies!inner(id, club_id, clubs!inner(id, name))')
+            .select('academy_id, role, academies!inner(id, name)')
             .eq('user_id', user.id)
         : Promise.resolve({ data: [] });
 
@@ -92,16 +94,33 @@ export function useActiveContextData(): UseActiveContextReturn {
 
     const contexts: ActiveContext[] = [];
 
-    // 1. Academy contexts (highest rank — shown first)
-    for (const row of (academyResult.data ?? [])) {
-      const acad = row.academies;
-      if (!acad?.club_id) continue;
-      const clubName: string = acad.clubs?.name ?? '';
+    // 1. Academy contexts from user_academies (highest rank — shown first).
+    // Resolve owning club via clubs.academy_id reverse lookup.
+    const academyRows = academyResult.data ?? [];
+    const academyIds = Array.from(
+      new Set(academyRows.map((r: any) => r.academy_id).filter(Boolean))
+    );
+    const academyClubMap = new Map<string, { clubId: string; clubName: string }>();
+    if (academyIds.length > 0) {
+      const { data: clubsForAcademies } = await sb
+        .from('clubs')
+        .select('id, name, academy_id')
+        .in('academy_id', academyIds);
+      for (const c of (clubsForAcademies ?? [])) {
+        if (c?.academy_id && !academyClubMap.has(c.academy_id)) {
+          academyClubMap.set(c.academy_id, { clubId: c.id, clubName: c.name ?? '' });
+        }
+      }
+    }
+    for (const row of academyRows) {
+      const link = academyClubMap.get(row.academy_id);
+      if (!link) continue; // need a club for downstream scoping
+      const academyName: string = row.academies?.name ?? '';
       contexts.push({
         kind: 'academy',
         id: row.academy_id,
-        clubId: acad.club_id,
-        label: clubName ? `${clubName} Academy` : 'Academy',
+        clubId: link.clubId,
+        label: academyName || (link.clubName ? `${link.clubName} Academy` : 'Academy'),
         userGroupTier: tier,
       });
     }
