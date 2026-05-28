@@ -17,7 +17,6 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8m.pt')"
 RUN python3 -c "import easyocr; easyocr.Reader(['en'], gpu=False, verbose=False)"
 
-COPY gpu-server/handler.py .
-COPY gpu-server/requirements.txt .
+COPY gpu-server/*.py .
 
 CMD ["python3", "-u", "handler.py"]
