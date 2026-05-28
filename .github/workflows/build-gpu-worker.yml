@@ -25,6 +25,8 @@ jobs:
           context: .
           file: gpu-server/Dockerfile
           push: true
-          tags: chrisjpmcdonald/origin-sports-analysis:latest
+          tags: |
+            chrisjpmcdonald/origin-sports-analysis:latest
+            chrisjpmcdonald/origin-sports-analysis:${{ github.sha }}
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
