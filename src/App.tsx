@@ -41,6 +41,7 @@ import TravelEventDetail from "./pages/TravelEventDetail";
 import Squads from "./pages/Squads";
 import Development from "./pages/Development";
 import Coaching from "./pages/Coaching";
+import TestVideoAnalysis from "./pages/TestVideoAnalysis";
 
 const queryClient = new QueryClient();
 
@@ -119,6 +120,9 @@ const AppRoutes = () => {
       <Route path="/travel"          element={<PrivateRoute><TierRoute kind="academy"><AppShell><TravelEvents /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/travel/:id"      element={<PrivateRoute><TierRoute kind="academy"><AppShell><TravelEventDetail /></AppShell></TierRoute></PrivateRoute>} />
       <Route path="/settings"        element={<PrivateRoute><AppShell><Settings /></AppShell></PrivateRoute>} />
+
+      {/* Temporary test route — delete after testing */}
+      <Route path="/test-video-analysis" element={<PrivateRoute><TestVideoAnalysis /></PrivateRoute>} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>
