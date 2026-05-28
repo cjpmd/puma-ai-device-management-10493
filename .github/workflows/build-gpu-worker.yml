@@ -20,9 +20,11 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: gpu-server/Dockerfile
           push: true
           tags: chrisjpmcdonald/origin-sports-analysis:latest
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
