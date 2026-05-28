@@ -83,9 +83,15 @@ export default function TestVideoAnalysis() {
 
       if (fnErr) {
         addLog(`ERROR calling process-video: ${fnErr.message}`);
-        // Show any partial response body for debugging
-        if (fnErr.context) {
-          addLog(`Response body: ${JSON.stringify(fnErr.context)}`);
+        // FunctionsHttpError.context is the raw Response — read its body
+        try {
+          const ctx = (fnErr as any).context;
+          if (ctx && typeof ctx.text === 'function') {
+            const body = await ctx.text();
+            addLog(`Response body: ${body}`);
+          }
+        } catch {
+          // ignore body read failure
         }
         setRunning(false);
         return;
