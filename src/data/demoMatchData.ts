@@ -5,7 +5,7 @@ import broughtyPumasBadge from '@/assets/demo-broughty-pumas-badge.png';
 import dundeeEastBadge from '@/assets/demo-dundee-east-badge.png';
 
 const SAMPLE_VIDEO_URL =
-  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+  'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_1MB.mp4';
 
 // Build ~40 realistic events spread across 90 minutes
 function buildEvents() {
