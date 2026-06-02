@@ -5,10 +5,11 @@ import { supabase } from '@/integrations/supabase/client';
 // This page uses the UUID below as the canonical test job ID.
 const TEST_JOB_UUID = '00000000-0000-0000-0000-000000000001';
 const TEST_SESSION_ID = 'test-session-001';
-const VIDEO_URL =
-  'https://s3.eu-west-1.wasabisys.com/pumaaivideoanalysis/test/Lions%20v%20Kirrie%209v9s%2010-12-2025?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=YGLWRFL2I716872ISIAN%2F20260528%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260528T132345Z&X-Amz-Expires=90000&X-Amz-Signature=6283b341d7fdf969385f87d75f6dbaa39a1d87816e61c1fa62290732d00f4918&X-Amz-SignedHeaders=host';
+const DEFAULT_VIDEO_URL =
+  'https://s3.eu-west-1.wasabisys.com/pumaaivideoanalysis/Lions%20v%20Kirrie%209v9s%2010-12-2025.mp4?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=J5FYTL2888URBI6HJINK%2F20260530%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Date=20260530T125009Z&X-Amz-Expires=327600&X-Amz-Signature=9b5346914d8b726797c9f8ed0b4b9a1ade50caf558031976b15a90865ecbf5b4&X-Amz-SignedHeaders=host';
 
 export default function TestVideoAnalysis() {
+  const [videoUrl, setVideoUrl] = useState(DEFAULT_VIDEO_URL);
   const [log, setLog] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [runpodJobId, setRunpodJobId] = useState<string | null>(null);
@@ -77,7 +78,7 @@ export default function TestVideoAnalysis() {
         body: {
           job_id: TEST_JOB_UUID,
           session_id: TEST_SESSION_ID,
-          video_url: VIDEO_URL,
+          video_url: videoUrl,
         },
       });
 
@@ -160,8 +161,8 @@ export default function TestVideoAnalysis() {
           </p>
         </div>
 
-        {/* Params summary */}
-        <div className="bg-white border rounded-xl p-5 text-sm font-mono space-y-2">
+        {/* Params */}
+        <div className="bg-white border rounded-xl p-5 text-sm font-mono space-y-3">
           <div>
             <span className="text-slate-400">job_id: </span>
             <span className="text-blue-700">{TEST_JOB_UUID}</span>
@@ -170,9 +171,15 @@ export default function TestVideoAnalysis() {
             <span className="text-slate-400">session_id: </span>
             <span className="text-blue-700">{TEST_SESSION_ID}</span>
           </div>
-          <div className="break-all">
-            <span className="text-slate-400">video_url: </span>
-            <span className="text-blue-700 text-xs">{VIDEO_URL}</span>
+          <div className="space-y-1">
+            <label className="text-slate-400 block">video_url:</label>
+            <textarea
+              value={videoUrl}
+              onChange={(e) => setVideoUrl(e.target.value)}
+              disabled={running}
+              rows={3}
+              className="w-full text-xs text-blue-700 border border-slate-200 rounded-lg p-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:opacity-50"
+            />
           </div>
         </div>
 
