@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 COPY gpu-server/requirements.txt .
 
 RUN pip3 install --no-cache-dir "numpy<2.0"
-RUN pip3 install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+RUN pip3 install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu128
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8m.pt')"
