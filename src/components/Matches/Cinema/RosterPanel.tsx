@@ -168,14 +168,14 @@ function SideColumn({
   title: string;
   side: 'home' | 'away';
   rows: RosterRow[];
-  onAdded: () => void | Promise<void>;
+  onAdded: () => void | Promise<unknown>;
   onRemoved: (id: string) => void;
   matchId: string;
   busy: boolean;
   setBusy: (b: boolean) => void;
   isOurSide: boolean;
   canImport: boolean;
-  onImport: () => void | Promise<void>;
+  onImport: () => void | Promise<unknown>;
 }) {
   const [num, setNum] = useState('');
   const [name, setName] = useState('');
