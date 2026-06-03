@@ -24,22 +24,35 @@ export function useTrackLabels(
   playerMetrics?: Record<string, any> | null,
 ) {
   const [mapping, setMapping] = useState<Record<number, TrackLabel>>({});
+  const [canReadPlayerMatchStats, setCanReadPlayerMatchStats] = useState(true);
 
   useEffect(() => {
     if (!matchId || matchId === 'demo') return;
     let cancelled = false;
     (async () => {
-      const [mapRes, statsRes] = await Promise.all([
+      const requests: Promise<any>[] = [
         (supabase as any)
           .from('track_player_mapping')
           .select('track_id, jersey_number, confidence, source, players ( name, squad_number )')
           .eq('match_id', matchId),
-        (supabase as any)
-          .from('player_match_stats')
-          .select('track_id, jersey_number')
-          .eq('match_id', matchId),
-      ]);
+        canReadPlayerMatchStats
+          ? (supabase as any)
+              .from('player_match_stats')
+              .select('track_id, jersey_number')
+              .eq('match_id', matchId)
+          : Promise.resolve({ data: [], error: null }),
+      ];
+
+      const [mapRes, statsRes] = await Promise.all(requests);
       if (cancelled) return;
+
+      if (statsRes?.error) {
+        const errText = `${statsRes.error.code ?? ''} ${statsRes.error.message ?? ''}`.toLowerCase();
+        if (errText.includes('pgrst205') || errText.includes('could not find') || errText.includes('player_match_stats')) {
+          setCanReadPlayerMatchStats(false);
+        }
+      }
+
       const map: Record<number, TrackLabel> = {};
       (statsRes?.data ?? []).forEach((row: any) => {
         if (row.jersey_number != null) {
@@ -72,7 +85,7 @@ export function useTrackLabels(
     return () => {
       cancelled = true;
     };
-  }, [matchId]);
+  }, [canReadPlayerMatchStats, matchId]);
 
   const guessFor = (id: number): { num: number; conf: number } | null => {
     if (!playerMetrics) return null;

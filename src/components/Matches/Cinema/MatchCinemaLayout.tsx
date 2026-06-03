@@ -38,6 +38,7 @@ export function MatchCinemaLayout({
   const [duration, setDuration] = useState(0);
   const [coachTags, setCoachTags] = useState<TimelineEvent[]>([]);
   const [stitchedPath, setStitchedPath] = useState<string | null>(null);
+  const [canPollStitchedPath, setCanPollStitchedPath] = useState(true);
   const [tagsVersion, setTagsVersion] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -87,13 +88,24 @@ export function MatchCinemaLayout({
   // Poll video_footage every 15s for stitched path
   const pollStitched = useCallback(async () => {
     if (!matchId || matchId === 'demo') return;
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from('video_footage')
       .select('stitched_path, processing_status')
       .eq('match_id', matchId)
       .eq('processing_status', 'stitched')
       .limit(1)
       .maybeSingle();
+
+    if (error) {
+      const errText = `${error.code ?? ''} ${error.message ?? ''}`.toLowerCase();
+      // Older environments may not have the optional stitched-video table yet.
+      // Stop polling instead of hammering the API with 404s.
+      if (errText.includes('pgrst205') || errText.includes('could not find') || errText.includes('video_footage')) {
+        setCanPollStitchedPath(false);
+        return;
+      }
+    }
+
     if (data?.stitched_path) {
       setStitchedPath(data.stitched_path);
       return; // stop polling once we have it
@@ -102,12 +114,12 @@ export function MatchCinemaLayout({
   }, [matchId]);
 
   useEffect(() => {
-    if (stitchedPath) return;
+    if (stitchedPath || !canPollStitchedPath) return;
     pollStitched();
     return () => {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
-  }, [pollStitched, stitchedPath]);
+  }, [canPollStitchedPath, pollStitched, stitchedPath]);
 
   return (
     <div className="dark bg-background text-foreground rounded-2xl overflow-hidden border border-border/40 shadow-2xl">
