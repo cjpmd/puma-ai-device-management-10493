@@ -119,8 +119,8 @@ Deno.serve(async (req) => {
     }
 
     // Generate presigned GET URL for Wasabi
-    const accessKey = Deno.env.get("WASABI_ACCESS_KEY")!;
-    const secretKey = Deno.env.get("WASABI_SECRET_KEY")!;
+    const accessKey = Deno.env.get("WASABI_ACCESS_KEY_ID") || Deno.env.get("WASABI_ACCESS_KEY")!;
+    const secretKey = Deno.env.get("WASABI_SECRET_ACCESS_KEY") || Deno.env.get("WASABI_SECRET_KEY")!;
     const bucket = Deno.env.get("WASABI_BUCKET")!;
     const region = (Deno.env.get("WASABI_REGION") || "us-east-1").trim();
     let endpoint = (Deno.env.get("WASABI_ENDPOINT") || `https://s3.${region}.wasabisys.com`).trim();
