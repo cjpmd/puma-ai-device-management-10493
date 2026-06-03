@@ -20,7 +20,6 @@ import {
   Map,
 } from 'lucide-react';
 import { useEventThumbnails } from './useEventThumbnails';
-import { supabase } from '@/integrations/supabase/client';
 import { useTrackLabels } from './useTrackLabels';
 import type { HeatmapData } from '@/types/video-analysis';
 
