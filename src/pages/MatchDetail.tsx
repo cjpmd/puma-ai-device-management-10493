@@ -147,7 +147,7 @@ const MatchDetail = () => {
         )}
 
         {/* Cinema-mode video + analytics (Veo-style) */}
-        {latestJob?.status === 'complete' && (
+        {(latestJob?.status === 'complete' || latestJob?.status === 'completed') && (
           <MatchCinemaLayout matchId={id!} match={match} job={latestJob} />
         )}
 
