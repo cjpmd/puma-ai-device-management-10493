@@ -71,8 +71,9 @@ const formatTime = (t: number) => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
-export function ClipsPanel({ events, videoUrl, onSeek }: ClipsPanelProps) {
+export function ClipsPanel({ events, videoUrl, onSeek, matchId }: ClipsPanelProps) {
   const [filter, setFilter] = useState<string>('all');
+  const { labelFor } = useTrackLabels(matchId);
 
   const filtered = useMemo(() => {
     const preset = FILTER_PRESETS.find((p) => p.key === filter) || FILTER_PRESETS[0];
@@ -154,7 +155,7 @@ export function ClipsPanel({ events, videoUrl, onSeek }: ClipsPanelProps) {
                   )}
                   {ev.player_track_id !== undefined && (
                     <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
-                      #{ev.player_track_id}
+                      {labelFor(ev.player_track_id)}
                     </Badge>
                   )}
                   {ev.team && (
