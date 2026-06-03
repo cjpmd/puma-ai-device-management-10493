@@ -53,7 +53,10 @@ const MatchDetail = () => {
 
   const handleTriggerProcessing = async (config?: ProcessingConfig) => {
     try {
-      const res = await supabase.functions.invoke('trigger-processing', {
+      // If both fresh uploads are present, run the full pipeline.
+      // Otherwise, re-run analysis against the previous job's source video.
+      const fn = bothUploaded ? 'trigger-processing' : 'rerun-analysis';
+      const res = await supabase.functions.invoke(fn, {
         body: { match_id: id, config },
       });
       if (res.error) throw new Error(res.error.message);

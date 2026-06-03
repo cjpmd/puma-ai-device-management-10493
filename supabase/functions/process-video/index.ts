@@ -83,6 +83,7 @@ Deno.serve(async (req) => {
       .update({
         status: "running",
         started_at: new Date().toISOString(),
+        source_video_path: sourceVideoUrl,
       })
       .eq("id", job_id);
 
