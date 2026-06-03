@@ -68,6 +68,8 @@ Deno.serve(async (req) => {
     const runpodApiKey = Deno.env.get("RUNPOD_API_KEY");
     const runpodEndpointId = Deno.env.get("RUNPOD_ANALYSIS_ENDPOINT_ID");
 
+    console.log(`process-video: endpointId="${runpodEndpointId}" hasApiKey=${!!runpodApiKey}`);
+
     if (!runpodApiKey || !runpodEndpointId) {
       return new Response(
         JSON.stringify({ error: "RUNPOD_ANALYSIS_ENDPOINT_ID not configured" }),
@@ -116,6 +118,7 @@ Deno.serve(async (req) => {
     );
 
     const runpodData = await runpodRes.json();
+    console.log(`process-video: RunPod status=${runpodRes.status} body=${JSON.stringify(runpodData)}`);
 
     if (!runpodRes.ok) {
       await adminClient
