@@ -6,7 +6,10 @@ export interface TrackLabel {
   squad_number?: number;
   confidence?: number;
   from_ocr?: boolean;
+  confirmed?: boolean;
 }
+
+const CONFIDENCE_THRESHOLD = 2.5;
 
 /**
  * Hook that resolves analysis track_ids → real player labels
@@ -37,15 +40,28 @@ export function useTrackLabels(matchId: string | undefined) {
       const map: Record<number, TrackLabel> = {};
       (statsRes?.data ?? []).forEach((row: any) => {
         if (row.jersey_number != null) {
-          map[row.track_id] = { squad_number: row.jersey_number, from_ocr: true };
+          // player_match_stats only contains confirmed jerseys (callback drops guesses),
+          // so treat these as confirmed.
+          map[row.track_id] = {
+            squad_number: row.jersey_number,
+            from_ocr: true,
+            confirmed: true,
+          };
         }
       });
       (mapRes?.data ?? []).forEach((row: any) => {
+        const linked = !!row.players?.name;
+        const conf = row.confidence ?? 0;
+        // Roster-linked rows are always trusted. OCR-only rows must clear the
+        // confidence bar before we show a number to the user.
+        const confirmed = linked || conf >= CONFIDENCE_THRESHOLD;
+        if (!confirmed) return;
         map[row.track_id] = {
           name: row.players?.name,
           squad_number: row.players?.squad_number ?? row.jersey_number ?? undefined,
           confidence: row.confidence ?? undefined,
-          from_ocr: !row.players?.name,
+          from_ocr: !linked,
+          confirmed: true,
         };
       });
       setMapping(map);
@@ -57,13 +73,13 @@ export function useTrackLabels(matchId: string | undefined) {
 
   const labelFor = (id: number) => {
     const m = mapping[id];
-    if (m?.squad_number) return `#${m.squad_number}`;
+    if (m?.confirmed && m.squad_number) return `#${m.squad_number}`;
     return `T${id}`;
   };
   const nameFor = (id: number) => {
     const m = mapping[id];
     if (m?.name) return m.name;
-    if (m?.squad_number) return `Unknown #${m.squad_number}`;
+    if (m?.confirmed && m.squad_number) return `Unknown #${m.squad_number}`;
     return `Track ${id}`;
   };
 

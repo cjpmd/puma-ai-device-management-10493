@@ -172,6 +172,8 @@ Deno.serve(async (req) => {
           touches_pass:           pm.touches_pass ?? null,
           touches_shot:           pm.touches_shot ?? null,
           touches_dribble:        pm.touches_dribble ?? null,
+          // Only canonical confirmed jersey numbers — guesses live in
+          // jersey_number_guess on the raw output and shouldn't pollute stats.
           jersey_number:          pm.jersey_number ?? null,
           passes_attempted:       pm.passes_attempted ?? null,
           passes_completed_count: pm.passes_completed_count ?? null,
@@ -232,6 +234,9 @@ Deno.serve(async (req) => {
         for (const [trackIdStr, pm] of Object.entries(playerMetrics)) {
           const jersey = (pm as any).jersey_number;
           if (jersey == null) continue;
+          // Skip low-confidence OCR — keeps roster mapping clean.
+          const conf = (pm as any).jersey_confidence ?? 0;
+          if (conf < 2.5) continue;
           const team = (pm as any).team as string | null | undefined;
           const side = team ? teamToSide[team] : null;
           const playerId = side ? rosterBySide[side].get(Number(jersey)) ?? null : null;
