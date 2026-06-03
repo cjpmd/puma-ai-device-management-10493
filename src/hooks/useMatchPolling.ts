@@ -59,18 +59,16 @@ export function useMatchPolling(matchId?: string, clubId?: string, teamId?: stri
 
   const fetchMatchDetail = useCallback(async () => {
     if (!matchId) return;
-    const [matchRes, videosRes, jobsRes] = await Promise.all([
-      supabase
-        .from('matches')
-        .select('*, teams(logo_url), clubs(logo_url)')
-        .eq('id', matchId)
-        .single(),
-      supabase.from('match_videos').select('*').eq('match_id', matchId),
-      supabase.from('processing_jobs').select('*').eq('match_id', matchId).order('created_at', { ascending: false }),
-    ]);
+    // Fetch the match row first and unblock the UI as soon as it resolves;
+    // videos + jobs continue loading in the background so the page doesn't
+    // sit on a blank "Loading…" screen waiting on slow processing_jobs.
+    const matchRes = await supabase
+      .from('matches')
+      .select('*, teams(logo_url), clubs(logo_url)')
+      .eq('id', matchId)
+      .single();
     if (matchRes.data) {
       const raw: any = matchRes.data;
-      // The team owned by the user gets the team/club badge; opposition stays blank.
       const ownBadge = raw.teams?.logo_url || raw.clubs?.logo_url || null;
       const merged: Match = {
         ...raw,
@@ -79,9 +77,14 @@ export function useMatchPolling(matchId?: string, clubId?: string, teamId?: stri
       };
       setMatch(merged);
     }
+    setLoading(false);
+
+    const [videosRes, jobsRes] = await Promise.all([
+      supabase.from('match_videos').select('*').eq('match_id', matchId),
+      supabase.from('processing_jobs').select('*').eq('match_id', matchId).order('created_at', { ascending: false }),
+    ]);
     if (videosRes.data) setVideos(videosRes.data as MatchVideo[]);
     if (jobsRes.data) setJobs(jobsRes.data as ProcessingJob[]);
-    setLoading(false);
   }, [matchId]);
 
   useEffect(() => {

@@ -1,30 +1,49 @@
-# Plan
+# Fix blank/loading page + video signing
 
-## What I’ll fix
-1. **Auto-load the match video when it exists** so the cinema player doesn’t open in a half-ready state with a separate hidden/manual load step.
-2. **Block or hide playback controls until the video element has a real source and is ready** so users can’t click transport controls against an unloaded player shell.
-3. **Add explicit media load/play error handling** so failed `play()` or bad media sources show a visible message instead of silently doing nothing.
-4. **Re-verify the cinema controls against the loaded player state** so Play/Pause, seek, skip, mute, speed, and fullscreen only activate when the video is actually ready.
+## What's actually happening
 
-## Why this is the likely issue
-- The match page is still rendering the cinema timeline and control surface even when the main video area is showing **Load Match Video**.
-- That means the user can interact with a player UI before the underlying `<video>` has been loaded.
-- The previous bubbling fix likely solved one problem, but only **after** a real video element is ready to play.
+The page is **not** crashing — when I navigated to `/matches/bd76f2a1-…`, it took ~4s of "Loading…" before fully rendering (slowest query: `processing_jobs` 4s, `get-output-url` 4s). The page then showed the match, all panels, and the cinema player with **"Video source not supported by this browser"**.
 
-## Files to update
-- `src/components/Matches/Cinema/CinemaVideoPlayer.tsx`
-- `src/components/Matches/Cinema/VeoVideoControls.tsx`
-- `src/components/Matches/Cinema/MatchCinemaLayout.tsx`
+So there are two real issues:
 
-## Technical details
-- Trigger `loadVideo()` automatically when `outputVideoPath` or `stitchedVideoPath` is present.
-- Track media readiness with native video events like `loadedmetadata`, `canplay`, `play`, `pause`, and `error`.
-- Use the `play()` promise result to catch and surface `NotAllowedError`, unsupported-source, or other media failures.
-- Pass a `ready/loaded` state into `VeoVideoControls` so controls can be disabled or hidden until the video is actually playable.
-- Keep the previous click-bubbling protection in place.
+### 1. Long "Loading…" feels like a blank page
 
-## Validation
-- Confirm the match opens with the video loaded automatically when a URL is available.
-- Confirm Play/Pause advances time and toggles icon state.
-- Confirm skip, seek bar, event-jump, mute, speed, and fullscreen work only after readiness.
-- Confirm a failed media source produces a visible error instead of a dead play button.
+`MatchDetail.tsx` blocks the entire page behind `if (loading) return <Loading…>`. `useMatchPolling.fetchMatchDetail` does `Promise.all` of match + match_videos + processing_jobs and only flips `loading=false` when all three resolve. `processing_jobs` for this match consistently takes ~4s.
+
+Fix: stop blocking the whole page on `processing_jobs`. Render the match shell as soon as the match row is loaded, and let `ProcessingStatus` / `MatchCinemaLayout` render their own loading state when `jobs` is still empty.
+
+### 2. Video says "source not supported" → bad presigned URL
+
+`processing_jobs.output_video_path` is the original Wasabi URL:
+
+```
+https://s3.eu-west-1.wasabisys.com/pumaaivideoanalysis/Lions%20v%20Kirrie%209v9s%2010-12-2025.mp4?...
+```
+
+— region **eu-west-1**, key has **spaces**.
+
+`supabase/functions/get-output-url/index.ts` re-extracts the key and re-signs, but:
+
+- It rebuilds the host from `WASABI_REGION` (default `us-east-1`) → wrong host for objects in `eu-west-1`. The currently configured secret almost certainly doesn't match this object's region.
+- After `decodeURIComponent`, `storagePath` becomes `Lions v Kirrie 9v9s 10-12-2025.mp4` (raw spaces). It's then dropped straight into both the canonical request (`/${bucket}/${storagePath}`) and the final URL — spaces are never re-encoded. Wasabi will reject the signature and/or the URL is malformed, which the browser surfaces as "source not supported".
+
+### Fix plan
+
+**A. Edge function `get-output-url`**
+
+1. If the stored value is already a fully-qualified Wasabi URL **and not expired**, return it as-is instead of re-signing (it was created by the GPU worker with the correct region/key and a long expiry — the example expires in 2027).
+2. If we *do* need to re-sign, derive the region and host from the original URL (parse `s3.<region>.wasabisys.com`) instead of relying on the `WASABI_REGION` env var.
+3. URL-encode each path segment when building both the canonical request and the final URL (`segments.map(encodeURIComponent).join('/')`), so keys with spaces sign correctly.
+
+**B. Frontend loading**
+
+1. In `useMatchPolling.fetchMatchDetail`, set `loading=false` as soon as the `match` row resolves; let videos/jobs continue in the background.
+2. Make `MatchDetail.tsx` only short-circuit on `!match` (not on missing jobs). `ProcessingStatus` and `MatchCinemaLayout` already handle the no-job case.
+
+### Files to edit
+
+- `supabase/functions/get-output-url/index.ts`
+- `src/hooks/useMatchPolling.ts`
+- `src/pages/MatchDetail.tsx`
+
+No schema/RLS changes needed — the permissions you amended are working (all REST queries return 200).
