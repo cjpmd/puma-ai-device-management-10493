@@ -1877,6 +1877,108 @@ def run_analysis(job_input: dict) -> dict:
 
         print(f"  ✓ Jersey OCR: {len(jersey_identities)} players identified")
 
+        # ── Filter fragment tracks down to plausible real players ──────────
+        # ByteTrack on grassroots panoramic footage routinely splits one
+        # person into hundreds of short tracks. Without this gate, the UI
+        # ends up showing thousands of "players".
+        raw_track_count = len(player_metrics)
+        MIN_FRAMES_ON_PITCH = max(30, int(native_fps * 8))  # ≥8s of presence
+        MIN_DISTANCE_M = 5.0
+
+        def _is_real_player(pm: dict) -> bool:
+            tid = pm.get("track_id")
+            if tid is None or tid in referee_track_ids:
+                return False
+            if pm.get("team") not in ("A", "B"):
+                return False
+            positions = player_tracker.tracks.get(tid, [])
+            if len(positions) < MIN_FRAMES_ON_PITCH:
+                return False
+            if (pm.get("distance_m") or 0) < MIN_DISTANCE_M:
+                return False
+            return True
+
+        player_metrics = {k: v for k, v in player_metrics.items() if _is_real_player(v)}
+
+        # ── Dedupe fragments by (team, confirmed jersey_number) ───────────
+        # Keep the canonical track (longest minutes_played) and merge
+        # cumulative metrics from the rest, then drop the fragments.
+        ADDITIVE_KEYS = (
+            "distance_m", "sprints", "passes", "passes_completed",
+            "passes_attempted", "passes_completed_count", "passes_forward",
+            "passes_sideways", "passes_back", "shots", "tackles",
+            "touches_total", "touches_receive", "touches_control",
+            "touches_pass", "touches_shot", "touches_dribble",
+        )
+        groups: dict[tuple[str, int], list[str]] = {}
+        for k, pm in player_metrics.items():
+            jn = pm.get("jersey_number")
+            team = pm.get("team")
+            if jn is None or team is None:
+                continue
+            groups.setdefault((team, int(jn)), []).append(k)
+
+        fragments_merged = 0
+        canonical_remap: dict[int, int] = {}  # fragment_tid → canonical_tid
+        for (_team, _jn), keys in groups.items():
+            if len(keys) <= 1:
+                continue
+            keys.sort(key=lambda k: player_metrics[k].get("minutes_played") or 0, reverse=True)
+            canonical_key = keys[0]
+            canonical_pm = player_metrics[canonical_key]
+            for frag_key in keys[1:]:
+                frag_pm = player_metrics[frag_key]
+                for ak in ADDITIVE_KEYS:
+                    a = canonical_pm.get(ak) or 0
+                    b = frag_pm.get(ak) or 0
+                    canonical_pm[ak] = (a + b) if isinstance(a, (int, float)) and isinstance(b, (int, float)) else a
+                # Top speed = max
+                canonical_pm["top_speed_kmh"] = max(
+                    canonical_pm.get("top_speed_kmh") or 0,
+                    frag_pm.get("top_speed_kmh") or 0,
+                )
+                canonical_remap[frag_pm.get("track_id")] = canonical_pm.get("track_id")
+                fragments_merged += 1
+            # Recompute pass_accuracy + contribution_score for canonical
+            if canonical_pm.get("passes"):
+                canonical_pm["pass_success_pct"] = round(
+                    100 * (canonical_pm.get("passes_completed") or 0) / canonical_pm["passes"], 1
+                )
+            canonical_pm["contribution_score"] = round(
+                (canonical_pm.get("passes_completed") or 0) * 1.0
+                + (canonical_pm.get("shots") or 0) * 3.0
+                + (canonical_pm.get("tackles") or 0) * 2.0
+                + (canonical_pm.get("xg") or 0) * 10.0,
+                2,
+            )
+        # Remove fragments from player_metrics
+        for frag_tid in canonical_remap:
+            player_metrics.pop(str(frag_tid), None)
+
+        # ── Hard cap: keep at most top 30 by minutes_played (22 + subs) ───
+        MAX_PLAYERS = 30
+        if len(player_metrics) > MAX_PLAYERS:
+            kept = sorted(
+                player_metrics.items(),
+                key=lambda kv: kv[1].get("minutes_played") or 0,
+                reverse=True,
+            )[:MAX_PLAYERS]
+            player_metrics = dict(kept)
+
+        # Rewrite events: drop player_track_id for any track that didn't survive.
+        surviving_tids = {int(k) for k in player_metrics.keys() if str(k).isdigit()}
+        for ev in events:
+            tid = ev.get("player_track_id")
+            if tid is None:
+                continue
+            if tid in canonical_remap and canonical_remap[tid] in surviving_tids:
+                ev["player_track_id"] = canonical_remap[tid]
+            elif tid not in surviving_tids:
+                ev["player_track_id"] = None
+
+        print(f"  ✓ Players: {len(player_metrics)} real (from {raw_track_count} raw tracks, "
+              f"{fragments_merged} fragments merged)")
+
         # ── Merge touch + pass totals into team_metrics ──
         for team_id, tm in team_metrics.items():
             tm.update(touch_tracker.team_touch_summary(team_id))
