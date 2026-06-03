@@ -187,13 +187,17 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
           }}
           className="w-full h-full object-contain bg-black"
         />
-        <VeoVideoControls
-          videoEl={videoRef.current}
-          containerEl={containerRef.current}
-          events={events}
-          currentTime={currentTime}
-          duration={duration}
-        />
+        {/* Stop clicks inside the controls from bubbling to the <video>
+            onClick handler, which would immediately toggle play back off. */}
+        <div onClick={(e) => e.stopPropagation()}>
+          <VeoVideoControls
+            videoEl={videoRef.current}
+            containerEl={containerRef.current}
+            events={events}
+            currentTime={currentTime}
+            duration={duration}
+          />
+        </div>
 
         {/* Clip extraction toolbar — visible on hover */}
         <div className="absolute bottom-14 left-1/2 -translate-x-1/2 opacity-0 group-hover/player:opacity-100 transition-opacity flex items-center gap-2 bg-black/80 backdrop-blur-sm rounded-full px-3 py-1.5">
