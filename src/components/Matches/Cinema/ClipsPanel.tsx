@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Film, Play, Sparkles } from 'lucide-react';
 import { useEventThumbnails } from './useEventThumbnails';
+import { useTrackLabels } from './useTrackLabels';
 
 interface MatchEvent {
   time: number;
@@ -17,6 +18,7 @@ interface ClipsPanelProps {
   events: MatchEvent[];
   videoUrl: string | null;
   onSeek: (time: number) => void;
+  matchId?: string;
 }
 
 const isGoal = (e: MatchEvent) => e.type === 'goal' || e.outcome === 'goal';
