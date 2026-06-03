@@ -96,15 +96,10 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
       if (!path) return;
       setLoading(true);
       try {
-        // If the stored path is already a fully-qualified URL (e.g. Wasabi
-        // presigned URL from a manual test), use it directly.
-        if (/^https?:\/\//i.test(path)) {
-          setVideoUrl(path);
-          onUrlReady?.(path);
-          return;
-        }
+        // Always re-sign through the edge function so we get a fresh
+        // presigned URL — previously stored URLs may have expired.
         const { data, error } = await supabase.functions.invoke('get-output-url', {
-          body: { match_id: matchId, path, file_type: 'video' },
+          body: { match_id: matchId, file_type: 'video' },
         });
         if (error) throw new Error(error.message);
         if (!data?.url) throw new Error('No URL returned');
