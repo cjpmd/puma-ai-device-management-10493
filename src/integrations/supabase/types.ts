@@ -630,6 +630,66 @@ export type Database = {
         }
         Relationships: []
       }
+      match_event_tags: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          is_ground_truth: boolean
+          match_id: string
+          notes: string | null
+          player_id: string | null
+          tagged_by: string | null
+          team: string | null
+          timestamp_ms: number
+          track_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          is_ground_truth?: boolean
+          match_id: string
+          notes?: string | null
+          player_id?: string | null
+          tagged_by?: string | null
+          team?: string | null
+          timestamp_ms: number
+          track_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          is_ground_truth?: boolean
+          match_id?: string
+          notes?: string | null
+          player_id?: string | null
+          tagged_by?: string | null
+          team?: string | null
+          timestamp_ms?: number
+          track_id?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_event_tags_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "match_event_tags_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       match_insights: {
         Row: {
           coaching_focus: Json | null
