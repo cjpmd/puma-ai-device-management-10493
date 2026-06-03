@@ -1673,6 +1673,20 @@ def run_analysis(job_input: dict) -> dict:
         from jersey_ocr import JerseyNumberTracker
         jersey_tracker   = JerseyNumberTracker()
 
+        # Optional rosters (passed in from app via process-video / job input).
+        # Shape: {"home": [7, 9, 10], "away": [1, 4, 11]}. Used to snap noisy
+        # OCR reads to the nearest legal jersey number.
+        rosters_in = job_input.get("rosters") or {}
+        home_roster = set(int(n) for n in (rosters_in.get("home") or []))
+        away_roster = set(int(n) for n in (rosters_in.get("away") or []))
+        if home_roster or away_roster:
+            # Team A/B mapping to home/away isn't fixed at this point, so seed
+            # both labels with the union; per-side enforcement happens after
+            # team_assignment below.
+            union = home_roster | away_roster
+            jersey_tracker.set_rosters({"A": union, "B": union})
+            print(f"  📋 Roster snap enabled: home={sorted(home_roster)} away={sorted(away_roster)}")
+
         ball_positions: list[dict] = []
         stage_counts   = {"yolo": 0, "motion": 0, "kalman": 0, "none": 0}
         frame_idx      = 0
@@ -1737,7 +1751,7 @@ def run_analysis(job_input: dict) -> dict:
                     for det in person_dets:
                         cx, cy, x1, y1, x2, y2 = det[0], det[1], det[2], det[3], det[4], det[5]
                         if abs(cx - tx) < 20 and abs(cy - ty) < 20:
-                            jersey_tracker.update(frame, tid, (x1, y1, x2, y2))
+                            jersey_tracker.update(frame, tid, (x1, y1, x2, y2), team=None)
                             break
 
             # ── Touch detection ──

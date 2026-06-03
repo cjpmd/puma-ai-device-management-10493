@@ -11,6 +11,7 @@ import { PassNetworkPanel } from './PassNetworkPanel';
 import { MatchTimelineStrip } from './MatchTimelineStrip';
 import { TaggingPanel } from './TaggingPanel';
 import { AccuracyPanel } from './AccuracyPanel';
+import { RosterPanel } from './RosterPanel';
 import { supabase } from '@/integrations/supabase/client';
 import type { TimelineEvent } from '@/types/video-analysis';
 import { useCoachTagStats } from './useCoachTagStats';
@@ -178,6 +179,9 @@ export function MatchCinemaLayout({
             <TaggingPanel matchId={matchId} currentTime={currentTime} onTagsChanged={() => setTagsVersion((v) => v + 1)} />
           )}
           {active === 'accuracy' && <AccuracyPanel matchId={matchId} job={job} />}
+          {active === 'roster' && (
+            <RosterPanel matchId={matchId} homeName={match?.home_team} awayName={match?.away_team} />
+          )}
         </div>
       </div>
     </div>
