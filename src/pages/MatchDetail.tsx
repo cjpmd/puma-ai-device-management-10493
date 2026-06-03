@@ -23,6 +23,15 @@ const MatchDetail = () => {
   const [devOpen, setDevOpen] = useState(false);
   const [recordedAwaitingUpload, setRecordedAwaitingUpload] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
   const latestJob = jobs[0] || null;
+  const latestCompletedJob = jobs.find((job) => job.status === 'complete' || job.status === 'completed') || null;
+  const latestPlayableJob = jobs.find(
+    (job) => (job.status === 'complete' || job.status === 'completed') && !!job.output_video_path,
+  ) || null;
+  const latestOutputJob = jobs.find(
+    (job) =>
+      (job.status === 'complete' || job.status === 'completed') &&
+      (!!job.output_video_path || !!job.output_highlights_path || !!job.output_metadata_path),
+  ) || null;
 
   const leftVideo = videos.find((v) => v.camera_side === 'left');
   const rightVideo = videos.find((v) => v.camera_side === 'right');
@@ -135,7 +144,7 @@ const MatchDetail = () => {
         <ProcessingStatus job={latestJob} />
 
         {/* Empty-state hint when no processed video yet */}
-        {!latestJob && (
+        {!latestCompletedJob && (
           <Card className="border-primary/30 bg-primary/5">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="flex-1 text-sm">
@@ -150,12 +159,12 @@ const MatchDetail = () => {
         )}
 
         {/* Cinema-mode video + analytics (Veo-style) */}
-        {(latestJob?.status === 'complete' || latestJob?.status === 'completed') && (
-          <MatchCinemaLayout matchId={id!} match={match} job={latestJob} />
+        {latestPlayableJob && (
+          <MatchCinemaLayout matchId={id!} match={match} job={latestPlayableJob} />
         )}
 
         {/* Outputs (downloads) */}
-        <MatchOutputViewer matchId={id!} matchTitle={match.title} job={latestJob} />
+        <MatchOutputViewer matchId={id!} matchTitle={match.title} job={latestOutputJob} />
 
         {/* Developer Controls (collapsible) */}
         <Collapsible open={devOpen} onOpenChange={setDevOpen}>
