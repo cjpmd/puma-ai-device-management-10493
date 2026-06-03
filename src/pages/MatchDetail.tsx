@@ -165,7 +165,7 @@ const MatchDetail = () => {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="flex flex-wrap gap-2 pt-0">
-                <Button variant="outline" size="sm" className="h-11" onClick={() => handleTriggerProcessing()} disabled={!bothUploaded}>
+                <Button variant="outline" size="sm" className="h-11" onClick={() => handleTriggerProcessing()} disabled={!bothUploaded && !latestJob}>
                   <RefreshCw className="h-4 w-4 mr-1" /> Re-trigger Processing
                 </Button>
                 <Button variant="outline" size="sm" className="h-11" onClick={handleMarkFailed}>
