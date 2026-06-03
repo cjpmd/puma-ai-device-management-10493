@@ -136,23 +136,23 @@ export function PlayerSpotlightPanel({
   videoUrl,
   onSeek,
 }: PlayerSpotlightPanelProps) {
-  const { mapping, labelFor, nameFor } = useTrackLabels(matchId);
+  const { mapping, labelFor, nameFor, isIdentified } = useTrackLabels(matchId, playerMetrics);
   const [sort, setSort] = useState<SortMode>('contribution');
   const [showHeatmap, setShowHeatmap] = useState(false);
 
-  // All track IDs that appear in events
+  // Prefer the GPU-gated playerMetrics set (≤30 real players).
+  // Only fall back to event-derived IDs when metrics are missing
+  // (demo / legacy jobs).
   const trackIds = useMemo(() => {
+    if (playerMetrics && Object.keys(playerMetrics).length > 0) {
+      return Object.keys(playerMetrics)
+        .map((k) => Number(k))
+        .filter((n) => !Number.isNaN(n));
+    }
     const set = new Set<number>();
     events.forEach((e) => {
       if (typeof e.player_track_id === 'number') set.add(e.player_track_id);
     });
-    // also include any ids in playerMetrics that aren't in events
-    if (playerMetrics) {
-      Object.keys(playerMetrics).forEach((k) => {
-        const n = Number(k);
-        if (!isNaN(n)) set.add(n);
-      });
-    }
     return Array.from(set);
   }, [events, playerMetrics]);
 
@@ -221,7 +221,7 @@ export function PlayerSpotlightPanel({
           </h2>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="text-xs">
-              {trackIds.filter((id) => mapping[id]?.confirmed).length} identified · {trackIds.length} tracked
+              {trackIds.filter((id) => isIdentified(id)).length} identified · {trackIds.length} tracked
             </Badge>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
