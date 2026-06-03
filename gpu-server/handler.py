@@ -1786,6 +1786,15 @@ def run_analysis(job_input: dict) -> dict:
         rosters_in = job_input.get("rosters") or {}
         home_roster = set(int(n) for n in (rosters_in.get("home") or []))
         away_roster = set(int(n) for n in (rosters_in.get("away") or []))
+        team_colors_in = job_input.get("team_colors") or {}
+        print(f"  🎨 Team colours: home={team_colors_in.get('home')} away={team_colors_in.get('away')}")
+
+        # Per-track HSV samples gathered during the tracking loop and used by
+        # TeamClassifier.assign_teams_by_color to map each track to home/away.
+        track_hsv_samples: dict[int, list[tuple[float, float, float]]] = {}
+        HSV_SAMPLE_EVERY_N = 30
+        hsv_sample_counts: dict[int, int] = {}
+
         if home_roster or away_roster:
             # Team A/B mapping to home/away isn't fixed at this point, so seed
             # both labels with the union; per-side enforcement happens after
@@ -1859,6 +1868,13 @@ def run_analysis(job_input: dict) -> dict:
                         cx, cy, x1, y1, x2, y2 = det[0], det[1], det[2], det[3], det[4], det[5]
                         if abs(cx - tx) < 20 and abs(cy - ty) < 20:
                             jersey_tracker.update(frame, tid, (x1, y1, x2, y2), team=None)
+                            # Sample torso HSV every Nth frame this track is seen
+                            c = hsv_sample_counts.get(tid, 0)
+                            if c % HSV_SAMPLE_EVERY_N == 0:
+                                hsv = _sample_torso_hsv(frame, (x1, y1, x2, y2))
+                                if hsv is not None:
+                                    track_hsv_samples.setdefault(tid, []).append(hsv)
+                            hsv_sample_counts[tid] = c + 1
                             break
 
             # ── Touch detection ──
@@ -1901,7 +1917,11 @@ def run_analysis(job_input: dict) -> dict:
               f"🎯 {len(ball_positions)} ball detections")
 
         # ── Event detection, team assignment, metrics ──
-        team_assignment = TeamClassifier.assign_teams(player_tracker.tracks)
+        team_assignment = TeamClassifier.assign_teams_by_color(
+            hsv_samples=track_hsv_samples,
+            tracks=player_tracker.tracks,
+            team_colors=team_colors_in,
+        )
 
         # Back-fill team onto touches and passes now that assignment is known
         touch_tracker.assign_teams(team_assignment)
