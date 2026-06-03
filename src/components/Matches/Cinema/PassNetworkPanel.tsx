@@ -93,7 +93,15 @@ interface TeamNetworkProps {
 }
 
 function TeamNetwork({ network, highlighted, onNodeClick }: TeamNetworkProps) {
-  const { nodes, edges } = network;
+  // Hide phantom nodes from fragmented tracks: keep nodes that are either
+  // identified by jersey number OR have meaningful pass involvement.
+  const nodes = network.nodes.filter(
+    (n) => n.jersey_number != null || n.pass_count >= 3,
+  );
+  const visibleIds = new Set(nodes.map((n) => n.track_id));
+  const edges = network.edges.filter(
+    (e) => visibleIds.has(e.from) && visibleIds.has(e.to),
+  );
 
   if (nodes.length === 0) {
     return (

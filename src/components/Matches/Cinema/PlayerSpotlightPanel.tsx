@@ -220,7 +220,9 @@ export function PlayerSpotlightPanel({
             <UserCircle2 className="h-4 w-4" /> Player Spotlight
           </h2>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs">{trackIds.length} players</Badge>
+            <Badge variant="secondary" className="text-xs">
+              {trackIds.filter((id) => mapping[id]?.confirmed).length} identified · {trackIds.length} tracked
+            </Badge>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" className="h-7 text-xs rounded-full">
@@ -243,7 +245,7 @@ export function PlayerSpotlightPanel({
           {sortedTrackIds.length === 0 && (
             <p className="text-xs text-muted-foreground">No tracked players in this match.</p>
           )}
-          {sortedTrackIds.map((id) => (
+          {sortedTrackIds.slice(0, 30).map((id) => (
             <Button
               key={id}
               size="sm"

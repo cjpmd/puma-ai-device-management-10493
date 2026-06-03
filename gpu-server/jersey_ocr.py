@@ -39,8 +39,9 @@ UPSCALE_TARGET_H  = 128  # px — upscale band to this height before OCR
 
 # Voting
 OCR_MIN_CONF      = 0.40
-CONFIRM_VOTE_SCORE = 1.5   # Σ confidence required for the winning number
-CONFIRM_VOTE_LEAD  = 0.5   # winner must beat runner-up by this much
+CONFIRM_VOTE_SCORE = 2.5   # Σ confidence required for the winning number
+CONFIRM_VOTE_LEAD  = 1.0   # winner must beat runner-up by this much
+CONFIRM_MIN_FRAMES = 30    # don't confirm before this many frames seen
 
 # Roster snap
 ROSTER_SNAP_DIST  = 1      # max edit distance for off-roster snap
@@ -166,15 +167,9 @@ class JerseyNumberTracker:
             if crop.size == 0:
                 continue
             crop = _preprocess(crop)
-            # Run OCR twice — original + horizontally flipped — to catch
-            # back-number variants and slightly off-angle reads.
-            crops_to_read = [crop]
-            try:
-                import cv2
-                crops_to_read.append(cv2.flip(crop, 1))
-            except Exception:
-                pass
-            for c in crops_to_read:
+            # Digits aren't horizontally symmetric, so a flipped pass only
+            # injects noise. Single, well-preprocessed read per band.
+            for c in [crop]:
                 try:
                     results = reader.readtext(c, allowlist="0123456789", detail=1)
                 except Exception:
@@ -199,6 +194,8 @@ class JerseyNumberTracker:
         # Try to confirm
         scores = self._scores[track_id]
         if not scores:
+            return
+        if self._frame_counts[track_id] < CONFIRM_MIN_FRAMES:
             return
         ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
         top_num, top_score = ranked[0]
@@ -246,6 +243,22 @@ class JerseyNumberTracker:
             elif tid in self._confirmed and self._confirmed[tid] in new_scores[tid]:
                 # Preserve previously-confirmed identity if still consistent
                 new_confirmed[tid] = self._confirmed[tid]
+        # ── Enforce per-team roster exclusivity ──
+        # If two tracks on the same team confirm to the same jersey, keep only
+        # the one with the higher Σ-confidence score.
+        by_team_jersey: dict[tuple[str, int], list[tuple[int, float]]] = defaultdict(list)
+        for tid, jersey in new_confirmed.items():
+            team = track_team_map.get(tid)
+            if team is None:
+                continue
+            score = new_scores[tid].get(jersey, 0.0)
+            by_team_jersey[(team, jersey)].append((tid, score))
+        for (_team, _jersey), entries in by_team_jersey.items():
+            if len(entries) <= 1:
+                continue
+            entries.sort(key=lambda kv: kv[1], reverse=True)
+            for tid, _sc in entries[1:]:
+                new_confirmed.pop(tid, None)
         self._scores = new_scores
         self._confirmed = new_confirmed
 

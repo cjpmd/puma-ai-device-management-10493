@@ -1,69 +1,65 @@
-## Goal
+## Why "6166 players" and wrong shirt numbers happen
 
-Make Player Spotlight (and the rest of Cinema) show **real shirt numbers and player names** from the Origin Sports squad import, instead of internal track IDs like `#8044`. Tighten the OCR pipeline so identification rate is higher.
+Two independent bugs, both in the GPU pipeline output the UI just renders verbatim:
 
-The OCR pipeline already runs on the GPU, but two things are missing:
+1. **Track-count explosion.** `PlayerSpotlightPanel` shows `trackIds.length` — every distinct `player_metrics` key plus every `player_track_id` seen in `events`. The GPU emits one entry **per ByteTrack ID**, and ByteTrack on grassroots footage routinely fragments a single player into hundreds of short tracks (occlusion, jersey blur, panorama re-stitch every 500 frames). With `MetricsAggregator.compute` keeping any track with ≥5 positions (~2.5s at 2fps), you can easily get thousands of "players". 6166 is just the count of fragments, not people.
+2. **Wrong shirt numbers.** OCR currently votes per fragment, so most tracks never accumulate enough confidence to confirm a number and the few that do are read once from a single noisy band. After per-team snap we still let any single OCR pass win, and the UI happily shows `#3` for a fragment that was actually nothing.
 
-1. Nothing converts confirmed jersey numbers into `track_player_mapping` rows — so the UI can never look up a player.
-2. `PlayerSpotlightPanel` ignores the jersey number even when it's written to `player_match_stats.jersey_number`.
+## Plan
 
-On top of that, the OCR itself can be sharpened now that we have per-team rosters from the squad import.
+### 1. Stop counting fragments as players (GPU side)
 
----
+In `gpu-server/handler.py` `MetricsAggregator.compute` and the post-merge in `run_analysis`:
 
-## 1. Auto-link tracks to roster players (callback side)
+- Replace the `len(positions) < 5` filter with a **real-player gate** before emitting a `player_metrics` row:
+  - `len(positions) >= max(30, fps * 8)` (≥8s on pitch), AND
+  - `distance_m >= 5`, AND
+  - track is not in `referee_track_ids`, AND
+  - track has a `team` assignment.
+- Add a hard cap: keep at most the top **30** tracks by `minutes_played` (22 starters + subs buffer) before scoring. Drop the rest from `player_metrics`, `events` (rewrite `player_track_id` to `None` on dropped ids), `heatmaps`, and pass-network nodes.
+- **Dedupe fragments by jersey + team:** once `jersey_tracker.confirmed_identities()` + `best_guess_identities()` are merged, group tracks sharing `(team, jersey_number)` and pick the longest-lived one as canonical. Re-emit metrics for the canonical id only (sum `distance_m`, `sprints`, touches across fragments).
+- Log the surviving count: `print(f"✓ {len(player_metrics)} real players after fragment dedupe (from {raw} raw tracks)")`.
 
-In `supabase/functions/analysis-callback/index.ts`, after we upsert `player_match_stats`:
+### 2. Tighten OCR so numbers we show are trustworthy
 
-- Load `match_rosters` for the match (we already have it for OCR rosters).
-- For each `(track_id, jersey_number, team)` in `player_metrics`:
-  - Find the roster row where `jersey_number` matches and `side` matches the track's team (A→home / B→away, using `matches.is_home` to flip if needed).
-  - Insert into `track_player_mapping(match_id, track_id, player_id, jersey_number, confidence, source='ocr')`.
-- Upsert on `(match_id, track_id)` so re-runs overwrite.
+In `gpu-server/jersey_ocr.py`:
 
-No new tables — `track_player_mapping` already exists. Add a `source` column + `confidence numeric` if missing (migration).
+- Raise the bar: `CONFIRM_VOTE_SCORE = 2.5`, `CONFIRM_VOTE_LEAD = 1.0`. Drop the flipped-crop pass for digits — it doubles noise on numerals (digits aren't horizontally symmetric).
+- Add a **per-confirmation minimum frames seen**: don't confirm a track unless `_frame_counts[track_id] >= 30` (~6 OCR passes at the near cadence). Prevents single-frame lucky reads.
+- In `restrict_to_team_rosters`, after snapping, also enforce **roster exclusivity per team**: if two tracks on the same team both confirm to jersey `#9`, keep only the higher-scoring one; demote the loser to `best_guess` (UI will render `T<id>`).
+- Surface only confirmed identities to `player_metrics.jersey_number`. Keep `jersey_number_guess` / `jersey_confidence` separate (already there) so the UI can decide.
 
-## 2. UI: show jersey + name everywhere we currently show `#<track_id>`
+### 3. UI: only label confirmed jerseys, count real players
 
-In `src/components/Matches/Cinema/PlayerSpotlightPanel.tsx`:
+- `useTrackLabels.ts`: prefer roster-linked mapping; fall back to `jersey_number` ONLY if `confidence >= 2.5` (so guesses don't appear as `#3`). Otherwise show `T<id>`. Add a `confirmed` flag on `TrackLabel` so panels can render confirmed numbers in solid pills and guesses in dashed/muted pills.
+- `PlayerSpotlightPanel.tsx`: change the badge to count **distinct labels** rather than `trackIds.length`:
+  - `labelled = trackIds.filter(id => mapping[id]?.squad_number).length`
+  - Badge: `{labelled} identified · {trackIds.length} tracked` (and cap displayed pills at the top 30 by sort metric).
+- `PassNetworkPanel.tsx`: hide nodes whose `jersey_number == null` AND `pass_count < 3` (kills phantom nodes from fragment tracks).
+- `ClipsPanel.tsx`: already uses `labelFor` — picks up the stricter labelling automatically.
 
-- Extend the mapping fetch to also pull `player_match_stats(track_id, jersey_number, team)` for the match — so even when `track_player_mapping` is missing (no roster match), pills still read `#9` instead of `#8044`.
-- `labelFor(id)` priority: `mapping[id].squad_number` → `player_match_stats[id].jersey_number` → fall back to `Track {id}` (not `#{id}`, so users stop confusing internal IDs with shirt numbers).
-- `nameFor(id)`: roster name → "Unknown #N" → `Track {id}`.
-- Same fix in `PassNetworkPanel` and `ClipsPanel` if they format `#track_id`.
+### 4. analysis-callback adjustments
 
-## 3. Tighten OCR (`gpu-server/jersey_ocr.py` + `gpu-server/handler.py`)
+In `supabase/functions/analysis-callback/index.ts`:
 
-Three changes, all low-risk:
+- When upserting `track_player_mapping`, **skip rows with no `jersey_number`** (we already do) and additionally skip rows where `pm.jersey_confidence < 2.5`.
+- When upserting `player_match_stats`, only write `jersey_number` if confirmed (i.e. `pm.jersey_number != null`), leaving guesses out of the canonical stats table.
 
-- **Per-team rosters after team assignment.** Currently `process-video` sends one union set and OCR snaps to that. After `team_assignment` runs in `handler.py`, call `jersey_tracker.set_rosters({"A": home_or_away_set, "B": the_other_set})` once we know which detected team corresponds to home/away (using jersey colour vs. the team's primary colour, or majority vote of confirmed reads). Snapping to a 11-number set is far more accurate than to a ~22-number union.
-- **Better small-crop OCR.** Lower `OCR_EVERY_N_FAR` from 24 → 12, raise `UPSCALE_TARGET_H` from 96 → 128, and add a second OCR pass on the horizontally-flipped crop (helps with back-number variants). Keep voting thresholds the same.
-- **Surface "best guess" alongside confirmed.** Expose `best_guess_identities()` returning the top candidate per track even if it didn't hit `CONFIRM_VOTE_SCORE`, plus its confidence. Merge into `player_metrics` as `jersey_number_guess` + `jersey_confidence`. The callback uses `jersey_number` only for `track_player_mapping`; the guess is shown in UI with a "?" badge.
+### 5. Re-run
 
-## 4. Re-run processing for this match
+After deploy, re-trigger processing on match `bd76f2a1…` via Developer Controls. Expected output: ~20–30 player metric sets, badge reads e.g. "14 identified · 24 tracked", spotlight pills show real `#7 J. Smith` for roster matches and `T1234` for unidentified.
 
-The existing job pre-dates the squad import and used no roster snap. After (1)–(3) ship, re-trigger via Developer Controls so this match gets real numbers/names.
+## Out of scope
 
----
+- Manual track → player assignment UI (asked separately; flagged for a follow-up).
+- Switching ByteTrack for a re-ID model (bigger change; dedupe by jersey + team is the cheap fix that recovers most of the win).
+- Cross-match player identity.
 
-## Technical details
+## Files touched
 
-**Files**
-
-- `supabase/functions/analysis-callback/index.ts` — add roster→track_player_mapping write block.
-- `supabase/migrations/<new>.sql` — add `source text` and `confidence numeric` to `track_player_mapping` if not present, plus a UNIQUE `(match_id, track_id)` constraint for the upsert.
-- `src/components/Matches/Cinema/PlayerSpotlightPanel.tsx` — extra query, new `labelFor` / `nameFor`.
-- `src/components/Matches/Cinema/PassNetworkPanel.tsx`, `ClipsPanel.tsx` — same label helper (extract into a small hook `useTrackLabels(matchId)` so all panels share it).
-- `gpu-server/jersey_ocr.py` — tweak constants, add flipped pass, add `best_guess_identities`.
-- `gpu-server/handler.py` — call `set_rosters` per team after team assignment; merge best-guess into `player_metrics`.
-
-**Out of scope**
-
-- Manual "assign track → player" UI (good follow-up, not needed yet).
-- Re-identifying players across sessions/matches (jersey OCR is per-match for now).
-- Opposition roster import.
-
-```text
-events ──► track_id  ──►  track_player_mapping  ──► player.name + squad_number
-                  └──►  player_match_stats.jersey_number  (fallback for label)
-```
+- `gpu-server/handler.py` (filter + dedupe + per-canonical merge)
+- `gpu-server/jersey_ocr.py` (thresholds, exclusivity, min frames, drop flip)
+- `src/components/Matches/Cinema/useTrackLabels.ts`
+- `src/components/Matches/Cinema/PlayerSpotlightPanel.tsx`
+- `src/components/Matches/Cinema/PassNetworkPanel.tsx`
+- `supabase/functions/analysis-callback/index.ts`
