@@ -77,27 +77,33 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Match not found" }), { status: 404, headers: corsHeaders });
     }
 
-    // Get the output path from processing_jobs
-    const { data: job, error: jobErr } = await adminClient
+    // Pick the latest completed job that actually has the requested output path.
+    // The newest completed job may have null paths (partial/failed runs); skip those.
+    const column =
+      file_type === "video"
+        ? "output_video_path"
+        : file_type === "highlights"
+        ? "output_highlights_path"
+        : "output_metadata_path";
+
+    const { data: jobs, error: jobErr } = await adminClient
       .from("processing_jobs")
-      .select("output_video_path, output_highlights_path, output_metadata_path")
+      .select("output_video_path, output_highlights_path, output_metadata_path, completed_at, created_at")
       .eq("match_id", match_id)
       .in("status", ["complete", "completed"])
-      .order("completed_at", { ascending: false })
-      .limit(1)
-      .single();
+      .not(column, "is", null)
+      .order("completed_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(1);
 
-    if (jobErr || !job) {
-      return new Response(JSON.stringify({ error: "No completed processing job found" }), { status: 404, headers: corsHeaders });
+    if (jobErr || !jobs || jobs.length === 0) {
+      return new Response(
+        JSON.stringify({ error: `No completed job has a ${file_type} output yet` }),
+        { status: 404, headers: corsHeaders },
+      );
     }
 
-    const pathMap: Record<string, string | null> = {
-      video: job.output_video_path,
-      highlights: job.output_highlights_path,
-      metadata: job.output_metadata_path,
-    };
-
-    const storedValue = pathMap[file_type];
+    const storedValue = (jobs[0] as Record<string, string | null>)[column];
     if (!storedValue) {
       return new Response(JSON.stringify({ error: `No ${file_type} output available` }), { status: 404, headers: corsHeaders });
     }
