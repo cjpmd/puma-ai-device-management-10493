@@ -180,7 +180,13 @@ export function MatchCinemaLayout({
           )}
           {active === 'accuracy' && <AccuracyPanel matchId={matchId} job={job} />}
           {active === 'roster' && (
-            <RosterPanel matchId={matchId} homeName={match?.home_team} awayName={match?.away_team} />
+            <RosterPanel
+              matchId={matchId}
+              homeName={match?.home_team}
+              awayName={match?.away_team}
+              teamId={match?.team_id ?? null}
+              isHome={match?.is_home ?? true}
+            />
           )}
         </div>
       </div>
