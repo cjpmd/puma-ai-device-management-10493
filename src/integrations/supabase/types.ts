@@ -1730,6 +1730,9 @@ export type Database = {
           player_tracking_data: Json | null
           processing_logs: string | null
           runpod_job_id: string | null
+          source_left_path: string | null
+          source_right_path: string | null
+          source_video_path: string | null
           started_at: string | null
           status: string
           team_metrics: Json | null
@@ -1751,6 +1754,9 @@ export type Database = {
           player_tracking_data?: Json | null
           processing_logs?: string | null
           runpod_job_id?: string | null
+          source_left_path?: string | null
+          source_right_path?: string | null
+          source_video_path?: string | null
           started_at?: string | null
           status?: string
           team_metrics?: Json | null
@@ -1772,6 +1778,9 @@ export type Database = {
           player_tracking_data?: Json | null
           processing_logs?: string | null
           runpod_job_id?: string | null
+          source_left_path?: string | null
+          source_right_path?: string | null
+          source_video_path?: string | null
           started_at?: string | null
           status?: string
           team_metrics?: Json | null
