@@ -125,7 +125,6 @@ export default function TestVideoAnalysis() {
         addLog(`Poll → status: ${jobRow?.status}`);
 
         const done =
-          jobRow?.status === 'complete' ||
           jobRow?.status === 'completed' ||
           jobRow?.status === 'failed';
 

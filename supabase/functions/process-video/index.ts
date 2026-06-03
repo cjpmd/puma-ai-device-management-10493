@@ -84,7 +84,7 @@ Deno.serve(async (req) => {
       })
       .eq("id", job_id);
 
-    const webhookUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/analysis-callback`;
+    const webhookUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/analysis-callback?apikey=${Deno.env.get("EXTERNAL_SUPABASE_ANON_KEY")}`;
 
     const runpodRes = await fetch(
       `https://api.runpod.ai/v2/${runpodEndpointId}/run`,
@@ -133,10 +133,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Store analysis job ID so analysis-callback can look it up
+    // Store RunPod job ID in both columns so analysis-callback can find the row
     await adminClient
       .from("processing_jobs")
-      .update({ analysis_job_id: runpodData.id })
+      .update({ runpod_job_id: runpodData.id, analysis_job_id: runpodData.id })
       .eq("id", job_id);
 
     return new Response(

@@ -1,22 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 /**
- * analysis-callback: RunPod webhook called when an analysis-only job completes.
+ * analysis-callback: RunPod webhook called when an analysis job completes.
  *
- * RunPod sends: { id, status, output: ProcessingJobResult }
+ * RunPod payload: { id: "<runpod-job-id>", status: "COMPLETED"|"FAILED", output: {...} }
  *
- * On success:
- *   - Updates processing_jobs with events, player_metrics, team_metrics, heatmaps
- *   - Upserts high-confidence CV events (confidence ≥ 0.70) into match_event_tags
- *     so they appear in Cinema mode alongside manual coach tags
- *   - Triggers generate-match-insights (fire-and-forget)
- *
- * On failure:
- *   - Sets status = 'failed' and stores error_message
- *
- * Lookup strategy: RunPod sends `id` = the RunPod job ID.
- * We stored this in processing_jobs.analysis_job_id when we queued the job.
- * We also accept job_id in the output body as a fallback.
+ * Lookup: processing_jobs WHERE runpod_job_id = payload.id
+ * On success: status = 'completed', event_data = raw output + structured fields
+ * On failure: status = 'failed', error_message set
  */
 
 const corsHeaders = {
@@ -24,11 +15,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// CV event types that map to match_event_tags.event_type values
 const CV_EVENT_TYPE_MAP: Record<string, string> = {
-  shot: "key_moment",   // shots detected by CV mapped to key_moment for coach review
+  shot: "key_moment",
   goal: "goal",
-  pass: "key_moment",   // only high-confidence passes become tags
+  pass: "key_moment",
   tackle: "key_moment",
   possession_change: "key_moment",
 };
@@ -45,6 +35,8 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json();
+    console.log("analysis-callback received:", JSON.stringify(body).slice(0, 500));
+
     // RunPod webhook shape: { id, status, output }
     const { id: runpodJobId, status, output } = body;
 
@@ -55,58 +47,58 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Look up our job — try analysis_job_id first, fall back to output.job_id
+    // Primary lookup: runpod_job_id (set by process-video when queuing)
     let job: { id: string; match_id: string } | null = null;
 
-    if (runpodJobId) {
-      const { data } = await adminClient
+    const { data: byRunpodId } = await adminClient
+      .from("processing_jobs")
+      .select("id, match_id")
+      .eq("runpod_job_id", runpodJobId)
+      .maybeSingle();
+    job = byRunpodId;
+
+    // Fallback: analysis_job_id (same value, older rows may only have this)
+    if (!job) {
+      const { data: byAnalysisId } = await adminClient
         .from("processing_jobs")
         .select("id, match_id")
         .eq("analysis_job_id", runpodJobId)
         .maybeSingle();
-      job = data;
+      job = byAnalysisId;
     }
 
-    // Fallback: job_id embedded in output body
+    // Final fallback: job_id embedded in output body
     if (!job && output?.job_id) {
-      const { data } = await adminClient
+      const { data: byJobId } = await adminClient
         .from("processing_jobs")
         .select("id, match_id")
         .eq("id", output.job_id)
         .maybeSingle();
-      job = data;
+      job = byJobId;
     }
 
     if (!job) {
       console.error("analysis-callback: job not found for RunPod id", runpodJobId);
-      // Return 200 so RunPod doesn't retry indefinitely
       return new Response(JSON.stringify({ ok: false, reason: "job not found" }), {
         status: 200,
         headers: corsHeaders,
       });
     }
 
-    const isComplete = status === "COMPLETED" && output?.success === true;
-    const isFailed = status === "FAILED" || output?.success === false;
+    const isComplete = status === "COMPLETED";
+    const isFailed = status === "FAILED" || (!isComplete && status !== "IN_PROGRESS");
 
     if (isComplete && output) {
-      // Map ProcessingJobResult fields to processing_jobs columns
       const update: Record<string, unknown> = {
-        status: "complete",
+        status: "completed",
         completed_at: new Date().toISOString(),
-        // events go into event_data.events so Cinema MatchCinemaLayout can read them
-        event_data: {
-          events: output.events ?? [],
-          highlights: output.auto_highlights ?? [],
-          home_pass_network: output.home_pass_network ?? null,
-          away_pass_network: output.away_pass_network ?? null,
-        },
+        // Raw output stored in event_data for full result inspection
+        event_data: output,
+        // Structured fields for app features
         player_metrics: output.player_metrics ?? null,
-        // The GPU handler returns 'team_stats'; DB column is 'team_metrics'
         team_metrics: output.team_stats ?? output.team_metrics ?? null,
         heatmaps: output.heatmaps ?? null,
         ball_tracking_data: output.ball_tracking ?? null,
-        // Confidence score and duration live in divergence_metrics for now
         divergence_metrics: {
           confidence_score: output.confidence_score ?? null,
           duration_seconds: output.duration_seconds ?? null,
@@ -133,7 +125,6 @@ Deno.serve(async (req) => {
               match_id: job!.match_id,
               session_id: output.session_id,
               event_type: mappedType,
-              // e.time is in seconds; timestamp_ms is milliseconds
               timestamp_ms: Math.round((e.time ?? 0) * 1000),
               tagged_by: "cv_analysis",
               notes: `Auto-detected ${e.type}${e.outcome ? ` (${e.outcome})` : ""}${
@@ -155,55 +146,39 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Upsert player_match_stats with touch + pass direction + identity
+      // Upsert player_match_stats
       const playerMetrics: Record<string, any> = output.player_metrics ?? {};
       if (Object.keys(playerMetrics).length > 0) {
-        // Resolve jersey numbers → player_identity_id for all confirmed identities
-        const jerseyEntries: Array<{ track_id: number; jersey_number: number }> = [];
-        for (const [trackIdStr, pm] of Object.entries(playerMetrics)) {
-          if ((pm as any).jersey_number != null) {
-            jerseyEntries.push({ track_id: Number(trackIdStr), jersey_number: (pm as any).jersey_number });
-          }
-        }
-
-        // We don't have a team_id from the analysis payload (track teams are 'A'/'B', not UUIDs).
-        // Store jersey_number directly on player_match_stats for now; identity resolution
-        // (team_id FK → player_identities) is deferred to a separate lookup flow.
-
         const statsRows = Object.entries(playerMetrics).map(([trackIdStr, pm]: [string, any]) => ({
-          match_id:          job!.match_id,
-          processing_job_id: job!.id,
-          track_id:          Number(trackIdStr),
-          team:              pm.team ?? null,
-          distance_m:        pm.distance_m ?? null,
-          top_speed_kmh:     pm.top_speed_kmh ?? null,
-          sprints:           pm.sprints ?? null,
-          minutes_played:    pm.minutes_played ?? null,
-          passes:            pm.passes ?? null,
-          passes_completed:  pm.passes_completed ?? null,
-          pass_success_pct:  pm.pass_success_pct ?? null,
-          shots:             pm.shots ?? null,
-          tackles:           pm.tackles ?? null,
-          goals:             0,
-          xg:                pm.xg ?? null,
-          contribution_score: pm.contribution_score ?? null,
-          // Touch breakdown from TouchTracker
-          touches_total:          pm.touches_total   ?? pm.touches   ?? null,
-          touches_receive:        pm.touches_receive  ?? null,
-          touches_control:        pm.touches_control  ?? null,
-          touches_pass:           pm.touches_pass     ?? null,
-          touches_shot:           pm.touches_shot     ?? null,
-          touches_dribble:        pm.touches_dribble  ?? null,
-          // Pass direction breakdown from PassAnalyser
-          jersey_number:          pm.jersey_number    ?? null,
+          match_id:               job!.match_id,
+          processing_job_id:      job!.id,
+          track_id:               Number(trackIdStr),
+          team:                   pm.team ?? null,
+          distance_m:             pm.distance_m ?? null,
+          top_speed_kmh:          pm.top_speed_kmh ?? null,
+          sprints:                pm.sprints ?? null,
+          minutes_played:         pm.minutes_played ?? null,
+          passes:                 pm.passes ?? null,
+          passes_completed:       pm.passes_completed ?? null,
+          pass_success_pct:       pm.pass_success_pct ?? null,
+          shots:                  pm.shots ?? null,
+          tackles:                pm.tackles ?? null,
+          goals:                  0,
+          xg:                     pm.xg ?? null,
+          contribution_score:     pm.contribution_score ?? null,
+          touches_total:          pm.touches_total ?? pm.touches ?? null,
+          touches_receive:        pm.touches_receive ?? null,
+          touches_control:        pm.touches_control ?? null,
+          touches_pass:           pm.touches_pass ?? null,
+          touches_shot:           pm.touches_shot ?? null,
+          touches_dribble:        pm.touches_dribble ?? null,
+          jersey_number:          pm.jersey_number ?? null,
           passes_attempted:       pm.passes_attempted ?? null,
-          passes_completed_count: pm.passes_completed_count ?? pm.passes_attempted != null
-            ? (pm.passes_attempted * (pm.pass_accuracy ?? 0) / 100) | 0
-            : null,
-          pass_accuracy:          pm.pass_accuracy    ?? null,
-          passes_forward:         pm.passes_forward   ?? null,
-          passes_sideways:        pm.passes_sideways  ?? null,
-          passes_back:            pm.passes_back      ?? null,
+          passes_completed_count: pm.passes_completed_count ?? null,
+          pass_accuracy:          pm.pass_accuracy ?? null,
+          passes_forward:         pm.passes_forward ?? null,
+          passes_sideways:        pm.passes_sideways ?? null,
+          passes_back:            pm.passes_back ?? null,
         }));
 
         await adminClient
@@ -219,10 +194,10 @@ Deno.serve(async (req) => {
         .update({ status: "complete" })
         .eq("id", job.match_id);
 
-      // Fire-and-forget: generate AI narrative insights
       adminClient.functions
         .invoke("generate-match-insights", { body: { match_id: job.match_id } })
-        .catch((e) => console.error("generate-match-insights invoke failed:", e));
+        .catch((e: unknown) => console.error("generate-match-insights invoke failed:", e));
+
     } else if (isFailed) {
       await adminClient
         .from("processing_jobs")

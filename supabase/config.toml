@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.get-output-url]
 verify_jwt = false
+
+[functions.analysis-callback]
+verify_jwt = false
