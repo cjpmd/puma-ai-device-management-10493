@@ -1803,11 +1803,27 @@ def run_analysis(job_input: dict) -> dict:
         # Re-snap jersey OCR scores against per-team rosters now that team
         # assignment is known. During the OCR loop we only had the union
         # roster; per-team snap roughly halves the candidate space.
+        # TeamClassifier labels A/B by mean X position, which doesn't
+        # correlate with home/away — try both mappings and keep whichever
+        # yields more confirmed identities.
         if home_roster or away_roster:
-            jersey_tracker.restrict_to_team_rosters(
-                track_team_map=team_assignment,
-                rosters_by_team={"A": home_roster, "B": away_roster},
-            )
+            import copy
+            best_mapping = None
+            best_confirmed = -1
+            for mapping in (
+                {"A": home_roster, "B": away_roster},
+                {"A": away_roster, "B": home_roster},
+            ):
+                snapshot = copy.deepcopy(jersey_tracker)
+                snapshot.restrict_to_team_rosters(team_assignment, mapping)
+                n = len(snapshot.confirmed_identities())
+                if n > best_confirmed:
+                    best_confirmed = n
+                    best_mapping = mapping
+            if best_mapping is not None:
+                jersey_tracker.restrict_to_team_rosters(team_assignment, best_mapping)
+                print(f"  ✓ Jersey OCR per-team snap: {best_confirmed} confirmed "
+                      f"(A→{'home' if best_mapping['A'] is home_roster else 'away'})")
 
         # Exclude referee tracks from all downstream analytics
         from referee_filter import filter_referees
