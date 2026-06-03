@@ -189,6 +189,76 @@ Deno.serve(async (req) => {
           });
       }
 
+      // ── Link tracks → roster players via confirmed jersey numbers ──
+      try {
+        const { data: matchRow } = await adminClient
+          .from("matches")
+          .select("is_home")
+          .eq("id", job!.match_id)
+          .maybeSingle();
+        const { data: rosterRows } = await adminClient
+          .from("match_rosters")
+          .select("side, jersey_number, player_id")
+          .eq("match_id", job!.match_id);
+
+        // Build lookup: side → (jersey_number → player_id)
+        const rosterBySide: Record<string, Map<number, string | null>> = {
+          home: new Map(),
+          away: new Map(),
+        };
+        for (const r of rosterRows ?? []) {
+          if (r.side === "home" || r.side === "away") {
+            rosterBySide[r.side].set(Number(r.jersey_number), r.player_id ?? null);
+          }
+        }
+
+        // Our side ("home"/"away") corresponds to match.is_home → team "A" by convention
+        const isHome = matchRow?.is_home !== false;
+        const teamToSide: Record<string, "home" | "away"> = {
+          A: isHome ? "home" : "away",
+          B: isHome ? "away" : "home",
+        };
+
+        const mappingRows: Array<{
+          match_id: string;
+          track_id: number;
+          player_id: string | null;
+          jersey_number: number;
+          team_label: string | null;
+          confidence: number | null;
+          source: string;
+        }> = [];
+
+        for (const [trackIdStr, pm] of Object.entries(playerMetrics)) {
+          const jersey = (pm as any).jersey_number;
+          if (jersey == null) continue;
+          const team = (pm as any).team as string | null | undefined;
+          const side = team ? teamToSide[team] : null;
+          const playerId = side ? rosterBySide[side].get(Number(jersey)) ?? null : null;
+          mappingRows.push({
+            match_id: job!.match_id,
+            track_id: Number(trackIdStr),
+            player_id: playerId,
+            jersey_number: Number(jersey),
+            team_label: team ?? null,
+            confidence: (pm as any).jersey_confidence ?? null,
+            source: "ocr",
+          });
+        }
+
+        if (mappingRows.length > 0) {
+          await adminClient
+            .from("track_player_mapping")
+            .upsert(mappingRows, {
+              onConflict: "match_id,track_id",
+              ignoreDuplicates: false,
+            });
+          console.log(`analysis-callback: wrote ${mappingRows.length} track→player rows`);
+        }
+      } catch (e) {
+        console.error("analysis-callback: track_player_mapping upsert failed", e);
+      }
+
       await adminClient
         .from("matches")
         .update({ status: "complete" })
