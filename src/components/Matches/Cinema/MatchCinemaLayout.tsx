@@ -13,6 +13,7 @@ import { TaggingPanel } from './TaggingPanel';
 import { AccuracyPanel } from './AccuracyPanel';
 import { supabase } from '@/integrations/supabase/client';
 import type { TimelineEvent } from '@/types/video-analysis';
+import { useCoachTagStats } from './useCoachTagStats';
 
 interface MatchCinemaLayoutProps {
   matchId: string;
@@ -48,6 +49,8 @@ export function MatchCinemaLayout({
     (a, b) => a.time - b.time,
   );
 
+  const coachStats = useCoachTagStats(coachTags, match?.is_home);
+
   const playerMetrics = job?.player_metrics || null;
   const heatmaps = job?.heatmaps || null;
   const homePassNetwork = job?.event_data?.home_pass_network ?? null;
@@ -61,7 +64,7 @@ export function MatchCinemaLayout({
     (async () => {
       const { data } = await (supabase as any)
         .from('match_event_tags')
-        .select('id, event_type, timestamp_ms, notes, tagged_by')
+        .select('id, event_type, timestamp_ms, team, notes, tagged_by')
         .eq('match_id', matchId)
         .order('timestamp_ms', { ascending: true });
       if (cancelled || !data) return;
@@ -71,6 +74,7 @@ export function MatchCinemaLayout({
           time: row.timestamp_ms / 1000,
           type: row.event_type,
           source: 'coach' as const,
+          team: row.team ?? null,
           notes: row.notes ?? undefined,
           tagged_by: row.tagged_by ?? undefined,
         })),
@@ -149,9 +153,9 @@ export function MatchCinemaLayout({
           {active === 'clips' && (
             <ClipsPanel events={mergedEvents} videoUrl={videoUrl} onSeek={handleSeek} />
           )}
-          {active === 'summary' && <SummaryPanel match={match} />}
+          {active === 'summary' && <SummaryPanel match={match} coachStats={coachStats} />}
           {active === 'analytics' && (
-            <AnalyticsPanel matchId={matchId} job={job} demoInsights={demoInsights} />
+            <AnalyticsPanel matchId={matchId} job={job} demoInsights={demoInsights} coachStats={coachStats} match={match} />
           )}
           {active === 'spotlight' && (
             <PlayerSpotlightPanel

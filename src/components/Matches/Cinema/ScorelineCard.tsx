@@ -13,6 +13,8 @@ interface ScorelineCardProps {
   isHome?: boolean | null;
   ageGroup?: string | null;
   status?: string | null;
+  fromCoachTags?: boolean;
+  result?: 'W' | 'L' | 'D' | null;
 }
 
 function TeamBadge({ name, color, logoUrl }: { name: string; color?: string | null; logoUrl?: string | null }) {
@@ -58,8 +60,15 @@ export function ScorelineCard({
   isHome,
   ageGroup,
   status,
+  fromCoachTags = false,
+  result = null,
 }: ScorelineCardProps) {
-  const final = status === 'complete' && homeScore !== null && awayScore !== null;
+  const final = (status === 'complete' || fromCoachTags) && homeScore !== null && awayScore !== null;
+  const resultClass =
+    result === 'W' ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
+    : result === 'L' ? 'bg-destructive/15 text-destructive border-destructive/30'
+    : result === 'D' ? 'bg-muted text-muted-foreground border-border'
+    : '';
 
   return (
     <div className="rounded-2xl border border-border/60 bg-card/60 backdrop-blur p-5 space-y-4">
@@ -102,8 +111,18 @@ export function ScorelineCard({
       </div>
 
       {final && (
-        <div className="flex justify-center">
-          <Badge className="uppercase tracking-wider text-[10px]">Final Result</Badge>
+        <div className="flex flex-col items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            <Badge className="uppercase tracking-wider text-[10px]">Final Result</Badge>
+            {result && (
+              <Badge variant="outline" className={`uppercase tracking-wider text-[10px] ${resultClass}`}>
+                {result === 'W' ? 'Win' : result === 'L' ? 'Loss' : 'Draw'}
+              </Badge>
+            )}
+          </div>
+          {fromCoachTags && (
+            <span className="text-[10px] text-muted-foreground">From coach tags</span>
+          )}
         </div>
       )}
     </div>
