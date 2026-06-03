@@ -33,15 +33,17 @@ OCR_EVERY_N_FAR   = 12   # smaller bboxes
 NEAR_BBOX_PX      = 120
 
 # Crop bands as (y_start_pct, y_end_pct)
-CROP_BANDS = ((0.28, 0.48), (0.50, 0.72))
-MIN_CROP_SIZE     = 20   # pixels — skip tiny detections
-UPSCALE_TARGET_H  = 128  # px — upscale band to this height before OCR
+# Back-high band added for youth shirts where the number sits between the
+# shoulder blades, above the chest/back bands used originally.
+CROP_BANDS = ((0.18, 0.42), (0.28, 0.48), (0.50, 0.72))
+MIN_CROP_SIZE     = 14   # pixels — skip tiny detections
+UPSCALE_TARGET_H  = 192  # px — upscale band to this height before OCR
 
 # Voting
 OCR_MIN_CONF      = 0.40
-CONFIRM_VOTE_SCORE = 1.6   # Σ confidence required for the winning number
-CONFIRM_VOTE_LEAD  = 0.6   # winner must beat runner-up by this much
-CONFIRM_MIN_FRAMES = 12    # don't confirm before this many frames seen
+CONFIRM_VOTE_SCORE = 1.1   # Σ confidence required for the winning number
+CONFIRM_VOTE_LEAD  = 0.35  # winner must beat runner-up by this much
+CONFIRM_MIN_FRAMES = 6     # don't confirm before this many frames seen
 
 # Roster snap
 ROSTER_SNAP_DIST  = 1      # max edit distance for off-roster snap

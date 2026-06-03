@@ -1220,6 +1220,113 @@ class TeamClassifier:
         median_x = float(np.median(list(means.values())))
         return {tid: ("A" if mx <= median_x else "B") for tid, mx in means.items()}
 
+    # ── HSV-based classifier ──────────────────────────────────────────
+    @staticmethod
+    def _hex_to_hsv(hex_str: str) -> tuple[float, float, float] | None:
+        """Convert "#rrggbb" to OpenCV HSV (H 0-179, S/V 0-255)."""
+        if not hex_str:
+            return None
+        s = hex_str.lstrip("#")
+        if len(s) != 6:
+            return None
+        try:
+            r = int(s[0:2], 16); g = int(s[2:4], 16); b = int(s[4:6], 16)
+        except ValueError:
+            return None
+        bgr = np.uint8([[[b, g, r]]])
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)[0, 0]
+        return float(hsv[0]), float(hsv[1]), float(hsv[2])
+
+    @staticmethod
+    def _hue_distance(h1: float, h2: float) -> float:
+        """Circular hue distance on OpenCV's 0-179 scale."""
+        d = abs(h1 - h2) % 180.0
+        return min(d, 180.0 - d)
+
+    @staticmethod
+    def assign_teams_by_color(
+        hsv_samples: dict[int, list[tuple[float, float, float]]],
+        tracks: dict,
+        team_colors: dict | None,
+    ) -> dict:
+        """Classify tracks into A=home / B=away by jersey colour.
+
+        Falls back to the X-split heuristic if colour data is unusable.
+        """
+        home_hsv = TeamClassifier._hex_to_hsv((team_colors or {}).get("home") or "")
+        away_hsv = TeamClassifier._hex_to_hsv((team_colors or {}).get("away") or "")
+
+        # Aggregate one HSV per track (median is robust to brief pitch/skin
+        # pixels that slip through the green-suppression filter)
+        per_track: dict[int, tuple[float, float, float]] = {}
+        for tid, samples in hsv_samples.items():
+            if not samples or len(samples) < 2:
+                continue
+            arr = np.asarray(samples, dtype=np.float32)
+            per_track[tid] = (
+                float(np.median(arr[:, 0])),
+                float(np.median(arr[:, 1])),
+                float(np.median(arr[:, 2])),
+            )
+
+        if not per_track or home_hsv is None or away_hsv is None:
+            print("  ⚠ Team-colour classifier falling back to X-split "
+                  f"(samples={len(per_track)}, home_hsv={home_hsv}, away_hsv={away_hsv})")
+            return TeamClassifier.assign_teams(tracks)
+
+        assignment: dict[int, str] = {}
+        for tid, (h, s, v) in per_track.items():
+            d_home = TeamClassifier._hue_distance(h, home_hsv[0])
+            d_away = TeamClassifier._hue_distance(h, away_hsv[0])
+            assignment[tid] = "A" if d_home <= d_away else "B"
+
+        # Sanity check: if all tracks land on one team, the colour signal is
+        # probably bad — fall back rather than mis-label everyone.
+        teams_seen = set(assignment.values())
+        if len(teams_seen) < 2 and len(per_track) > 4:
+            print("  ⚠ Team-colour classifier produced single team, falling back to X-split")
+            return TeamClassifier.assign_teams(tracks)
+
+        print(f"  ✓ Team-colour classifier: {sum(1 for v in assignment.values() if v=='A')} home / "
+              f"{sum(1 for v in assignment.values() if v=='B')} away "
+              f"(home_h={home_hsv[0]:.0f}, away_h={away_hsv[0]:.0f})")
+        return assignment
+
+
+def _sample_torso_hsv(frame: np.ndarray, bbox_xyxy: tuple[float, float, float, float]) -> tuple[float, float, float] | None:
+    """Mean HSV of the torso crop (band 0.25-0.55 of bbox height),
+    excluding grass-green pixels so the pitch doesn't pollute the signal."""
+    x1, y1, x2, y2 = [int(v) for v in bbox_xyxy]
+    h = y2 - y1
+    w = x2 - x1
+    if h < 20 or w < 10:
+        return None
+    cy1 = y1 + int(h * 0.25)
+    cy2 = y1 + int(h * 0.55)
+    # Trim sides 15% to skip arms/background
+    cx1 = x1 + int(w * 0.15)
+    cx2 = x2 - int(w * 0.15)
+    if cy2 <= cy1 or cx2 <= cx1:
+        return None
+    crop = frame[cy1:cy2, cx1:cx2]
+    if crop.size == 0:
+        return None
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    # Mask out grass: green hue ~35-85, saturation > 40
+    h_chan = hsv[:, :, 0]
+    s_chan = hsv[:, :, 1]
+    v_chan = hsv[:, :, 2]
+    grass_mask = (h_chan >= 35) & (h_chan <= 85) & (s_chan > 40)
+    dark_mask = v_chan < 30
+    keep = ~(grass_mask | dark_mask)
+    if keep.sum() < max(20, crop.shape[0] * crop.shape[1] // 10):
+        return None
+    return (
+        float(np.mean(h_chan[keep])),
+        float(np.mean(s_chan[keep])),
+        float(np.mean(v_chan[keep])),
+    )
+
 
 # ─── Event detection from tracks ───────────────────────────────────────
 
@@ -1679,6 +1786,15 @@ def run_analysis(job_input: dict) -> dict:
         rosters_in = job_input.get("rosters") or {}
         home_roster = set(int(n) for n in (rosters_in.get("home") or []))
         away_roster = set(int(n) for n in (rosters_in.get("away") or []))
+        team_colors_in = job_input.get("team_colors") or {}
+        print(f"  🎨 Team colours: home={team_colors_in.get('home')} away={team_colors_in.get('away')}")
+
+        # Per-track HSV samples gathered during the tracking loop and used by
+        # TeamClassifier.assign_teams_by_color to map each track to home/away.
+        track_hsv_samples: dict[int, list[tuple[float, float, float]]] = {}
+        HSV_SAMPLE_EVERY_N = 30
+        hsv_sample_counts: dict[int, int] = {}
+
         if home_roster or away_roster:
             # Team A/B mapping to home/away isn't fixed at this point, so seed
             # both labels with the union; per-side enforcement happens after
@@ -1752,6 +1868,13 @@ def run_analysis(job_input: dict) -> dict:
                         cx, cy, x1, y1, x2, y2 = det[0], det[1], det[2], det[3], det[4], det[5]
                         if abs(cx - tx) < 20 and abs(cy - ty) < 20:
                             jersey_tracker.update(frame, tid, (x1, y1, x2, y2), team=None)
+                            # Sample torso HSV every Nth frame this track is seen
+                            c = hsv_sample_counts.get(tid, 0)
+                            if c % HSV_SAMPLE_EVERY_N == 0:
+                                hsv = _sample_torso_hsv(frame, (x1, y1, x2, y2))
+                                if hsv is not None:
+                                    track_hsv_samples.setdefault(tid, []).append(hsv)
+                            hsv_sample_counts[tid] = c + 1
                             break
 
             # ── Touch detection ──
@@ -1794,7 +1917,11 @@ def run_analysis(job_input: dict) -> dict:
               f"🎯 {len(ball_positions)} ball detections")
 
         # ── Event detection, team assignment, metrics ──
-        team_assignment = TeamClassifier.assign_teams(player_tracker.tracks)
+        team_assignment = TeamClassifier.assign_teams_by_color(
+            hsv_samples=track_hsv_samples,
+            tracks=player_tracker.tracks,
+            team_colors=team_colors_in,
+        )
 
         # Back-fill team onto touches and passes now that assignment is known
         touch_tracker.assign_teams(team_assignment)

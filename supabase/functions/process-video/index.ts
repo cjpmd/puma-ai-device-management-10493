@@ -89,6 +89,7 @@ Deno.serve(async (req) => {
 
     // ── Look up match roster so GPU OCR can snap noisy reads to legal numbers ──
     let rosters: { home: number[]; away: number[] } = { home: [], away: [] };
+    let teamColors: { home: string | null; away: string | null } = { home: null, away: null };
     try {
       const { data: job } = await adminClient
         .from("processing_jobs")
@@ -104,9 +105,18 @@ Deno.serve(async (req) => {
           if (r.side === "home") rosters.home.push(r.jersey_number);
           else if (r.side === "away") rosters.away.push(r.jersey_number);
         }
+        const { data: matchRow } = await adminClient
+          .from("matches")
+          .select("home_color, away_color")
+          .eq("id", job.match_id)
+          .maybeSingle();
+        if (matchRow) {
+          teamColors.home = matchRow.home_color ?? null;
+          teamColors.away = matchRow.away_color ?? null;
+        }
       }
     } catch (e) {
-      console.warn("process-video: roster lookup failed (continuing without)", e);
+      console.warn("process-video: roster/colour lookup failed (continuing without)", e);
     }
 
     const webhookUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/analysis-callback?apikey=${Deno.env.get("EXTERNAL_SUPABASE_ANON_KEY")}`;
@@ -129,6 +139,7 @@ Deno.serve(async (req) => {
             right_video_url: right_url ?? null,
             target_fps,
             rosters,
+            team_colors: teamColors,
             // Wasabi credentials so the handler can download presigned-URL-less paths
             wasabi_access_key: Deno.env.get("WASABI_ACCESS_KEY"),
             wasabi_secret_key: Deno.env.get("WASABI_SECRET_KEY"),
