@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useEventThumbnails } from './useEventThumbnails';
 import { supabase } from '@/integrations/supabase/client';
+import { useTrackLabels } from './useTrackLabels';
 import type { HeatmapData } from '@/types/video-analysis';
 
 interface MatchEvent {
@@ -136,9 +137,7 @@ export function PlayerSpotlightPanel({
   videoUrl,
   onSeek,
 }: PlayerSpotlightPanelProps) {
-  const [mapping, setMapping] = useState<
-    Record<number, { name?: string; squad_number?: number; confidence?: number; from_ocr?: boolean }>
-  >({});
+  const { mapping, labelFor, nameFor } = useTrackLabels(matchId);
   const [sort, setSort] = useState<SortMode>('contribution');
   const [showHeatmap, setShowHeatmap] = useState(false);
 
@@ -175,49 +174,6 @@ export function PlayerSpotlightPanel({
   useEffect(() => {
     if (selected === null && sortedTrackIds.length > 0) setSelected(sortedTrackIds[0]);
   }, [sortedTrackIds, selected]);
-
-  // Load track→player name/jersey mapping. We merge two sources:
-  //   1. track_player_mapping: roster-linked rows from analysis-callback
-  //      (gives us player name + confirmed jersey).
-  //   2. player_match_stats.jersey_number: the OCR's own confirmed read,
-  //      used as fallback so pills show "#9" even when the jersey wasn't
-  //      matched to a roster entry.
-  useEffect(() => {
-    if (!matchId || matchId === 'demo') return;
-    let cancelled = false;
-    (async () => {
-      const [mapRes, statsRes] = await Promise.all([
-        (supabase as any)
-          .from('track_player_mapping')
-          .select('track_id, jersey_number, confidence, source, players ( name, squad_number )')
-          .eq('match_id', matchId),
-        (supabase as any)
-          .from('player_match_stats')
-          .select('track_id, jersey_number')
-          .eq('match_id', matchId),
-      ]);
-      if (cancelled) return;
-      const map: Record<number, { name?: string; squad_number?: number; confidence?: number; from_ocr?: boolean }> = {};
-
-      // Start from OCR-only stats (lowest priority)
-      (statsRes?.data ?? []).forEach((row: any) => {
-        if (row.jersey_number != null) {
-          map[row.track_id] = { squad_number: row.jersey_number, from_ocr: true };
-        }
-      });
-      // Overlay roster-linked mappings (higher priority)
-      (mapRes?.data ?? []).forEach((row: any) => {
-        map[row.track_id] = {
-          name: row.players?.name,
-          squad_number: row.players?.squad_number ?? row.jersey_number ?? undefined,
-          confidence: row.confidence ?? undefined,
-          from_ocr: !row.players?.name,
-        };
-      });
-      setMapping(map);
-    })();
-    return () => { cancelled = true; };
-  }, [matchId]);
 
   const playerEvents = useMemo(
     () => (selected === null ? [] : events.filter((e) => e.player_track_id === selected)),
@@ -256,19 +212,6 @@ export function PlayerSpotlightPanel({
 
   const selectedHeatmap: HeatmapData | null =
     selected !== null ? (heatmaps?.[String(selected)] ?? heatmaps?.[selected] ?? null) : null;
-
-  const labelFor = (id: number) => {
-    const m = mapping[id];
-    if (m?.squad_number) return `#${m.squad_number}`;
-    // Internal track ID — distinguish visually from a real jersey number
-    return `T${id}`;
-  };
-  const nameFor = (id: number) => {
-    const m = mapping[id];
-    if (m?.name) return m.name;
-    if (m?.squad_number) return `Unknown #${m.squad_number}`;
-    return `Track ${id}`;
-  };
 
   return (
     <div className="flex flex-col h-full">
