@@ -178,7 +178,6 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
           src={videoUrl}
           playsInline
           preload="auto"
-          crossOrigin="anonymous"
           onClick={() => {
             const v = videoRef.current;
             if (!v) return;
