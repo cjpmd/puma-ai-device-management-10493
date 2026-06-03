@@ -19,7 +19,10 @@ const CONFIDENCE_THRESHOLD = 2.5;
  *
  * Returns helpers so panels can render "#9 Alex Smith" instead of "#8044".
  */
-export function useTrackLabels(matchId: string | undefined) {
+export function useTrackLabels(
+  matchId: string | undefined,
+  playerMetrics?: Record<string, any> | null,
+) {
   const [mapping, setMapping] = useState<Record<number, TrackLabel>>({});
 
   useEffect(() => {
@@ -71,17 +74,32 @@ export function useTrackLabels(matchId: string | undefined) {
     };
   }, [matchId]);
 
+  const guessFor = (id: number): { num: number; conf: number } | null => {
+    if (!playerMetrics) return null;
+    const pm = playerMetrics[String(id)] ?? playerMetrics[id];
+    const num = pm?.jersey_number_guess;
+    if (num == null) return null;
+    return { num: Number(num), conf: Number(pm?.jersey_confidence ?? 0) };
+  };
+
   const labelFor = (id: number) => {
     const m = mapping[id];
     if (m?.confirmed && m.squad_number) return `#${m.squad_number}`;
+    const g = guessFor(id);
+    if (g) return `~${g.num}`;
     return `T${id}`;
   };
   const nameFor = (id: number) => {
     const m = mapping[id];
     if (m?.name) return m.name;
     if (m?.confirmed && m.squad_number) return `Unknown #${m.squad_number}`;
+    const g = guessFor(id);
+    if (g) return `Likely #${g.num}`;
     return `Track ${id}`;
   };
 
-  return { mapping, labelFor, nameFor };
+  const isIdentified = (id: number) =>
+    !!mapping[id]?.confirmed || guessFor(id) !== null;
+
+  return { mapping, labelFor, nameFor, isIdentified, guessFor };
 }

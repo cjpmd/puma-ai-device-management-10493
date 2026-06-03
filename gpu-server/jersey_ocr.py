@@ -28,7 +28,7 @@ from typing import Optional
 import numpy as np
 
 # Sampling cadence
-OCR_EVERY_N_NEAR  = 8    # bbox height >= NEAR_BBOX_PX
+OCR_EVERY_N_NEAR  = 4    # bbox height >= NEAR_BBOX_PX
 OCR_EVERY_N_FAR   = 12   # smaller bboxes
 NEAR_BBOX_PX      = 120
 
@@ -39,9 +39,9 @@ UPSCALE_TARGET_H  = 128  # px — upscale band to this height before OCR
 
 # Voting
 OCR_MIN_CONF      = 0.40
-CONFIRM_VOTE_SCORE = 2.5   # Σ confidence required for the winning number
-CONFIRM_VOTE_LEAD  = 1.0   # winner must beat runner-up by this much
-CONFIRM_MIN_FRAMES = 30    # don't confirm before this many frames seen
+CONFIRM_VOTE_SCORE = 1.6   # Σ confidence required for the winning number
+CONFIRM_VOTE_LEAD  = 0.6   # winner must beat runner-up by this much
+CONFIRM_MIN_FRAMES = 12    # don't confirm before this many frames seen
 
 # Roster snap
 ROSTER_SNAP_DIST  = 1      # max edit distance for off-roster snap
