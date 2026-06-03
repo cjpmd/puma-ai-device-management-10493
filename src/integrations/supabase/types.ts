@@ -740,6 +740,39 @@ export type Database = {
           },
         ]
       }
+      match_rosters: {
+        Row: {
+          created_at: string
+          id: string
+          jersey_number: number
+          match_id: string
+          player_id: string | null
+          player_name: string | null
+          side: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          jersey_number: number
+          match_id: string
+          player_id?: string | null
+          player_name?: string | null
+          side: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          jersey_number?: number
+          match_id?: string
+          player_id?: string | null
+          player_name?: string | null
+          side?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       match_shares: {
         Row: {
           created_at: string
