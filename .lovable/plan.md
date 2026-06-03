@@ -1,14 +1,21 @@
-## Fix: Load Match Video error
+## Player Spotlight — count + identification fixes
 
-**Root cause:** `get-output-url` picks the newest completed job, but that job has a NULL `output_video_path`. The older job with a valid path is never considered → 404 → "Edge Function returned a non-2xx status code".
+### 1. `src/components/Matches/Cinema/PlayerSpotlightPanel.tsx`
+- Build `trackIds` from `playerMetrics` keys first; only fall back to event-derived IDs when `playerMetrics` is empty. Drops "6166 tracked" to the real ~22–30.
+- Pass `playerMetrics` into `useTrackLabels`.
 
-## Change
+### 2. `src/components/Matches/Cinema/useTrackLabels.ts`
+- Accept optional `playerMetrics`. When no confirmed mapping exists, fall back to `jersey_number_guess` + `jersey_confidence` from metrics.
+- `labelFor`: `#9` confirmed, `~9` guess, `T<id>` fallback.
+- Count "identified" = confirmed + guessed.
 
-**`supabase/functions/get-output-url/index.ts`** — change the job lookup to filter by the column matching the requested `file_type`:
+### 3. `gpu-server/jersey_ocr.py`
+- `CONFIRM_MIN_FRAMES`: 30 → 12
+- `CONFIRM_VOTE_SCORE`: 2.5 → 1.6
+- `CONFIRM_VOTE_LEAD`: 1.0 → 0.6
+- `OCR_EVERY_N_NEAR`: 8 → 4
 
-- Map `file_type` → column (`output_video_path` / `output_highlights_path` / `output_metadata_path`).
-- Query `processing_jobs` with `.not(<column>, "is", null)` in addition to the existing status filter, ordered by `completed_at desc` then `created_at desc`, limit 1.
-- Return a clearer 404 (`No completed job has a <file_type> output yet`) when nothing matches.
-- Rest of the function (presign reuse + re-sign logic) stays as-is.
+### 4. `supabase/functions/analysis-callback/index.ts`
+- Lower OCR confidence floor for `track_player_mapping` writes from 2.5 → 1.6.
 
-No frontend changes — `MatchDetail.tsx` already gates the button correctly on the client side.
+Frontend changes (#1, #2) help the existing job immediately. GPU/callback (#3, #4) take effect on re-runs.
