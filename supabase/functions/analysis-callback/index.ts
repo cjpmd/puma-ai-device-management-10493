@@ -193,11 +193,6 @@ Deno.serve(async (req) => {
 
       // ── Link tracks → roster players via confirmed jersey numbers ──
       try {
-        const { data: matchRow } = await adminClient
-          .from("matches")
-          .select("is_home")
-          .eq("id", job!.match_id)
-          .maybeSingle();
         const { data: rosterRows } = await adminClient
           .from("match_rosters")
           .select("side, jersey_number, player_id")
@@ -214,11 +209,11 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Our side ("home"/"away") corresponds to match.is_home → team "A" by convention
-        const isHome = matchRow?.is_home !== false;
+        // GPU now assigns team labels by jersey colour and matches them to
+        // the supplied home/away kit colours, so A always means home, B away.
         const teamToSide: Record<string, "home" | "away"> = {
-          A: isHome ? "home" : "away",
-          B: isHome ? "away" : "home",
+          A: "home",
+          B: "away",
         };
 
         const mappingRows: Array<{
@@ -237,7 +232,8 @@ Deno.serve(async (req) => {
           // Skip low-confidence OCR — keeps roster mapping clean.
           // Threshold mirrors CONFIRM_VOTE_SCORE in jersey_ocr.py.
           const conf = (pm as any).jersey_confidence ?? 0;
-          if (conf < 1.6) continue;
+          // Mirror CONFIRM_VOTE_SCORE in gpu-server/jersey_ocr.py
+          if (conf < 1.1) continue;
           const team = (pm as any).team as string | null | undefined;
           const side = team ? teamToSide[team] : null;
           const playerId = side ? rosterBySide[side].get(Number(jersey)) ?? null : null;
