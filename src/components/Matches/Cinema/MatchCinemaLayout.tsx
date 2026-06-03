@@ -9,6 +9,8 @@ import { TeamPanel } from './TeamPanel';
 import { PlayerSpotlightPanel } from './PlayerSpotlightPanel';
 import { PassNetworkPanel } from './PassNetworkPanel';
 import { MatchTimelineStrip } from './MatchTimelineStrip';
+import { TaggingPanel } from './TaggingPanel';
+import { AccuracyPanel } from './AccuracyPanel';
 import { supabase } from '@/integrations/supabase/client';
 import type { TimelineEvent } from '@/types/video-analysis';
 
@@ -34,6 +36,7 @@ export function MatchCinemaLayout({
   const [duration, setDuration] = useState(0);
   const [coachTags, setCoachTags] = useState<TimelineEvent[]>([]);
   const [stitchedPath, setStitchedPath] = useState<string | null>(null);
+  const [tagsVersion, setTagsVersion] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cvEvents: TimelineEvent[] = (job?.event_data?.events || []).map((e: any) => ({
@@ -74,7 +77,7 @@ export function MatchCinemaLayout({
       );
     })();
     return () => { cancelled = true; };
-  }, [matchId]);
+  }, [matchId, tagsVersion]);
 
   // Poll video_footage every 15s for stitched path
   const pollStitched = useCallback(async () => {
@@ -167,6 +170,10 @@ export function MatchCinemaLayout({
             />
           )}
           {active === 'team' && <TeamPanel matchId={matchId} job={job} />}
+          {active === 'tagging' && (
+            <TaggingPanel matchId={matchId} currentTime={currentTime} onTagsChanged={() => setTagsVersion((v) => v + 1)} />
+          )}
+          {active === 'accuracy' && <AccuracyPanel matchId={matchId} job={job} />}
         </div>
       </div>
     </div>
