@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
       .from("processing_jobs")
       .select("output_video_path, output_highlights_path, output_metadata_path")
       .eq("match_id", match_id)
-      .eq("status", "complete")
+      .in("status", ["complete", "completed"])
       .order("completed_at", { ascending: false })
       .limit(1)
       .single();
@@ -97,14 +97,30 @@ Deno.serve(async (req) => {
       metadata: job.output_metadata_path,
     };
 
-    const storagePath = pathMap[file_type];
+    let storagePath = pathMap[file_type];
     if (!storagePath) {
       return new Response(JSON.stringify({ error: `No ${file_type} output available` }), { status: 404, headers: corsHeaders });
     }
 
+    // If the stored value is a fully-qualified URL (e.g. a previously
+    // generated presigned URL), extract the object key so we can re-sign it
+    // with a fresh expiry instead of returning the stale URL.
+    if (/^https?:\/\//i.test(storagePath)) {
+      try {
+        const u = new URL(storagePath);
+        // pathname is "/<bucket>/<key>" — strip leading slash + bucket prefix
+        let p = u.pathname.replace(/^\/+/, "");
+        const bucketPrefix = `${Deno.env.get("WASABI_BUCKET")!}/`;
+        if (p.startsWith(bucketPrefix)) p = p.slice(bucketPrefix.length);
+        storagePath = decodeURIComponent(p);
+      } catch {
+        // fall through and let signing fail loudly
+      }
+    }
+
     // Generate presigned GET URL for Wasabi
-    const accessKey = Deno.env.get("WASABI_ACCESS_KEY")!;
-    const secretKey = Deno.env.get("WASABI_SECRET_KEY")!;
+    const accessKey = Deno.env.get("WASABI_ACCESS_KEY_ID") || Deno.env.get("WASABI_ACCESS_KEY")!;
+    const secretKey = Deno.env.get("WASABI_SECRET_ACCESS_KEY") || Deno.env.get("WASABI_SECRET_KEY")!;
     const bucket = Deno.env.get("WASABI_BUCKET")!;
     const region = (Deno.env.get("WASABI_REGION") || "us-east-1").trim();
     let endpoint = (Deno.env.get("WASABI_ENDPOINT") || `https://s3.${region}.wasabisys.com`).trim();
