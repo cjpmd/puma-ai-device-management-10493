@@ -97,34 +97,63 @@ Deno.serve(async (req) => {
       metadata: job.output_metadata_path,
     };
 
-    let storagePath = pathMap[file_type];
-    if (!storagePath) {
+    const storedValue = pathMap[file_type];
+    if (!storedValue) {
       return new Response(JSON.stringify({ error: `No ${file_type} output available` }), { status: 404, headers: corsHeaders });
     }
 
-    // If the stored value is a fully-qualified URL (e.g. a previously
-    // generated presigned URL), extract the object key so we can re-sign it
-    // with a fresh expiry instead of returning the stale URL.
-    if (/^https?:\/\//i.test(storagePath)) {
+    // If the stored value is already a fully-qualified presigned URL and
+    // hasn't expired, return it as-is. The GPU worker signs URLs with the
+    // correct region/key for the object, so re-signing here often breaks
+    // (wrong region env, key encoding, etc.).
+    if (/^https?:\/\//i.test(storedValue)) {
       try {
-        const u = new URL(storagePath);
-        // pathname is "/<bucket>/<key>" — strip leading slash + bucket prefix
-        let p = u.pathname.replace(/^\/+/, "");
-        const bucketPrefix = `${Deno.env.get("WASABI_BUCKET")!}/`;
-        if (p.startsWith(bucketPrefix)) p = p.slice(bucketPrefix.length);
-        storagePath = decodeURIComponent(p);
-      } catch {
-        // fall through and let signing fail loudly
-      }
+        const u = new URL(storedValue);
+        const dateStr = u.searchParams.get("X-Amz-Date");
+        const expiresStr = u.searchParams.get("X-Amz-Expires");
+        if (dateStr && expiresStr) {
+          // X-Amz-Date format: YYYYMMDDTHHMMSSZ
+          const y = +dateStr.slice(0, 4), mo = +dateStr.slice(4, 6) - 1, d = +dateStr.slice(6, 8);
+          const h = +dateStr.slice(9, 11), mi = +dateStr.slice(11, 13), s = +dateStr.slice(13, 15);
+          const signedAt = Date.UTC(y, mo, d, h, mi, s);
+          const expiresAt = signedAt + (+expiresStr) * 1000;
+          if (Number.isFinite(expiresAt) && expiresAt - Date.now() > 60_000) {
+            return new Response(
+              JSON.stringify({ url: storedValue, file_type, expires_in: Math.floor((expiresAt - Date.now()) / 1000) }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+        }
+      } catch { /* fall through and try to re-sign */ }
     }
 
-    // Generate presigned GET URL for Wasabi
+    // Need to re-sign. Derive region + bucket + key from the stored URL
+    // when possible, so we don't depend on env vars matching the object.
+    let bucket = Deno.env.get("WASABI_BUCKET") || "";
+    let region = (Deno.env.get("WASABI_REGION") || "us-east-1").trim();
+    let storageKey = storedValue;
+
+    if (/^https?:\/\//i.test(storedValue)) {
+      try {
+        const u = new URL(storedValue);
+        const m = u.host.match(/^s3[.-]([a-z0-9-]+)\.wasabisys\.com$/i);
+        if (m) region = m[1];
+        let p = u.pathname.replace(/^\/+/, "");
+        const firstSlash = p.indexOf("/");
+        if (firstSlash > 0) {
+          bucket = p.slice(0, firstSlash);
+          storageKey = decodeURIComponent(p.slice(firstSlash + 1));
+        }
+      } catch { /* keep defaults */ }
+    }
+
     const accessKey = Deno.env.get("WASABI_ACCESS_KEY_ID") || Deno.env.get("WASABI_ACCESS_KEY")!;
     const secretKey = Deno.env.get("WASABI_SECRET_ACCESS_KEY") || Deno.env.get("WASABI_SECRET_KEY")!;
-    const bucket = Deno.env.get("WASABI_BUCKET")!;
-    const region = (Deno.env.get("WASABI_REGION") || "us-east-1").trim();
-    let endpoint = (Deno.env.get("WASABI_ENDPOINT") || `https://s3.${region}.wasabisys.com`).trim();
-    if (!endpoint.startsWith("http")) endpoint = `https://${endpoint}`;
+    const endpoint = `https://s3.${region}.wasabisys.com`;
+
+    // URL-encode each path segment (preserves "/"), so keys with spaces sign correctly.
+    const encodedKey = storageKey.split("/").map(encodeURIComponent).join("/");
+    const encodedBucket = encodeURIComponent(bucket);
 
     const expiresIn = 3600; // 1 hour
     const now = new Date();
@@ -143,7 +172,7 @@ Deno.serve(async (req) => {
 
     const canonicalRequest = [
       "GET",
-      `/${bucket}/${storagePath}`,
+      `/${encodedBucket}/${encodedKey}`,
       canonicalQueryString,
       `host:${host}\n`,
       "host",
@@ -160,7 +189,7 @@ Deno.serve(async (req) => {
     const signingKey = await getSignatureKey(secretKey, shortDate, region, "s3");
     const signature = toHex(await hmacSha256(signingKey, stringToSign));
 
-    const presignedUrl = `${endpoint}/${bucket}/${storagePath}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
+    const presignedUrl = `${endpoint}/${encodedBucket}/${encodedKey}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
 
     return new Response(
       JSON.stringify({ url: presignedUrl, file_type, expires_in: expiresIn }),
