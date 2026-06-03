@@ -1800,6 +1800,15 @@ def run_analysis(job_input: dict) -> dict:
         touch_tracker.assign_teams(team_assignment)
         pass_analyser.assign_teams(team_assignment)
 
+        # Re-snap jersey OCR scores against per-team rosters now that team
+        # assignment is known. During the OCR loop we only had the union
+        # roster; per-team snap roughly halves the candidate space.
+        if home_roster or away_roster:
+            jersey_tracker.restrict_to_team_rosters(
+                track_team_map=team_assignment,
+                rosters_by_team={"A": home_roster, "B": away_roster},
+            )
+
         # Exclude referee tracks from all downstream analytics
         from referee_filter import filter_referees
         referee_track_ids = filter_referees(
