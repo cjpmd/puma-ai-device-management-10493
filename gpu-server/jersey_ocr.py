@@ -210,6 +210,45 @@ class JerseyNumberTracker:
         """Return {track_id: jersey_number} for all confirmed tracks."""
         return dict(self._confirmed)
 
+    def restrict_to_team_rosters(
+        self,
+        track_team_map: dict[int, str],
+        rosters_by_team: dict[str, set[int]],
+    ) -> None:
+        """Once team assignment is known, filter each track's accumulated
+        OCR scores down to its team's roster and re-evaluate confirmation.
+        Numbers that aren't in either roster are dropped via snap, sharply
+        boosting accuracy vs. the wider union used during the OCR loop."""
+        if not rosters_by_team:
+            return
+        new_scores: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
+        new_confirmed: dict[int, int] = {}
+        for tid, scores in self._scores.items():
+            team = track_team_map.get(tid)
+            roster = rosters_by_team.get(team) if team else None
+            if not roster:
+                # No team yet — keep existing scores
+                for num, sc in scores.items():
+                    new_scores[tid][num] += sc
+            else:
+                for num, sc in scores.items():
+                    snapped = _snap_to_roster(num, roster)
+                    if snapped is None:
+                        continue
+                    new_scores[tid][snapped] += sc
+            ranked = sorted(new_scores[tid].items(), key=lambda kv: kv[1], reverse=True)
+            if not ranked:
+                continue
+            top_num, top_score = ranked[0]
+            runner_score = ranked[1][1] if len(ranked) > 1 else 0.0
+            if top_score >= CONFIRM_VOTE_SCORE and (top_score - runner_score) >= CONFIRM_VOTE_LEAD:
+                new_confirmed[tid] = top_num
+            elif tid in self._confirmed and self._confirmed[tid] in new_scores[tid]:
+                # Preserve previously-confirmed identity if still consistent
+                new_confirmed[tid] = self._confirmed[tid]
+        self._scores = new_scores
+        self._confirmed = new_confirmed
+
     def best_guess_identities(self) -> dict[int, tuple[int, float]]:
         """Return {track_id: (jersey_number, score)} for every track that has
         any OCR votes — including ones that haven't passed the confirmation
