@@ -140,14 +140,28 @@ export function PlayerSpotlightPanel({
   const [sort, setSort] = useState<SortMode>('contribution');
   const [showHeatmap, setShowHeatmap] = useState(false);
 
-  // Prefer the GPU-gated playerMetrics set (≤30 real players).
-  // Only fall back to event-derived IDs when metrics are missing
-  // (demo / legacy jobs).
+  // Prefer the GPU-gated playerMetrics set, but apply the same plausibility
+  // filter client-side because some (legacy) jobs persisted 6000+ ByteTrack
+  // fragments. Only fall back to event-derived IDs when metrics are missing
+  // (demo / legacy jobs with no metrics at all).
   const trackIds = useMemo(() => {
     if (playerMetrics && Object.keys(playerMetrics).length > 0) {
-      return Object.keys(playerMetrics)
-        .map((k) => Number(k))
-        .filter((n) => !Number.isNaN(n));
+      const candidates = Object.entries(playerMetrics)
+        .map(([k, pm]) => ({ id: Number(k), pm: pm as any }))
+        .filter(({ id, pm }) => {
+          if (Number.isNaN(id)) return false;
+          if (pm?.team !== 'A' && pm?.team !== 'B') return false;
+          const mins = Number(pm?.minutes_played ?? 0);
+          const dist = Number(pm?.distance_m ?? 0);
+          return mins > 0 || dist >= 5;
+        });
+      candidates.sort((a, b) => {
+        const am = Number(a.pm?.minutes_played ?? 0);
+        const bm = Number(b.pm?.minutes_played ?? 0);
+        if (bm !== am) return bm - am;
+        return Number(b.pm?.distance_m ?? 0) - Number(a.pm?.distance_m ?? 0);
+      });
+      return candidates.slice(0, 30).map((c) => c.id);
     }
     const set = new Set<number>();
     events.forEach((e) => {
