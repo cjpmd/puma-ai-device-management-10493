@@ -1,47 +1,30 @@
-## Findings
+# Plan
 
-### 1. Play/Pause button — root cause
+## What I’ll fix
+1. **Auto-load the match video when it exists** so the cinema player doesn’t open in a half-ready state with a separate hidden/manual load step.
+2. **Block or hide playback controls until the video element has a real source and is ready** so users can’t click transport controls against an unloaded player shell.
+3. **Add explicit media load/play error handling** so failed `play()` or bad media sources show a visible message instead of silently doing nothing.
+4. **Re-verify the cinema controls against the loaded player state** so Play/Pause, seek, skip, mute, speed, and fullscreen only activate when the video is actually ready.
 
-The `<video>` element has its own `onClick={togglePlay}` handler, and `VeoVideoControls` is rendered as an overlay above it. When you click the overlay's Play button, the click fires the button handler (play) **and then bubbles up to the video element** which immediately toggles back to paused. Net effect: nothing happens.
+## Why this is the likely issue
+- The match page is still rendering the cinema timeline and control surface even when the main video area is showing **Load Match Video**.
+- That means the user can interact with a player UI before the underlying `<video>` has been loaded.
+- The previous bubbling fix likely solved one problem, but only **after** a real video element is ready to play.
 
-Same bubbling issue affects every overlay button (skip, mute, fullscreen, speed, settings, volume slider, progress-bar seek).
+## Files to update
+- `src/components/Matches/Cinema/CinemaVideoPlayer.tsx`
+- `src/components/Matches/Cinema/VeoVideoControls.tsx`
+- `src/components/Matches/Cinema/MatchCinemaLayout.tsx`
 
-**Fix:** in `CinemaVideoPlayer.tsx`, stop propagation on the overlay container so clicks inside controls don't reach the video element. Wrap `<VeoVideoControls>` in a div with `onClick={(e) => e.stopPropagation()}`. Click-on-video to play/pause continues to work for the bare video area.
+## Technical details
+- Trigger `loadVideo()` automatically when `outputVideoPath` or `stitchedVideoPath` is present.
+- Track media readiness with native video events like `loadedmetadata`, `canplay`, `play`, `pause`, and `error`.
+- Use the `play()` promise result to catch and surface `NotAllowedError`, unsupported-source, or other media failures.
+- Pass a `ready/loaded` state into `VeoVideoControls` so controls can be disabled or hidden until the video is actually playable.
+- Keep the previous click-bubbling protection in place.
 
-### 2. Other buttons in the cinema layout
-
-- **Icon rail (Clips / Summary / Analytics / Spotlight / Pass Network / Team)**: pure state toggles, work fine
-- **Clips → seek**: works (calls `videoRef.seekTo`)
-- **Timeline event dots / strip**: work (seek to event time)
-- **Mark In / Mark Out / Create Clip**: calls `extract-clip` edge function — not tested for this match, may fail because it expects a real storage path, not a Wasabi URL. Out of scope for this fix.
-- **Outputs → View / Share**: View works after the previous fix; Share opens the share dialog, which calls `create-share-link` — also assumes a storage path, will likely fail for this test job. Out of scope.
-
-### 3. Team calibration — what's wired and what's not
-
-What's correctly set on `matches`:
-- `home_team` = "Broughty United Pumas 2015s"
-- `away_team` = "Kirrie Thistle"
-- `team_id` linked to Pumas (36 players with squad numbers exist in `players`)
-- `club_id` linked to Broughty United
-- `is_home` = true, `status` = complete
-
-What will NOT show real player names/numbers:
-- **PlayerSpotlightPanel** reads from a `track_player_mapping` table, which has no rows for this match — the GPU pipeline only emits anonymous track IDs (1, 2, 3…). Without that mapping, the panel labels players as "Track N" / "#N" from jersey-OCR if present, never by player name.
-- **TeamPanel** likewise shows track IDs, not roster names
-- **player_match_stats** rows written by the callback have `track_id` but no `player_id`, so any roster join returns null
-
-In short: scoreline + home/away/colour styling are correct; per-player attribution to the actual Pumas squad is **not** calibrated and requires a separate manual or assisted mapping flow (out of scope here).
-
-What WILL show correctly:
-- Scoreline header with team names + colours
-- Aggregate stats (distance, top speed, sprints, passes…) per anonymous track
-- Heatmaps, pass network, CV events on the timeline
-
-## Changes in this fix
-
-1. `src/components/Matches/Cinema/CinemaVideoPlayer.tsx` — wrap `<VeoVideoControls>` in a `<div onClick={stopPropagation}>` so overlay button clicks don't bubble to the video and self-cancel.
-
-## Out of scope (call out, don't fix now)
-
-- `extract-clip` / `create-share-link` likely fail for the test job (full URL stored where a storage path is expected)
-- Roster mapping from anonymous CV `track_id` to real Pumas players — needs a UI to tag each track once, then persist in `track_player_mapping`
+## Validation
+- Confirm the match opens with the video loaded automatically when a URL is available.
+- Confirm Play/Pause advances time and toggles icon state.
+- Confirm skip, seek bar, event-jump, mute, speed, and fullscreen work only after readiness.
+- Confirm a failed media source produces a visible error instead of a dead play button.

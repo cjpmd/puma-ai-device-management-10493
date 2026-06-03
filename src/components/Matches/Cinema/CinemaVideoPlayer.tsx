@@ -45,6 +45,8 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
     const [clipIn, setClipIn] = useState<number | null>(null);
     const [clipOut, setClipOut] = useState<number | null>(null);
     const [extracting, setExtracting] = useState(false);
+    const [mediaError, setMediaError] = useState<string | null>(null);
+    const [ready, setReady] = useState(false);
 
     useEffect(() => {
       if (demoVideoUrl) {
@@ -115,6 +117,15 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
       }
     };
 
+    // Auto-load when we have a stored path but no URL yet.
+    useEffect(() => {
+      if (videoUrl) return;
+      if (loading) return;
+      if (!outputVideoPath && !stitchedVideoPath) return;
+      loadVideo();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [outputVideoPath, stitchedVideoPath, videoUrl]);
+
     const handleExtractClip = async () => {
       if (clipIn === null || clipOut === null) return;
       if (clipOut <= clipIn) {
@@ -165,10 +176,20 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
         <video
           ref={videoRef}
           src={videoUrl}
+          playsInline
+          preload="auto"
+          crossOrigin="anonymous"
           onClick={() => {
             const v = videoRef.current;
             if (!v) return;
-            if (v.paused) v.play().catch(() => {}); else v.pause();
+            if (v.paused) {
+              v.play().catch((err) => {
+                setMediaError(err?.message || 'Playback failed');
+                toast({ title: 'Playback failed', description: err?.message || String(err), variant: 'destructive' });
+              });
+            } else {
+              v.pause();
+            }
           }}
           onTimeUpdate={(e) => {
             const t = (e.target as HTMLVideoElement).currentTime;
@@ -179,6 +200,21 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
             const d = (e.target as HTMLVideoElement).duration;
             setDuration(d);
             onDurationChange?.(d);
+            setReady(true);
+          }}
+          onCanPlay={() => setReady(true)}
+          onError={(e) => {
+            const v = e.currentTarget as HTMLVideoElement;
+            const code = v.error?.code;
+            const map: Record<number, string> = {
+              1: 'Playback aborted',
+              2: 'Network error while loading video',
+              3: 'Video decoding failed',
+              4: 'Video source not supported by this browser',
+            };
+            const msg = code ? map[code] || `Media error ${code}` : 'Unknown media error';
+            setMediaError(msg);
+            toast({ title: 'Video error', description: msg, variant: 'destructive' });
           }}
           onDurationChange={(e) => {
             const d = (e.target as HTMLVideoElement).duration;
@@ -196,8 +232,15 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
             events={events}
             currentTime={currentTime}
             duration={duration}
+            disabled={!ready}
           />
         </div>
+
+        {mediaError && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 bg-destructive/90 text-destructive-foreground text-xs px-3 py-1.5 rounded-full shadow">
+            {mediaError}
+          </div>
+        )}
 
         {/* Clip extraction toolbar — visible on hover */}
         <div className="absolute bottom-14 left-1/2 -translate-x-1/2 opacity-0 group-hover/player:opacity-100 transition-opacity flex items-center gap-2 bg-black/80 backdrop-blur-sm rounded-full px-3 py-1.5">
