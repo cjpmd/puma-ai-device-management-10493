@@ -1,64 +1,75 @@
 ## Goal
 
-Make coach-added tags the source of truth for the cinema view: drive the scoreline, the analytics summary, and the clip list (with 5-second pre-roll for goals & shots on target).
+Phase 1 of the analytics roadmap: make per-player identity reliable enough that the cinema UI shows real shirt numbers (and names where the coach has supplied a roster), instead of ephemeral ByteTrack IDs. Heuristics-only — no model fine-tuning.
 
-## Scope
+## Why current OCR misses
 
-Frontend-only. No GPU pipeline changes, no DB schema changes. Uses the `match_event_tags` rows already saved via the Tagging panel.
+`gpu-server/jersey_ocr.py` runs EasyOCR on a fixed 25–55% slice of each bbox, accepts any 1–2 digit read, and requires 3 identical readings to confirm. On 4K-downscaled grassroots footage that means:
+- Crops are tiny and blurry → most reads fail or return junk.
+- EasyOCR confidence is ignored → noisy reads vote equally with strong ones.
+- No roster constraint → a misread "8" beats a real "18".
+- Once ByteTrack drops a track, the next track ID starts identity-less even though the same shirt is on screen.
+- No way for a coach to correct an identity in the UI without re-running GPU.
 
 ## Changes
 
-### 1. Shared tag-derived stats hook
-Create `src/components/Matches/Cinema/useCoachTagStats.ts`:
-- Input: `coachTags: TimelineEvent[]`.
-- Output:
-  - `homeScore`, `awayScore` (count of `event_type === 'goal'` per `team`).
-  - Counts: `goals`, `shots`, `shots_on_target`, `saves`, `passes`, `tackles`, plus per-team breakdown.
-  - `result` string: `'W' | 'L' | 'D'` from the perspective of `match.is_home`.
-- Memoized; safe with empty arrays.
+### 1. Roster table + entry UI
+Add `match_rosters` (per match, per side):
+```
+match_id uuid, side text ('home'|'away'),
+jersey_number int, player_id uuid null, player_name text null,
+PRIMARY KEY (match_id, side, jersey_number)
+```
+With GRANTs + RLS scoped to match owner.
 
-### 2. Summary panel — show actual result
-`SummaryPanel.tsx` + `ScorelineCard.tsx`:
-- Accept optional `tagHomeScore` / `tagAwayScore` props; when present, prefer them over `match.home_score` / `match.away_score`.
-- Treat scoreline as Final when any coach `goal` tag exists OR `status === 'complete'`.
-- Add a small "Result" pill (W / L / D, coloured) next to "Final Result" derived from `is_home`.
-- Add a compact "From coach tags" caption when tag-derived scores are used so it's clear where the numbers come from.
+New cinema sub-panel "Roster" (small icon in `IconRail`) — coach picks home/away tab, types numbers + names (or picks from `players`). Saved per match. Optional but unlocks roster-constrained OCR.
 
-### 3. New Tag Stats summary card
-Add a small stats strip inside the Summary panel under the scoreline:
-- Goals · Shots · Shots on target · Saves · Passes · Tackles (per team where possible).
-- Renders only when there is at least one coach tag.
-- Same `useCoachTagStats` hook.
+### 2. Smarter jersey OCR (`gpu-server/jersey_ocr.py`)
+- **Bigger, sharper crops:** y-band 18–60%, upscale crop to ≥96 px height with cubic, apply CLAHE + light unsharp mask before reading.
+- **Two-band reads:** front (28–48%) and back (50–72%) — back numbers usually larger.
+- **Use OCR confidence:** call `readtext(..., detail=1)`; keep `(number, confidence)`; reject confidence < 0.4.
+- **Run OCR more often when crop is large** (bbox height > 120 px), less often when far away.
+- **Weighted voting:** instead of "3 identical readings", score each candidate by `Σ confidence`; confirm when top score ≥ 1.5 AND beats runner-up by ≥ 0.5.
+- **Roster constraint:** if roster supplied for a team, only count reads whose digit is in the roster set; if not in roster, fall back to nearest roster number within Levenshtein 1 ("13"↔"18"); discard otherwise.
+- **Team-aware:** require a team label from kit-colour clustering before counting a read; numbers on the wrong team are dropped.
 
-### 4. Analytics panel — overlay coach numbers
-`AnalyticsPanel.tsx` / `MatchAnalyticsDashboard.tsx`:
-- Pass coach tags down.
-- In `MatchStatsView`, when coach stats exist, prefer them for Goals / Shots / Shots on target / Saves / Passes / Tackles, and label the section "Coach-tagged stats" (keep CV-derived possession %, xG, pass success % as-is when present).
-- Add a top scoreline row mirroring the Summary so analytics opens on the actual result.
+### 3. Track-ID merging across short gaps
+After the ByteTrack loop, run a post-pass in `handler.py`:
+- Group all tracks by `(team, confirmed_jersey)`; for each group, merge their segments into one virtual identity in `player_metrics`, summing distance/passes/etc.
+- For tracks that never confirmed a number but spatially+temporally bridge two segments of the same confirmed identity (gap ≤ 2 s, position delta consistent with run speed), merge them too.
+- Output a `track_id_aliases: {old_id: virtual_id}` map alongside metrics for downstream UI.
 
-### 5. Clips panel — include tags + 5 s pre-roll
-`ClipsPanel.tsx`:
-- Accept full `TimelineEvent[]` (already does); display coach tags with a small "Coach" badge so they're visually distinct from CV events.
-- Extend filter presets: All, Goals, Shots, Shots on target, Saves, Passes, Tackles. Matching rules check both `type` and `outcome` for CV events and `type` for coach tags (e.g. `shot_on_target`).
-- Sort newest-first by time? Keep chronological (matches current behaviour).
-- Add `PRE_ROLL_SECONDS` map: `goal` → 5, `shot_on_target` → 5, default 0.
-- On click, seek to `Math.max(0, ev.time - preRoll)` instead of `ev.time`. Apply only for coach tags + CV `goal`/`shot` outcomes.
+### 4. Pipeline output + DB wiring
+- `analysis-callback` already accepts `player_metrics` — extend it to upsert `player_identities` rows when GPU sends `team_id + jersey + name`, and to write `player_identity_id` / `jersey_number` into `player_match_stats` using the merge map.
+- New optional `player_metrics[*].track_id_aliases` consumed before upsert so multiple track IDs collapse to one row per identity.
 
-### 6. Layout wiring
-`MatchCinemaLayout.tsx`:
-- Compute `coachStats` once via the new hook and pass to `SummaryPanel`, `AnalyticsPanel`, and `ClipsPanel` (latter only needs the pre-roll behaviour, not the stats).
-- Keep existing CV merge intact; coach tags continue to flow through `mergedEvents` for the timeline strip.
+### 5. Cinema UI — show + correct identity
+- `PlayerTracksSummary` / `PlayerSpotlightPanel`: display `#JERSEY · Name` instead of `Track #ID` whenever available; fall back to track ID.
+- Inline "reassign" affordance on each player row: pick a roster entry from a popover → writes the corrected `jersey_number` / `player_identity_id` to `player_match_stats` for that `track_id` (no GPU rerun). Stored as a coach override that always wins over OCR.
+- Show small thumbnail (first decent frame crop) per player so coaches can visually verify before correcting. Use the same crop the OCR took, saved to a new `gpu-server` output `player_thumbnails: { track_id: base64_jpg }` (small, ~80×120, ≤ 5 KB each).
+
+### 6. Eval harness update (`gpu-server/eval.py`)
+Add jersey-identity score: for tagged events that include a `track_id`, compute % of those track IDs whose confirmed jersey matches the roster entry for the tagged team. Surfaces an identity F1 in the Accuracy panel.
 
 ## Out of scope
 
-- Persisting tag-derived scores back to `matches.home_score` / `away_score` (kept read-only; can be a follow-up if the coach wants this saved).
-- Editing/assigning tags to players (already supported by tag table, not part of this request).
-- GPU/CV pipeline updates (Phase 1+ of the analytics roadmap).
+- Re-ID via embeddings / SoccerNet fine-tuning (roadmap Phase 4+).
+- Face/name recognition.
+- Live identity during recording (post-process only).
+- Multi-camera identity stitching (single stitched feed only).
 
 ## Technical notes
 
-- "Shots on target" rule: coach tag `event_type === 'shot_on_target'`, OR `event_type === 'goal'` (a goal implies on-target).
-- "Saves" rule: coach tag `event_type === 'save'`.
-- Team attribution uses the `team` column from the tag (`'home' | 'away'`); tags without a team count toward totals but not per-team scoreline.
-- All UI uses existing semantic Tailwind tokens; no new colours.
-- No DB migrations.
+- All GPU changes are in `gpu-server/` (`jersey_ocr.py`, `handler.py`); no new Python dependencies (CLAHE/unsharp = OpenCV, already present).
+- One new migration: `match_rosters` table + GRANTs + RLS. `player_identities` already exists.
+- UI work in `src/components/Matches/Cinema/` (new `RosterPanel`, additions to `PlayerSpotlightPanel`, `PlayerTracksSummary`, `IconRail`).
+- Coach overrides are pure DB writes — no GPU rerun needed to fix mis-identified players.
+- All thresholds (`OCR confidence ≥ 0.4`, vote score `≥ 1.5`, gap `≤ 2 s`) are constants near top of `jersey_ocr.py` so we can tune against the tagged benchmark match.
+
+## Phasing within Phase 1
+
+1. Migration + Roster panel (lets coach enter a roster today).
+2. OCR rewrite + roster constraint + weighted voting.
+3. Track-ID merging + thumbnails + callback wiring.
+4. UI display + coach-override reassign.
+5. Eval-harness identity metric; tune thresholds against benchmark match.
