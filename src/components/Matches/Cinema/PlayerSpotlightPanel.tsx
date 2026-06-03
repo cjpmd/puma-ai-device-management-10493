@@ -20,7 +20,7 @@ import {
   Map,
 } from 'lucide-react';
 import { useEventThumbnails } from './useEventThumbnails';
-import { supabase } from '@/integrations/supabase/client';
+import { useTrackLabels } from './useTrackLabels';
 import type { HeatmapData } from '@/types/video-analysis';
 
 interface MatchEvent {
@@ -136,7 +136,7 @@ export function PlayerSpotlightPanel({
   videoUrl,
   onSeek,
 }: PlayerSpotlightPanelProps) {
-  const [mapping, setMapping] = useState<Record<number, { name?: string; squad_number?: number }>>({});
+  const { mapping, labelFor, nameFor } = useTrackLabels(matchId);
   const [sort, setSort] = useState<SortMode>('contribution');
   const [showHeatmap, setShowHeatmap] = useState(false);
 
@@ -173,28 +173,6 @@ export function PlayerSpotlightPanel({
   useEffect(() => {
     if (selected === null && sortedTrackIds.length > 0) setSelected(sortedTrackIds[0]);
   }, [sortedTrackIds, selected]);
-
-  // Load track→player name/jersey mapping
-  useEffect(() => {
-    if (!matchId || matchId === 'demo') return;
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from('track_player_mapping')
-        .select('track_id, player_id, players ( name, squad_number )')
-        .eq('match_id', matchId);
-      if (cancelled || !data) return;
-      const map: Record<number, { name?: string; squad_number?: number }> = {};
-      data.forEach((row: any) => {
-        map[row.track_id] = {
-          name: row.players?.name,
-          squad_number: row.players?.squad_number,
-        };
-      });
-      setMapping(map);
-    })();
-    return () => { cancelled = true; };
-  }, [matchId]);
 
   const playerEvents = useMemo(
     () => (selected === null ? [] : events.filter((e) => e.player_track_id === selected)),
@@ -233,13 +211,6 @@ export function PlayerSpotlightPanel({
 
   const selectedHeatmap: HeatmapData | null =
     selected !== null ? (heatmaps?.[String(selected)] ?? heatmaps?.[selected] ?? null) : null;
-
-  const labelFor = (id: number) => {
-    const m = mapping[id];
-    if (m?.squad_number) return `#${m.squad_number}`;
-    return `#${id}`;
-  };
-  const nameFor = (id: number) => mapping[id]?.name || `Track ${id}`;
 
   return (
     <div className="flex flex-col h-full">

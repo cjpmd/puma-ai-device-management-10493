@@ -152,7 +152,7 @@ export function MatchCinemaLayout({
       >
         <div className="h-[640px]">
           {active === 'clips' && (
-            <ClipsPanel events={mergedEvents} videoUrl={videoUrl} onSeek={handleSeek} />
+            <ClipsPanel events={mergedEvents} videoUrl={videoUrl} onSeek={handleSeek} matchId={matchId} />
           )}
           {active === 'summary' && <SummaryPanel match={match} coachStats={coachStats} />}
           {active === 'analytics' && (

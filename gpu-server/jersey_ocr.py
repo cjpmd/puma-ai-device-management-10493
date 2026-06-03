@@ -29,13 +29,13 @@ import numpy as np
 
 # Sampling cadence
 OCR_EVERY_N_NEAR  = 8    # bbox height >= NEAR_BBOX_PX
-OCR_EVERY_N_FAR   = 24   # smaller bboxes
+OCR_EVERY_N_FAR   = 12   # smaller bboxes
 NEAR_BBOX_PX      = 120
 
 # Crop bands as (y_start_pct, y_end_pct)
 CROP_BANDS = ((0.28, 0.48), (0.50, 0.72))
 MIN_CROP_SIZE     = 20   # pixels — skip tiny detections
-UPSCALE_TARGET_H  = 96   # px — upscale band to this height before OCR
+UPSCALE_TARGET_H  = 128  # px — upscale band to this height before OCR
 
 # Voting
 OCR_MIN_CONF      = 0.40
@@ -166,26 +166,35 @@ class JerseyNumberTracker:
             if crop.size == 0:
                 continue
             crop = _preprocess(crop)
+            # Run OCR twice — original + horizontally flipped — to catch
+            # back-number variants and slightly off-angle reads.
+            crops_to_read = [crop]
             try:
-                results = reader.readtext(crop, allowlist="0123456789", detail=1)
+                import cv2
+                crops_to_read.append(cv2.flip(crop, 1))
             except Exception:
-                continue
-            for item in results:
-                # detail=1 → (bbox, text, conf)
-                if not isinstance(item, (list, tuple)) or len(item) < 3:
+                pass
+            for c in crops_to_read:
+                try:
+                    results = reader.readtext(c, allowlist="0123456789", detail=1)
+                except Exception:
                     continue
-                text, conf = item[1], float(item[2])
-                if conf < OCR_MIN_CONF:
-                    continue
-                num = _extract_jersey_number(str(text))
-                if num is None:
-                    continue
-                if roster is not None:
-                    snapped = _snap_to_roster(num, roster)
-                    if snapped is None:
+                for item in results:
+                    # detail=1 → (bbox, text, conf)
+                    if not isinstance(item, (list, tuple)) or len(item) < 3:
                         continue
-                    num = snapped
-                self._scores[track_id][num] += conf
+                    text, conf = item[1], float(item[2])
+                    if conf < OCR_MIN_CONF:
+                        continue
+                    num = _extract_jersey_number(str(text))
+                    if num is None:
+                        continue
+                    if roster is not None:
+                        snapped = _snap_to_roster(num, roster)
+                        if snapped is None:
+                            continue
+                        num = snapped
+                    self._scores[track_id][num] += conf
 
         # Try to confirm
         scores = self._scores[track_id]
@@ -201,8 +210,66 @@ class JerseyNumberTracker:
         """Return {track_id: jersey_number} for all confirmed tracks."""
         return dict(self._confirmed)
 
+    def restrict_to_team_rosters(
+        self,
+        track_team_map: dict[int, str],
+        rosters_by_team: dict[str, set[int]],
+    ) -> None:
+        """Once team assignment is known, filter each track's accumulated
+        OCR scores down to its team's roster and re-evaluate confirmation.
+        Numbers that aren't in either roster are dropped via snap, sharply
+        boosting accuracy vs. the wider union used during the OCR loop."""
+        if not rosters_by_team:
+            return
+        new_scores: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
+        new_confirmed: dict[int, int] = {}
+        for tid, scores in self._scores.items():
+            team = track_team_map.get(tid)
+            roster = rosters_by_team.get(team) if team else None
+            if not roster:
+                # No team yet — keep existing scores
+                for num, sc in scores.items():
+                    new_scores[tid][num] += sc
+            else:
+                for num, sc in scores.items():
+                    snapped = _snap_to_roster(num, roster)
+                    if snapped is None:
+                        continue
+                    new_scores[tid][snapped] += sc
+            ranked = sorted(new_scores[tid].items(), key=lambda kv: kv[1], reverse=True)
+            if not ranked:
+                continue
+            top_num, top_score = ranked[0]
+            runner_score = ranked[1][1] if len(ranked) > 1 else 0.0
+            if top_score >= CONFIRM_VOTE_SCORE and (top_score - runner_score) >= CONFIRM_VOTE_LEAD:
+                new_confirmed[tid] = top_num
+            elif tid in self._confirmed and self._confirmed[tid] in new_scores[tid]:
+                # Preserve previously-confirmed identity if still consistent
+                new_confirmed[tid] = self._confirmed[tid]
+        self._scores = new_scores
+        self._confirmed = new_confirmed
+
+    def best_guess_identities(self) -> dict[int, tuple[int, float]]:
+        """Return {track_id: (jersey_number, score)} for every track that has
+        any OCR votes — including ones that haven't passed the confirmation
+        threshold yet. Useful so the UI can show a low-confidence guess
+        instead of falling back to the raw track ID."""
+        out: dict[int, tuple[int, float]] = {}
+        for tid, scores in self._scores.items():
+            if not scores:
+                continue
+            top_num, top_score = max(scores.items(), key=lambda kv: kv[1])
+            out[tid] = (top_num, round(float(top_score), 3))
+        return out
+
     def player_identity_summary(self, track_id: int) -> dict:
-        """Return jersey_number for one player, or empty dict if not confirmed."""
+        """Return jersey_number / guess / confidence for one player."""
+        out: dict = {}
         if track_id in self._confirmed:
-            return {"jersey_number": self._confirmed[track_id]}
-        return {}
+            out["jersey_number"] = self._confirmed[track_id]
+        scores = self._scores.get(track_id)
+        if scores:
+            top_num, top_score = max(scores.items(), key=lambda kv: kv[1])
+            out["jersey_number_guess"] = top_num
+            out["jersey_confidence"] = round(float(top_score), 3)
+        return out

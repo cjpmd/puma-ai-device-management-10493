@@ -2386,28 +2386,37 @@ export type Database = {
       }
       track_player_mapping: {
         Row: {
+          confidence: number | null
           created_at: string
           id: string
+          jersey_number: number | null
           match_id: string
           player_id: string | null
+          source: string | null
           team_label: string | null
           track_id: number
           updated_at: string
         }
         Insert: {
+          confidence?: number | null
           created_at?: string
           id?: string
+          jersey_number?: number | null
           match_id: string
           player_id?: string | null
+          source?: string | null
           team_label?: string | null
           track_id: number
           updated_at?: string
         }
         Update: {
+          confidence?: number | null
           created_at?: string
           id?: string
+          jersey_number?: number | null
           match_id?: string
           player_id?: string | null
+          source?: string | null
           team_label?: string | null
           track_id?: number
           updated_at?: string

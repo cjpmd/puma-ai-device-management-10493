@@ -1,38 +1,69 @@
-## Auto-populate roster from Origin Sports squad
+## Goal
 
-Today the Roster panel is a manual entry form. Because the project already syncs the full squad (with `squad_number` + `name`) from Origin Sports into `public.players`, and `matches` knows which team is ours (`team_id` + `is_home`), we can pre-fill the roster automatically.
+Make Player Spotlight (and the rest of Cinema) show **real shirt numbers and player names** from the Origin Sports squad import, instead of internal track IDs like `#8044`. Tighten the OCR pipeline so identification rate is higher.
 
-### Behaviour
+The OCR pipeline already runs on the GPU, but two things are missing:
 
-1. When the Roster panel opens (or on demand via a button), look up `players` where `team_id = matches.team_id` and `squad_number IS NOT NULL`.
-2. Map those into `match_rosters` for the side that corresponds to `matches.is_home` (true → `home`, false → `away`), storing `player_id`, `jersey_number`, and `player_name`.
-3. Skip rows that would collide with an existing `(match_id, side, jersey_number)` entry, so re-importing is safe and never wipes manual edits.
-4. The opposing side stays manual (we don't have their squad in our DB) — unchanged UX.
+1. Nothing converts confirmed jersey numbers into `track_player_mapping` rows — so the UI can never look up a player.
+2. `PlayerSpotlightPanel` ignores the jersey number even when it's written to `player_match_stats.jersey_number`.
 
-### UI changes (RosterPanel)
+On top of that, the OCR itself can be sharpened now that we have per-team rosters from the squad import.
 
-- Add an **"Import from squad"** button on our side's column header. Disabled with tooltip if `matches.team_id` is null or the squad has no players with `squad_number`.
-- Auto-run the import once on first open if the roster for our side is empty (with a tiny toast: "Imported N players from squad"). User can still add/remove rows manually afterwards.
-- Show a small "from squad" badge on rows that came from the import (rows with `player_id` set).
+---
 
-### Data / schema
+## 1. Auto-link tracks to roster players (callback side)
 
-- No new table needed. `match_rosters` already has `player_id` — we just start populating it.
-- One small migration: add `UNIQUE (match_id, side, jersey_number)` to `match_rosters` so the upsert is conflict-safe and to prevent accidental duplicates. (If duplicates already exist they'll need to be cleaned first; I'll guard the migration with a dedupe step.)
+In `supabase/functions/analysis-callback/index.ts`, after we upsert `player_match_stats`:
 
-### Downstream
+- Load `match_rosters` for the match (we already have it for OCR rosters).
+- For each `(track_id, jersey_number, team)` in `player_metrics`:
+  - Find the roster row where `jersey_number` matches and `side` matches the track's team (A→home / B→away, using `matches.is_home` to flip if needed).
+  - Insert into `track_player_mapping(match_id, track_id, player_id, jersey_number, confidence, source='ocr')`.
+- Upsert on `(match_id, track_id)` so re-runs overwrite.
 
-- `process-video` already passes the roster numbers to the GPU OCR; no change needed there.
-- Cinema panels that show `#JERSEY · Name` will start displaying real player names for our side instead of "unnamed", because `player_name` now comes from `players.name`.
+No new tables — `track_player_mapping` already exists. Add a `source` column + `confidence numeric` if missing (migration).
 
-### Out of scope
+## 2. UI: show jersey + name everywhere we currently show `#<track_id>`
 
-- Importing opposition rosters (not in our DB).
-- Linking detected tracks to specific `player_id`s automatically — still requires confirmed jersey OCR, which is the next phase.
-- Editing the synced squad itself from inside the match view.
+In `src/components/Matches/Cinema/PlayerSpotlightPanel.tsx`:
 
-### Files to touch
+- Extend the mapping fetch to also pull `player_match_stats(track_id, jersey_number, team)` for the match — so even when `track_player_mapping` is missing (no roster match), pills still read `#9` instead of `#8044`.
+- `labelFor(id)` priority: `mapping[id].squad_number` → `player_match_stats[id].jersey_number` → fall back to `Track {id}` (not `#{id}`, so users stop confusing internal IDs with shirt numbers).
+- `nameFor(id)`: roster name → "Unknown #N" → `Track {id}`.
+- Same fix in `PassNetworkPanel` and `ClipsPanel` if they format `#track_id`.
 
-- `src/components/Matches/Cinema/RosterPanel.tsx` — add import button + auto-import-on-empty, accept `teamId` / `isHome` props, render "from squad" badge.
-- `src/components/Matches/Cinema/MatchCinemaLayout.tsx` — pass `team_id` and `is_home` from the loaded match into `RosterPanel`.
-- New migration: `ALTER TABLE public.match_rosters ADD CONSTRAINT match_rosters_match_side_num_uniq UNIQUE (match_id, side, jersey_number);` (after a dedupe pass).
+## 3. Tighten OCR (`gpu-server/jersey_ocr.py` + `gpu-server/handler.py`)
+
+Three changes, all low-risk:
+
+- **Per-team rosters after team assignment.** Currently `process-video` sends one union set and OCR snaps to that. After `team_assignment` runs in `handler.py`, call `jersey_tracker.set_rosters({"A": home_or_away_set, "B": the_other_set})` once we know which detected team corresponds to home/away (using jersey colour vs. the team's primary colour, or majority vote of confirmed reads). Snapping to a 11-number set is far more accurate than to a ~22-number union.
+- **Better small-crop OCR.** Lower `OCR_EVERY_N_FAR` from 24 → 12, raise `UPSCALE_TARGET_H` from 96 → 128, and add a second OCR pass on the horizontally-flipped crop (helps with back-number variants). Keep voting thresholds the same.
+- **Surface "best guess" alongside confirmed.** Expose `best_guess_identities()` returning the top candidate per track even if it didn't hit `CONFIRM_VOTE_SCORE`, plus its confidence. Merge into `player_metrics` as `jersey_number_guess` + `jersey_confidence`. The callback uses `jersey_number` only for `track_player_mapping`; the guess is shown in UI with a "?" badge.
+
+## 4. Re-run processing for this match
+
+The existing job pre-dates the squad import and used no roster snap. After (1)–(3) ship, re-trigger via Developer Controls so this match gets real numbers/names.
+
+---
+
+## Technical details
+
+**Files**
+
+- `supabase/functions/analysis-callback/index.ts` — add roster→track_player_mapping write block.
+- `supabase/migrations/<new>.sql` — add `source text` and `confidence numeric` to `track_player_mapping` if not present, plus a UNIQUE `(match_id, track_id)` constraint for the upsert.
+- `src/components/Matches/Cinema/PlayerSpotlightPanel.tsx` — extra query, new `labelFor` / `nameFor`.
+- `src/components/Matches/Cinema/PassNetworkPanel.tsx`, `ClipsPanel.tsx` — same label helper (extract into a small hook `useTrackLabels(matchId)` so all panels share it).
+- `gpu-server/jersey_ocr.py` — tweak constants, add flipped pass, add `best_guess_identities`.
+- `gpu-server/handler.py` — call `set_rosters` per team after team assignment; merge best-guess into `player_metrics`.
+
+**Out of scope**
+
+- Manual "assign track → player" UI (good follow-up, not needed yet).
+- Re-identifying players across sessions/matches (jersey OCR is per-match for now).
+- Opposition roster import.
+
+```text
+events ──► track_id  ──►  track_player_mapping  ──► player.name + squad_number
+                  └──►  player_match_stats.jersey_number  (fallback for label)
+```
