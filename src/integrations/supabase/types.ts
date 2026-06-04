@@ -630,6 +630,66 @@ export type Database = {
         }
         Relationships: []
       }
+      match_event_tags: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          is_ground_truth: boolean
+          match_id: string
+          notes: string | null
+          player_id: string | null
+          tagged_by: string | null
+          team: string | null
+          timestamp_ms: number
+          track_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          is_ground_truth?: boolean
+          match_id: string
+          notes?: string | null
+          player_id?: string | null
+          tagged_by?: string | null
+          team?: string | null
+          timestamp_ms: number
+          track_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          is_ground_truth?: boolean
+          match_id?: string
+          notes?: string | null
+          player_id?: string | null
+          tagged_by?: string | null
+          team?: string | null
+          timestamp_ms?: number
+          track_id?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "match_event_tags_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "match_event_tags_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       match_insights: {
         Row: {
           coaching_focus: Json | null
@@ -679,6 +739,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      match_rosters: {
+        Row: {
+          created_at: string
+          id: string
+          jersey_number: number
+          match_id: string
+          player_id: string | null
+          player_name: string | null
+          side: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          jersey_number: number
+          match_id: string
+          player_id?: string | null
+          player_name?: string | null
+          side: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          jersey_number?: number
+          match_id?: string
+          player_id?: string | null
+          player_name?: string | null
+          side?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       match_shares: {
         Row: {
@@ -1637,6 +1730,9 @@ export type Database = {
           player_tracking_data: Json | null
           processing_logs: string | null
           runpod_job_id: string | null
+          source_left_path: string | null
+          source_right_path: string | null
+          source_video_path: string | null
           started_at: string | null
           status: string
           team_metrics: Json | null
@@ -1658,6 +1754,9 @@ export type Database = {
           player_tracking_data?: Json | null
           processing_logs?: string | null
           runpod_job_id?: string | null
+          source_left_path?: string | null
+          source_right_path?: string | null
+          source_video_path?: string | null
           started_at?: string | null
           status?: string
           team_metrics?: Json | null
@@ -1679,6 +1778,9 @@ export type Database = {
           player_tracking_data?: Json | null
           processing_logs?: string | null
           runpod_job_id?: string | null
+          source_left_path?: string | null
+          source_right_path?: string | null
+          source_video_path?: string | null
           started_at?: string | null
           status?: string
           team_metrics?: Json | null
@@ -2293,28 +2395,37 @@ export type Database = {
       }
       track_player_mapping: {
         Row: {
+          confidence: number | null
           created_at: string
           id: string
+          jersey_number: number | null
           match_id: string
           player_id: string | null
+          source: string | null
           team_label: string | null
           track_id: number
           updated_at: string
         }
         Insert: {
+          confidence?: number | null
           created_at?: string
           id?: string
+          jersey_number?: number | null
           match_id: string
           player_id?: string | null
+          source?: string | null
           team_label?: string | null
           track_id: number
           updated_at?: string
         }
         Update: {
+          confidence?: number | null
           created_at?: string
           id?: string
+          jersey_number?: number | null
           match_id?: string
           player_id?: string | null
+          source?: string | null
           team_label?: string | null
           track_id?: number
           updated_at?: string

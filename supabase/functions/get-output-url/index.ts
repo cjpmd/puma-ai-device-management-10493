@@ -77,38 +77,89 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Match not found" }), { status: 404, headers: corsHeaders });
     }
 
-    // Get the output path from processing_jobs
-    const { data: job, error: jobErr } = await adminClient
-      .from("processing_jobs")
-      .select("output_video_path, output_highlights_path, output_metadata_path")
-      .eq("match_id", match_id)
-      .eq("status", "complete")
-      .order("completed_at", { ascending: false })
-      .limit(1)
-      .single();
+    // Pick the latest completed job that actually has the requested output path.
+    // The newest completed job may have null paths (partial/failed runs); skip those.
+    const column =
+      file_type === "video"
+        ? "output_video_path"
+        : file_type === "highlights"
+        ? "output_highlights_path"
+        : "output_metadata_path";
 
-    if (jobErr || !job) {
-      return new Response(JSON.stringify({ error: "No completed processing job found" }), { status: 404, headers: corsHeaders });
+    const { data: jobs, error: jobErr } = await adminClient
+      .from("processing_jobs")
+      .select("output_video_path, output_highlights_path, output_metadata_path, completed_at, created_at")
+      .eq("match_id", match_id)
+      .in("status", ["complete", "completed"])
+      .not(column, "is", null)
+      .order("completed_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (jobErr || !jobs || jobs.length === 0) {
+      return new Response(
+        JSON.stringify({ error: `No completed job has a ${file_type} output yet` }),
+        { status: 404, headers: corsHeaders },
+      );
     }
 
-    const pathMap: Record<string, string | null> = {
-      video: job.output_video_path,
-      highlights: job.output_highlights_path,
-      metadata: job.output_metadata_path,
-    };
-
-    const storagePath = pathMap[file_type];
-    if (!storagePath) {
+    const storedValue = (jobs[0] as Record<string, string | null>)[column];
+    if (!storedValue) {
       return new Response(JSON.stringify({ error: `No ${file_type} output available` }), { status: 404, headers: corsHeaders });
     }
 
-    // Generate presigned GET URL for Wasabi
-    const accessKey = Deno.env.get("WASABI_ACCESS_KEY")!;
-    const secretKey = Deno.env.get("WASABI_SECRET_KEY")!;
-    const bucket = Deno.env.get("WASABI_BUCKET")!;
-    const region = (Deno.env.get("WASABI_REGION") || "us-east-1").trim();
-    let endpoint = (Deno.env.get("WASABI_ENDPOINT") || `https://s3.${region}.wasabisys.com`).trim();
-    if (!endpoint.startsWith("http")) endpoint = `https://${endpoint}`;
+    // If the stored value is already a fully-qualified presigned URL and
+    // hasn't expired, return it as-is. The GPU worker signs URLs with the
+    // correct region/key for the object, so re-signing here often breaks
+    // (wrong region env, key encoding, etc.).
+    if (/^https?:\/\//i.test(storedValue)) {
+      try {
+        const u = new URL(storedValue);
+        const dateStr = u.searchParams.get("X-Amz-Date");
+        const expiresStr = u.searchParams.get("X-Amz-Expires");
+        if (dateStr && expiresStr) {
+          // X-Amz-Date format: YYYYMMDDTHHMMSSZ
+          const y = +dateStr.slice(0, 4), mo = +dateStr.slice(4, 6) - 1, d = +dateStr.slice(6, 8);
+          const h = +dateStr.slice(9, 11), mi = +dateStr.slice(11, 13), s = +dateStr.slice(13, 15);
+          const signedAt = Date.UTC(y, mo, d, h, mi, s);
+          const expiresAt = signedAt + (+expiresStr) * 1000;
+          if (Number.isFinite(expiresAt) && expiresAt - Date.now() > 60_000) {
+            return new Response(
+              JSON.stringify({ url: storedValue, file_type, expires_in: Math.floor((expiresAt - Date.now()) / 1000) }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+        }
+      } catch { /* fall through and try to re-sign */ }
+    }
+
+    // Need to re-sign. Derive region + bucket + key from the stored URL
+    // when possible, so we don't depend on env vars matching the object.
+    let bucket = Deno.env.get("WASABI_BUCKET") || "";
+    let region = (Deno.env.get("WASABI_REGION") || "us-east-1").trim();
+    let storageKey = storedValue;
+
+    if (/^https?:\/\//i.test(storedValue)) {
+      try {
+        const u = new URL(storedValue);
+        const m = u.host.match(/^s3[.-]([a-z0-9-]+)\.wasabisys\.com$/i);
+        if (m) region = m[1];
+        let p = u.pathname.replace(/^\/+/, "");
+        const firstSlash = p.indexOf("/");
+        if (firstSlash > 0) {
+          bucket = p.slice(0, firstSlash);
+          storageKey = decodeURIComponent(p.slice(firstSlash + 1));
+        }
+      } catch { /* keep defaults */ }
+    }
+
+    const accessKey = Deno.env.get("WASABI_ACCESS_KEY_ID") || Deno.env.get("WASABI_ACCESS_KEY")!;
+    const secretKey = Deno.env.get("WASABI_SECRET_ACCESS_KEY") || Deno.env.get("WASABI_SECRET_KEY")!;
+    const endpoint = `https://s3.${region}.wasabisys.com`;
+
+    // URL-encode each path segment (preserves "/"), so keys with spaces sign correctly.
+    const encodedKey = storageKey.split("/").map(encodeURIComponent).join("/");
+    const encodedBucket = encodeURIComponent(bucket);
 
     const expiresIn = 3600; // 1 hour
     const now = new Date();
@@ -127,7 +178,7 @@ Deno.serve(async (req) => {
 
     const canonicalRequest = [
       "GET",
-      `/${bucket}/${storagePath}`,
+      `/${encodedBucket}/${encodedKey}`,
       canonicalQueryString,
       `host:${host}\n`,
       "host",
@@ -144,7 +195,7 @@ Deno.serve(async (req) => {
     const signingKey = await getSignatureKey(secretKey, shortDate, region, "s3");
     const signature = toHex(await hmacSha256(signingKey, stringToSign));
 
-    const presignedUrl = `${endpoint}/${bucket}/${storagePath}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
+    const presignedUrl = `${endpoint}/${encodedBucket}/${encodedKey}?${canonicalQueryString}&X-Amz-Signature=${signature}`;
 
     return new Response(
       JSON.stringify({ url: presignedUrl, file_type, expires_in: expiresIn }),

@@ -1,50 +1,75 @@
-## PVG = approval status, no expiry
+## Goal
 
-Some background checks (PVG, and arguably AccessNI in certain forms) don't carry an expiry date — they're a one-time approval. Treat the background-check fields as either *date-typed* (DBS) or *boolean-typed* (PVG), then render appropriately.
+Two problems are visible on this match:
 
-### Database
+1. The analyser never reads jersey numbers that are clearly legible (e.g. #30 on the red shirt in your screenshot).
+2. Even when an OCR vote happens, there's no link to "red shirts = home = Broughty United Pumas", so a confirmed number can't be tied to a roster player.
 
-Add two nullable columns to `profiles`:
-- `pvg_approved boolean` — true = approved, null/false = not on file
-- `pvg_approved_at date` — optional reference date when approval was recorded (displayed as "Approved DD/MM/YYYY" tooltip; not used for expiry)
+Fix both, end-to-end.
 
-Keep existing `pvg_expiry date` column for back-compat but stop writing to it from the UI. (Leave it in place — no destructive change.)
+---
 
-DBS and AccessNI stay date-based (`dbs_expiry`, `accessni_expiry`).
+## What's wrong today (one-paragraph diagnosis)
 
-### Settings → Staff → Qualifications editor
+- **Team assignment uses pitch position, not shirt colour.** `TeamClassifier.assign_teams` in `gpu-server/handler.py` just splits tracks by mean X. So even when OCR confirms a number, the "team" label it gets is roughly random, and the `analysis-callback` per-side roster lookup snaps to the wrong side ~half the time.
+- **The match's stored home colour is wrong.** DB has `home_color = #10b981` (green) but the team plays in red. So even if we wired colour through, it would mis-map home/away.
+- **OCR thresholds are too strict for youth match footage.** `CONFIRM_VOTE_SCORE = 1.6`, `CONFIRM_MIN_FRAMES = 12`, two narrow vertical bands, and a 128 px upscale target. On 4K-downscaled grassroots clips the numbers are small and only legible for a few frames at a time — almost nothing clears the gate.
+- **Process-video already forwards rosters to RunPod** ✓ — so the GPU has the legal numbers. It just doesn't know which side a track belongs to and rarely confirms a read.
 
-When a row's resolved background-check type is:
-- **DBS / AccessNI** → keep the existing date input (expiry).
-- **PVG** → replace the date input with a single "PVG approved" checkbox + optional "Approved on" date picker. Writes `{ pvg_approved, pvg_approved_at }` instead of `pvg_expiry`.
+---
 
-Apply the same logic to the "My qualifications" self-service card.
+## Plan
 
-`update-staff-qualifications` edge function: add `pvg_approved` and `pvg_approved_at` to the `ALLOWED_FIELDS` whitelist (boolean / date validation).
+### 1. Fix the match's team colours (data only, one-off)
 
-### Compliance → Staff Qualifications table
+Ask you to confirm, then update `matches.home_color` for `bd76f2a1-cf46-46d4-81e4-3cf9738c6336` from `#10b981` → red (e.g. `#dc2626`). `away_color` (Kirrie Thistle) stays `#3b82f6` blue. This is the only manual fix; everything below picks colours up automatically from `matches.home_color` / `away_color`.
 
-Background-check cell rendering becomes type-aware:
-- **DBS / AccessNI** → `<ExpiryBadge>` as today (date with red/amber/green).
-- **PVG** → 
-  - `pvg_approved === true` → green check icon + "Approved" (+ tooltip with `pvg_approved_at` if present).
-  - else → existing "Not recorded" muted text.
+### 2. Forward team colours to the GPU job
 
-No more "Expires in Xd" or "Expired" states for PVG rows.
+`supabase/functions/process-video/index.ts`:
+- Fetch `home_color`, `away_color`, `is_home` from `matches` alongside the rosters that already get loaded.
+- Add to the RunPod `input` payload as `team_colors: { home: "#dc2626", away: "#3b82f6" }`.
 
-### Edge function `get-academy-staff`
+### 3. Replace X-split team classification with HSV jersey clustering
 
-Add `pvg_approved`, `pvg_approved_at` to the profile select list and to the staff response object.
+`gpu-server/handler.py`:
+- New `TeamClassifier.assign_teams_by_color(player_tracker, frames_sampled, team_colors)`:
+  - During the main tracking loop, sample the torso crop (band 0.25–0.55 of bbox height) every ~30 frames per track and store mean HSV (skip green-dominant pixels — that's the pitch).
+  - At end of loop, take each track's median HSV and run a 2-means cluster.
+  - Map the two cluster centroids to `home`/`away` by nearest hue distance to the supplied `team_colors`. If `team_colors` is missing, fall back to the current X-split so legacy matches still work.
+  - Output is still `{tid: "A"|"B"}`, with A=home, B=away (i.e. drop the `is_home` flip — A is always home from now on; update `analysis-callback` accordingly).
 
-### Files touched
+### 4. Make jersey OCR actually fire on this footage
 
-- migration: add `pvg_approved boolean`, `pvg_approved_at date` to `profiles`
-- `supabase/functions/get-academy-staff/index.ts`
-- `supabase/functions/update-staff-qualifications/index.ts`
-- `src/pages/Settings.tsx` (staff Qualifications editor + self-service card)
-- `src/pages/Compliance.tsx` (PVG branch in background-check cell, new `ApprovedBadge` component)
+`gpu-server/jersey_ocr.py`:
+- Lower `MIN_CROP_SIZE` 20 → 14, raise `UPSCALE_TARGET_H` 128 → 192, drop `CONFIRM_MIN_FRAMES` 12 → 6, drop `CONFIRM_VOTE_SCORE` 1.6 → 1.1, drop `CONFIRM_VOTE_LEAD` 0.6 → 0.35.
+- Add a third "back" band (0.18–0.42) — youth shirts usually carry the number high-centre on the back, outside today's two bands.
+- Once `team_assignment` is known, the existing `restrict_to_team_rosters` already snaps reads to the correct side's roster — keep, but call it per-track as soon as the player has a confirmed team (not only at end-of-loop), so subsequent OCR votes feed into the right roster immediately.
+- Pass `team_assignment[tid]` into `jersey_tracker.update(...)` inside the main loop (currently always `team=None`).
 
-### Out of scope
+### 5. Tighten the OCR-confidence threshold in the callback
 
-- Migrating any existing `pvg_expiry` rows to `pvg_approved` — left for a separate data-cleanup task. UI will fall back to "Not recorded" until someone re-saves with the new control.
-- Other UK nations beyond PVG. AccessNI stays expiry-based (which matches the current standard 3-year renewal cycle).
+`supabase/functions/analysis-callback/index.ts`:
+- Drop the gating constant from `1.6` → `1.1` to match the new GPU threshold.
+- Keep roster-link upsert into `track_player_mapping` as-is (already correct).
+
+### 6. UI — no logic change required
+
+`PlayerSpotlightPanel.tsx` and `useTrackLabels.ts` already show `#<number> Name` once `track_player_mapping` rows are linked. The 30-track plausibility cap from the last change stays. Result on this match: confirmed players (e.g. "#30 <player name>") will appear in the panel; the rest stay as `T<id>`.
+
+---
+
+## Technical notes
+
+- Re-run path: after these changes ship, you click **Re-run analysis** on the Match page. The dev-tools "Re-trigger processing" button is fine too — both eventually hit `process-video` with the same source video.
+- Cost: per-track HSV sampling is cheap (a few HSV conversions per ~30 frames), no extra YOLO passes.
+- Failure mode: if jersey clustering produces only one colour (e.g. one team off-camera for the whole sample window), we fall back to the X-split classifier and log a warning.
+- No DB migrations. Only `matches.home_color` is updated for this one match via SQL.
+
+## Files touched
+
+- `supabase/functions/process-video/index.ts` — forward team colours.
+- `supabase/functions/analysis-callback/index.ts` — lower OCR confidence gate; drop `is_home` flip (A=home).
+- `gpu-server/handler.py` — HSV-based team classifier, sample torso HSV in loop, pass team into jersey OCR, call `restrict_to_team_rosters` per-track.
+- `gpu-server/jersey_ocr.py` — looser thresholds + back band + per-track snap.
+- One-off SQL: `UPDATE matches SET home_color='#dc2626' WHERE id='bd76f2a1-...';`

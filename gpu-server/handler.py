@@ -1220,6 +1220,113 @@ class TeamClassifier:
         median_x = float(np.median(list(means.values())))
         return {tid: ("A" if mx <= median_x else "B") for tid, mx in means.items()}
 
+    # ── HSV-based classifier ──────────────────────────────────────────
+    @staticmethod
+    def _hex_to_hsv(hex_str: str) -> tuple[float, float, float] | None:
+        """Convert "#rrggbb" to OpenCV HSV (H 0-179, S/V 0-255)."""
+        if not hex_str:
+            return None
+        s = hex_str.lstrip("#")
+        if len(s) != 6:
+            return None
+        try:
+            r = int(s[0:2], 16); g = int(s[2:4], 16); b = int(s[4:6], 16)
+        except ValueError:
+            return None
+        bgr = np.uint8([[[b, g, r]]])
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)[0, 0]
+        return float(hsv[0]), float(hsv[1]), float(hsv[2])
+
+    @staticmethod
+    def _hue_distance(h1: float, h2: float) -> float:
+        """Circular hue distance on OpenCV's 0-179 scale."""
+        d = abs(h1 - h2) % 180.0
+        return min(d, 180.0 - d)
+
+    @staticmethod
+    def assign_teams_by_color(
+        hsv_samples: dict[int, list[tuple[float, float, float]]],
+        tracks: dict,
+        team_colors: dict | None,
+    ) -> dict:
+        """Classify tracks into A=home / B=away by jersey colour.
+
+        Falls back to the X-split heuristic if colour data is unusable.
+        """
+        home_hsv = TeamClassifier._hex_to_hsv((team_colors or {}).get("home") or "")
+        away_hsv = TeamClassifier._hex_to_hsv((team_colors or {}).get("away") or "")
+
+        # Aggregate one HSV per track (median is robust to brief pitch/skin
+        # pixels that slip through the green-suppression filter)
+        per_track: dict[int, tuple[float, float, float]] = {}
+        for tid, samples in hsv_samples.items():
+            if not samples or len(samples) < 2:
+                continue
+            arr = np.asarray(samples, dtype=np.float32)
+            per_track[tid] = (
+                float(np.median(arr[:, 0])),
+                float(np.median(arr[:, 1])),
+                float(np.median(arr[:, 2])),
+            )
+
+        if not per_track or home_hsv is None or away_hsv is None:
+            print("  ⚠ Team-colour classifier falling back to X-split "
+                  f"(samples={len(per_track)}, home_hsv={home_hsv}, away_hsv={away_hsv})")
+            return TeamClassifier.assign_teams(tracks)
+
+        assignment: dict[int, str] = {}
+        for tid, (h, s, v) in per_track.items():
+            d_home = TeamClassifier._hue_distance(h, home_hsv[0])
+            d_away = TeamClassifier._hue_distance(h, away_hsv[0])
+            assignment[tid] = "A" if d_home <= d_away else "B"
+
+        # Sanity check: if all tracks land on one team, the colour signal is
+        # probably bad — fall back rather than mis-label everyone.
+        teams_seen = set(assignment.values())
+        if len(teams_seen) < 2 and len(per_track) > 4:
+            print("  ⚠ Team-colour classifier produced single team, falling back to X-split")
+            return TeamClassifier.assign_teams(tracks)
+
+        print(f"  ✓ Team-colour classifier: {sum(1 for v in assignment.values() if v=='A')} home / "
+              f"{sum(1 for v in assignment.values() if v=='B')} away "
+              f"(home_h={home_hsv[0]:.0f}, away_h={away_hsv[0]:.0f})")
+        return assignment
+
+
+def _sample_torso_hsv(frame: np.ndarray, bbox_xyxy: tuple[float, float, float, float]) -> tuple[float, float, float] | None:
+    """Mean HSV of the torso crop (band 0.25-0.55 of bbox height),
+    excluding grass-green pixels so the pitch doesn't pollute the signal."""
+    x1, y1, x2, y2 = [int(v) for v in bbox_xyxy]
+    h = y2 - y1
+    w = x2 - x1
+    if h < 20 or w < 10:
+        return None
+    cy1 = y1 + int(h * 0.25)
+    cy2 = y1 + int(h * 0.55)
+    # Trim sides 15% to skip arms/background
+    cx1 = x1 + int(w * 0.15)
+    cx2 = x2 - int(w * 0.15)
+    if cy2 <= cy1 or cx2 <= cx1:
+        return None
+    crop = frame[cy1:cy2, cx1:cx2]
+    if crop.size == 0:
+        return None
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    # Mask out grass: green hue ~35-85, saturation > 40
+    h_chan = hsv[:, :, 0]
+    s_chan = hsv[:, :, 1]
+    v_chan = hsv[:, :, 2]
+    grass_mask = (h_chan >= 35) & (h_chan <= 85) & (s_chan > 40)
+    dark_mask = v_chan < 30
+    keep = ~(grass_mask | dark_mask)
+    if keep.sum() < max(20, crop.shape[0] * crop.shape[1] // 10):
+        return None
+    return (
+        float(np.mean(h_chan[keep])),
+        float(np.mean(s_chan[keep])),
+        float(np.mean(v_chan[keep])),
+    )
+
 
 # ─── Event detection from tracks ───────────────────────────────────────
 
@@ -1674,6 +1781,29 @@ def run_analysis(job_input: dict) -> dict:
         from jersey_ocr import JerseyNumberTracker
         jersey_tracker   = JerseyNumberTracker()
 
+        # Optional rosters (passed in from app via process-video / job input).
+        # Shape: {"home": [7, 9, 10], "away": [1, 4, 11]}. Used to snap noisy
+        # OCR reads to the nearest legal jersey number.
+        rosters_in = job_input.get("rosters") or {}
+        home_roster = set(int(n) for n in (rosters_in.get("home") or []))
+        away_roster = set(int(n) for n in (rosters_in.get("away") or []))
+        team_colors_in = job_input.get("team_colors") or {}
+        print(f"  🎨 Team colours: home={team_colors_in.get('home')} away={team_colors_in.get('away')}")
+
+        # Per-track HSV samples gathered during the tracking loop and used by
+        # TeamClassifier.assign_teams_by_color to map each track to home/away.
+        track_hsv_samples: dict[int, list[tuple[float, float, float]]] = {}
+        HSV_SAMPLE_EVERY_N = 30
+        hsv_sample_counts: dict[int, int] = {}
+
+        if home_roster or away_roster:
+            # Team A/B mapping to home/away isn't fixed at this point, so seed
+            # both labels with the union; per-side enforcement happens after
+            # team_assignment below.
+            union = home_roster | away_roster
+            jersey_tracker.set_rosters({"A": union, "B": union})
+            print(f"  📋 Roster snap enabled: home={sorted(home_roster)} away={sorted(away_roster)}")
+
         ball_positions: list[dict] = []
         stage_counts   = {"yolo": 0, "motion": 0, "kalman": 0, "none": 0}
         frame_idx      = 0
@@ -1738,7 +1868,14 @@ def run_analysis(job_input: dict) -> dict:
                     for det in person_dets:
                         cx, cy, x1, y1, x2, y2 = det[0], det[1], det[2], det[3], det[4], det[5]
                         if abs(cx - tx) < 20 and abs(cy - ty) < 20:
-                            jersey_tracker.update(frame, tid, (x1, y1, x2, y2))
+                            jersey_tracker.update(frame, tid, (x1, y1, x2, y2), team=None)
+                            # Sample torso HSV every Nth frame this track is seen
+                            c = hsv_sample_counts.get(tid, 0)
+                            if c % HSV_SAMPLE_EVERY_N == 0:
+                                hsv = _sample_torso_hsv(frame, (x1, y1, x2, y2))
+                                if hsv is not None:
+                                    track_hsv_samples.setdefault(tid, []).append(hsv)
+                            hsv_sample_counts[tid] = c + 1
                             break
 
             # ── Touch detection ──
@@ -1792,11 +1929,40 @@ def run_analysis(job_input: dict) -> dict:
         print(f"  Ghost track filter: {len(player_tracker.tracks)} raw → {len(valid_tracks)} valid tracks")
 
         # ── Event detection, team assignment, metrics ──
-        team_assignment = TeamClassifier.assign_teams(valid_tracks)
+        team_assignment = TeamClassifier.assign_teams_by_color(
+            hsv_samples=track_hsv_samples,
+            tracks=player_tracker.tracks,
+            team_colors=team_colors_in,
+        )
 
         # Back-fill team onto touches and passes now that assignment is known
         touch_tracker.assign_teams(team_assignment)
         pass_analyser.assign_teams(team_assignment)
+
+        # Re-snap jersey OCR scores against per-team rosters now that team
+        # assignment is known. During the OCR loop we only had the union
+        # roster; per-team snap roughly halves the candidate space.
+        # TeamClassifier labels A/B by mean X position, which doesn't
+        # correlate with home/away — try both mappings and keep whichever
+        # yields more confirmed identities.
+        if home_roster or away_roster:
+            import copy
+            best_mapping = None
+            best_confirmed = -1
+            for mapping in (
+                {"A": home_roster, "B": away_roster},
+                {"A": away_roster, "B": home_roster},
+            ):
+                snapshot = copy.deepcopy(jersey_tracker)
+                snapshot.restrict_to_team_rosters(team_assignment, mapping)
+                n = len(snapshot.confirmed_identities())
+                if n > best_confirmed:
+                    best_confirmed = n
+                    best_mapping = mapping
+            if best_mapping is not None:
+                jersey_tracker.restrict_to_team_rosters(team_assignment, best_mapping)
+                print(f"  ✓ Jersey OCR per-team snap: {best_confirmed} confirmed "
+                      f"(A→{'home' if best_mapping['A'] is home_roster else 'away'})")
 
         # Exclude referee tracks from all downstream analytics
         from referee_filter import filter_referees
@@ -1849,6 +2015,108 @@ def run_analysis(job_input: dict) -> dict:
             pm.update(jersey_tracker.player_identity_summary(tid))
 
         print(f"  ✓ Jersey OCR: {len(jersey_identities)} players identified")
+
+        # ── Filter fragment tracks down to plausible real players ──────────
+        # ByteTrack on grassroots panoramic footage routinely splits one
+        # person into hundreds of short tracks. Without this gate, the UI
+        # ends up showing thousands of "players".
+        raw_track_count = len(player_metrics)
+        MIN_FRAMES_ON_PITCH = max(30, int(native_fps * 8))  # ≥8s of presence
+        MIN_DISTANCE_M = 5.0
+
+        def _is_real_player(pm: dict) -> bool:
+            tid = pm.get("track_id")
+            if tid is None or tid in referee_track_ids:
+                return False
+            if pm.get("team") not in ("A", "B"):
+                return False
+            positions = player_tracker.tracks.get(tid, [])
+            if len(positions) < MIN_FRAMES_ON_PITCH:
+                return False
+            if (pm.get("distance_m") or 0) < MIN_DISTANCE_M:
+                return False
+            return True
+
+        player_metrics = {k: v for k, v in player_metrics.items() if _is_real_player(v)}
+
+        # ── Dedupe fragments by (team, confirmed jersey_number) ───────────
+        # Keep the canonical track (longest minutes_played) and merge
+        # cumulative metrics from the rest, then drop the fragments.
+        ADDITIVE_KEYS = (
+            "distance_m", "sprints", "passes", "passes_completed",
+            "passes_attempted", "passes_completed_count", "passes_forward",
+            "passes_sideways", "passes_back", "shots", "tackles",
+            "touches_total", "touches_receive", "touches_control",
+            "touches_pass", "touches_shot", "touches_dribble",
+        )
+        groups: dict[tuple[str, int], list[str]] = {}
+        for k, pm in player_metrics.items():
+            jn = pm.get("jersey_number")
+            team = pm.get("team")
+            if jn is None or team is None:
+                continue
+            groups.setdefault((team, int(jn)), []).append(k)
+
+        fragments_merged = 0
+        canonical_remap: dict[int, int] = {}  # fragment_tid → canonical_tid
+        for (_team, _jn), keys in groups.items():
+            if len(keys) <= 1:
+                continue
+            keys.sort(key=lambda k: player_metrics[k].get("minutes_played") or 0, reverse=True)
+            canonical_key = keys[0]
+            canonical_pm = player_metrics[canonical_key]
+            for frag_key in keys[1:]:
+                frag_pm = player_metrics[frag_key]
+                for ak in ADDITIVE_KEYS:
+                    a = canonical_pm.get(ak) or 0
+                    b = frag_pm.get(ak) or 0
+                    canonical_pm[ak] = (a + b) if isinstance(a, (int, float)) and isinstance(b, (int, float)) else a
+                # Top speed = max
+                canonical_pm["top_speed_kmh"] = max(
+                    canonical_pm.get("top_speed_kmh") or 0,
+                    frag_pm.get("top_speed_kmh") or 0,
+                )
+                canonical_remap[frag_pm.get("track_id")] = canonical_pm.get("track_id")
+                fragments_merged += 1
+            # Recompute pass_accuracy + contribution_score for canonical
+            if canonical_pm.get("passes"):
+                canonical_pm["pass_success_pct"] = round(
+                    100 * (canonical_pm.get("passes_completed") or 0) / canonical_pm["passes"], 1
+                )
+            canonical_pm["contribution_score"] = round(
+                (canonical_pm.get("passes_completed") or 0) * 1.0
+                + (canonical_pm.get("shots") or 0) * 3.0
+                + (canonical_pm.get("tackles") or 0) * 2.0
+                + (canonical_pm.get("xg") or 0) * 10.0,
+                2,
+            )
+        # Remove fragments from player_metrics
+        for frag_tid in canonical_remap:
+            player_metrics.pop(str(frag_tid), None)
+
+        # ── Hard cap: keep at most top 30 by minutes_played (22 + subs) ───
+        MAX_PLAYERS = 30
+        if len(player_metrics) > MAX_PLAYERS:
+            kept = sorted(
+                player_metrics.items(),
+                key=lambda kv: kv[1].get("minutes_played") or 0,
+                reverse=True,
+            )[:MAX_PLAYERS]
+            player_metrics = dict(kept)
+
+        # Rewrite events: drop player_track_id for any track that didn't survive.
+        surviving_tids = {int(k) for k in player_metrics.keys() if str(k).isdigit()}
+        for ev in events:
+            tid = ev.get("player_track_id")
+            if tid is None:
+                continue
+            if tid in canonical_remap and canonical_remap[tid] in surviving_tids:
+                ev["player_track_id"] = canonical_remap[tid]
+            elif tid not in surviving_tids:
+                ev["player_track_id"] = None
+
+        print(f"  ✓ Players: {len(player_metrics)} real (from {raw_track_count} raw tracks, "
+              f"{fragments_merged} fragments merged)")
 
         # ── Merge touch + pass totals into team_metrics ──
         for team_id, tm in team_metrics.items():

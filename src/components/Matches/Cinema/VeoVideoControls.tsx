@@ -28,6 +28,7 @@ interface VeoVideoControlsProps {
   currentTime: number;
   duration: number;
   className?: string;
+  disabled?: boolean;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -61,7 +62,7 @@ const formatTime = (t: number) => {
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export function VeoVideoControls({
-  videoEl, containerEl, events, currentTime, duration, className,
+  videoEl, containerEl, events, currentTime, duration, className, disabled,
 }: VeoVideoControlsProps) {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -127,7 +128,13 @@ export function VeoVideoControls({
   if (!videoEl) return null;
 
   const togglePlay = () => {
-    if (videoEl.paused) videoEl.play().catch(() => {});
+    if (videoEl.paused) {
+      videoEl.play().catch((err) => {
+        // surface to console so it shows up in dev logs
+        // eslint-disable-next-line no-console
+        console.error('[VeoVideoControls] play() rejected:', err);
+      });
+    }
     else videoEl.pause();
   };
   const skip = (delta: number) => {
@@ -180,6 +187,7 @@ export function VeoVideoControls({
           'bg-gradient-to-t from-black/85 via-black/60 to-transparent text-white',
           'opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity',
           playing ? '' : 'opacity-100',
+          disabled && 'pointer-events-none opacity-60',
           className,
         )}
       >

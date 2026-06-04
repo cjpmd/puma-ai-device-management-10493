@@ -23,6 +23,15 @@ const MatchDetail = () => {
   const [devOpen, setDevOpen] = useState(false);
   const [recordedAwaitingUpload, setRecordedAwaitingUpload] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
   const latestJob = jobs[0] || null;
+  const latestCompletedJob = jobs.find((job) => job.status === 'complete' || job.status === 'completed') || null;
+  const latestPlayableJob = jobs.find(
+    (job) => (job.status === 'complete' || job.status === 'completed') && !!job.output_video_path,
+  ) || null;
+  const latestOutputJob = jobs.find(
+    (job) =>
+      (job.status === 'complete' || job.status === 'completed') &&
+      (!!job.output_video_path || !!job.output_highlights_path || !!job.output_metadata_path),
+  ) || null;
 
   const leftVideo = videos.find((v) => v.camera_side === 'left');
   const rightVideo = videos.find((v) => v.camera_side === 'right');
@@ -53,7 +62,10 @@ const MatchDetail = () => {
 
   const handleTriggerProcessing = async (config?: ProcessingConfig) => {
     try {
-      const res = await supabase.functions.invoke('trigger-processing', {
+      // If both fresh uploads are present, run the full pipeline.
+      // Otherwise, re-run analysis against the previous job's source video.
+      const fn = bothUploaded ? 'trigger-processing' : 'rerun-analysis';
+      const res = await supabase.functions.invoke(fn, {
         body: { match_id: id, config },
       });
       if (res.error) throw new Error(res.error.message);
@@ -132,7 +144,7 @@ const MatchDetail = () => {
         <ProcessingStatus job={latestJob} />
 
         {/* Empty-state hint when no processed video yet */}
-        {!latestJob && (
+        {!latestCompletedJob && (
           <Card className="border-primary/30 bg-primary/5">
             <CardContent className="p-4 flex items-center gap-3">
               <div className="flex-1 text-sm">
@@ -147,12 +159,12 @@ const MatchDetail = () => {
         )}
 
         {/* Cinema-mode video + analytics (Veo-style) */}
-        {latestJob?.status === 'complete' && (
-          <MatchCinemaLayout matchId={id!} match={match} job={latestJob} />
+        {latestPlayableJob && (
+          <MatchCinemaLayout matchId={id!} match={match} job={latestPlayableJob} />
         )}
 
         {/* Outputs (downloads) */}
-        <MatchOutputViewer matchId={id!} matchTitle={match.title} job={latestJob} />
+        <MatchOutputViewer matchId={id!} matchTitle={match.title} job={latestOutputJob} />
 
         {/* Developer Controls (collapsible) */}
         <Collapsible open={devOpen} onOpenChange={setDevOpen}>
@@ -165,7 +177,7 @@ const MatchDetail = () => {
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="flex flex-wrap gap-2 pt-0">
-                <Button variant="outline" size="sm" className="h-11" onClick={() => handleTriggerProcessing()} disabled={!bothUploaded}>
+                <Button variant="outline" size="sm" className="h-11" onClick={() => handleTriggerProcessing()} disabled={!bothUploaded && !latestJob}>
                   <RefreshCw className="h-4 w-4 mr-1" /> Re-trigger Processing
                 </Button>
                 <Button variant="outline" size="sm" className="h-11" onClick={handleMarkFailed}>

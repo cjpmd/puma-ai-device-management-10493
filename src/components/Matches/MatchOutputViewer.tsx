@@ -28,6 +28,16 @@ export function MatchOutputViewer({ matchId, matchTitle, job }: MatchOutputViewe
   const handleGetUrl = async (fileType: 'video' | 'highlights' | 'metadata') => {
     setLoading(fileType);
     try {
+      // If the stored output path is already a fully-qualified URL
+      // (e.g. Wasabi presigned URL from a manual test), open it directly.
+      const directPath =
+        fileType === 'video'      ? job?.output_video_path :
+        fileType === 'highlights' ? job?.output_highlights_path :
+        fileType === 'metadata'   ? job?.output_metadata_path : null;
+      if (directPath && /^https?:\/\//i.test(directPath)) {
+        window.open(directPath, '_blank');
+        return;
+      }
       const { data, error } = await supabase.functions.invoke('get-output-url', {
         body: { match_id: matchId, file_type: fileType },
       });

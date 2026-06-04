@@ -172,6 +172,8 @@ Deno.serve(async (req) => {
           touches_pass:           pm.touches_pass ?? null,
           touches_shot:           pm.touches_shot ?? null,
           touches_dribble:        pm.touches_dribble ?? null,
+          // Only canonical confirmed jersey numbers — guesses live in
+          // jersey_number_guess on the raw output and shouldn't pollute stats.
           jersey_number:          pm.jersey_number ?? null,
           passes_attempted:       pm.passes_attempted ?? null,
           passes_completed_count: pm.passes_completed_count ?? null,
@@ -187,6 +189,76 @@ Deno.serve(async (req) => {
             onConflict: "match_id,processing_job_id,track_id",
             ignoreDuplicates: false,
           });
+      }
+
+      // ── Link tracks → roster players via confirmed jersey numbers ──
+      try {
+        const { data: rosterRows } = await adminClient
+          .from("match_rosters")
+          .select("side, jersey_number, player_id")
+          .eq("match_id", job!.match_id);
+
+        // Build lookup: side → (jersey_number → player_id)
+        const rosterBySide: Record<string, Map<number, string | null>> = {
+          home: new Map(),
+          away: new Map(),
+        };
+        for (const r of rosterRows ?? []) {
+          if (r.side === "home" || r.side === "away") {
+            rosterBySide[r.side].set(Number(r.jersey_number), r.player_id ?? null);
+          }
+        }
+
+        // GPU now assigns team labels by jersey colour and matches them to
+        // the supplied home/away kit colours, so A always means home, B away.
+        const teamToSide: Record<string, "home" | "away"> = {
+          A: "home",
+          B: "away",
+        };
+
+        const mappingRows: Array<{
+          match_id: string;
+          track_id: number;
+          player_id: string | null;
+          jersey_number: number;
+          team_label: string | null;
+          confidence: number | null;
+          source: string;
+        }> = [];
+
+        for (const [trackIdStr, pm] of Object.entries(playerMetrics)) {
+          const jersey = (pm as any).jersey_number;
+          if (jersey == null) continue;
+          // Skip low-confidence OCR — keeps roster mapping clean.
+          // Threshold mirrors CONFIRM_VOTE_SCORE in jersey_ocr.py.
+          const conf = (pm as any).jersey_confidence ?? 0;
+          // Mirror CONFIRM_VOTE_SCORE in gpu-server/jersey_ocr.py
+          if (conf < 1.1) continue;
+          const team = (pm as any).team as string | null | undefined;
+          const side = team ? teamToSide[team] : null;
+          const playerId = side ? rosterBySide[side].get(Number(jersey)) ?? null : null;
+          mappingRows.push({
+            match_id: job!.match_id,
+            track_id: Number(trackIdStr),
+            player_id: playerId,
+            jersey_number: Number(jersey),
+            team_label: team ?? null,
+            confidence: (pm as any).jersey_confidence ?? null,
+            source: "ocr",
+          });
+        }
+
+        if (mappingRows.length > 0) {
+          await adminClient
+            .from("track_player_mapping")
+            .upsert(mappingRows, {
+              onConflict: "match_id,track_id",
+              ignoreDuplicates: false,
+            });
+          console.log(`analysis-callback: wrote ${mappingRows.length} track→player rows`);
+        }
+      } catch (e) {
+        console.error("analysis-callback: track_player_mapping upsert failed", e);
       }
 
       await adminClient

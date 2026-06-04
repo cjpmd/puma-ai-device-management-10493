@@ -9,8 +9,12 @@ import { TeamPanel } from './TeamPanel';
 import { PlayerSpotlightPanel } from './PlayerSpotlightPanel';
 import { PassNetworkPanel } from './PassNetworkPanel';
 import { MatchTimelineStrip } from './MatchTimelineStrip';
+import { TaggingPanel } from './TaggingPanel';
+import { AccuracyPanel } from './AccuracyPanel';
+import { RosterPanel } from './RosterPanel';
 import { supabase } from '@/integrations/supabase/client';
 import type { TimelineEvent } from '@/types/video-analysis';
+import { useCoachTagStats } from './useCoachTagStats';
 
 interface MatchCinemaLayoutProps {
   matchId: string;
@@ -34,6 +38,8 @@ export function MatchCinemaLayout({
   const [duration, setDuration] = useState(0);
   const [coachTags, setCoachTags] = useState<TimelineEvent[]>([]);
   const [stitchedPath, setStitchedPath] = useState<string | null>(null);
+  const [canPollStitchedPath, setCanPollStitchedPath] = useState(true);
+  const [tagsVersion, setTagsVersion] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cvEvents: TimelineEvent[] = (job?.event_data?.events || []).map((e: any) => ({
@@ -44,6 +50,8 @@ export function MatchCinemaLayout({
   const mergedEvents: TimelineEvent[] = [...cvEvents, ...coachTags].sort(
     (a, b) => a.time - b.time,
   );
+
+  const coachStats = useCoachTagStats(coachTags, match?.is_home);
 
   const playerMetrics = job?.player_metrics || null;
   const heatmaps = job?.heatmaps || null;
@@ -58,7 +66,7 @@ export function MatchCinemaLayout({
     (async () => {
       const { data } = await (supabase as any)
         .from('match_event_tags')
-        .select('id, event_type, timestamp_ms, notes, tagged_by')
+        .select('id, event_type, timestamp_ms, team, notes, tagged_by')
         .eq('match_id', matchId)
         .order('timestamp_ms', { ascending: true });
       if (cancelled || !data) return;
@@ -68,24 +76,36 @@ export function MatchCinemaLayout({
           time: row.timestamp_ms / 1000,
           type: row.event_type,
           source: 'coach' as const,
+          team: row.team ?? null,
           notes: row.notes ?? undefined,
           tagged_by: row.tagged_by ?? undefined,
         })),
       );
     })();
     return () => { cancelled = true; };
-  }, [matchId]);
+  }, [matchId, tagsVersion]);
 
   // Poll video_footage every 15s for stitched path
   const pollStitched = useCallback(async () => {
     if (!matchId || matchId === 'demo') return;
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from('video_footage')
       .select('stitched_path, processing_status')
       .eq('match_id', matchId)
       .eq('processing_status', 'stitched')
       .limit(1)
       .maybeSingle();
+
+    if (error) {
+      const errText = `${error.code ?? ''} ${error.message ?? ''}`.toLowerCase();
+      // Older environments may not have the optional stitched-video table yet.
+      // Stop polling instead of hammering the API with 404s.
+      if (errText.includes('pgrst205') || errText.includes('could not find') || errText.includes('video_footage')) {
+        setCanPollStitchedPath(false);
+        return;
+      }
+    }
+
     if (data?.stitched_path) {
       setStitchedPath(data.stitched_path);
       return; // stop polling once we have it
@@ -94,12 +114,12 @@ export function MatchCinemaLayout({
   }, [matchId]);
 
   useEffect(() => {
-    if (stitchedPath) return;
+    if (stitchedPath || !canPollStitchedPath) return;
     pollStitched();
     return () => {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
-  }, [pollStitched, stitchedPath]);
+  }, [canPollStitchedPath, pollStitched, stitchedPath]);
 
   return (
     <div className="dark bg-background text-foreground rounded-2xl overflow-hidden border border-border/40 shadow-2xl">
@@ -144,11 +164,11 @@ export function MatchCinemaLayout({
       >
         <div className="h-[640px]">
           {active === 'clips' && (
-            <ClipsPanel events={mergedEvents} videoUrl={videoUrl} onSeek={handleSeek} />
+            <ClipsPanel events={mergedEvents} videoUrl={videoUrl} onSeek={handleSeek} matchId={matchId} />
           )}
-          {active === 'summary' && <SummaryPanel match={match} />}
+          {active === 'summary' && <SummaryPanel match={match} coachStats={coachStats} />}
           {active === 'analytics' && (
-            <AnalyticsPanel matchId={matchId} job={job} demoInsights={demoInsights} />
+            <AnalyticsPanel matchId={matchId} job={job} demoInsights={demoInsights} coachStats={coachStats} match={match} />
           )}
           {active === 'spotlight' && (
             <PlayerSpotlightPanel
@@ -167,6 +187,19 @@ export function MatchCinemaLayout({
             />
           )}
           {active === 'team' && <TeamPanel matchId={matchId} job={job} />}
+          {active === 'tagging' && (
+            <TaggingPanel matchId={matchId} currentTime={currentTime} onTagsChanged={() => setTagsVersion((v) => v + 1)} />
+          )}
+          {active === 'accuracy' && <AccuracyPanel matchId={matchId} job={job} />}
+          {active === 'roster' && (
+            <RosterPanel
+              matchId={matchId}
+              homeName={match?.home_team}
+              awayName={match?.away_team}
+              teamId={match?.team_id ?? null}
+              isHome={match?.is_home ?? true}
+            />
+          )}
         </div>
       </div>
     </div>

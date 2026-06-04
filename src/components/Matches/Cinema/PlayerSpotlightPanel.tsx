@@ -20,7 +20,7 @@ import {
   Map,
 } from 'lucide-react';
 import { useEventThumbnails } from './useEventThumbnails';
-import { supabase } from '@/integrations/supabase/client';
+import { useTrackLabels } from './useTrackLabels';
 import type { HeatmapData } from '@/types/video-analysis';
 
 interface MatchEvent {
@@ -136,23 +136,37 @@ export function PlayerSpotlightPanel({
   videoUrl,
   onSeek,
 }: PlayerSpotlightPanelProps) {
-  const [mapping, setMapping] = useState<Record<number, { name?: string; squad_number?: number }>>({});
+  const { mapping, labelFor, nameFor, isIdentified } = useTrackLabels(matchId, playerMetrics);
   const [sort, setSort] = useState<SortMode>('contribution');
   const [showHeatmap, setShowHeatmap] = useState(false);
 
-  // All track IDs that appear in events
+  // Prefer the GPU-gated playerMetrics set, but apply the same plausibility
+  // filter client-side because some (legacy) jobs persisted 6000+ ByteTrack
+  // fragments. Only fall back to event-derived IDs when metrics are missing
+  // (demo / legacy jobs with no metrics at all).
   const trackIds = useMemo(() => {
+    if (playerMetrics && Object.keys(playerMetrics).length > 0) {
+      const candidates = Object.entries(playerMetrics)
+        .map(([k, pm]) => ({ id: Number(k), pm: pm as any }))
+        .filter(({ id, pm }) => {
+          if (Number.isNaN(id)) return false;
+          if (pm?.team !== 'A' && pm?.team !== 'B') return false;
+          const mins = Number(pm?.minutes_played ?? 0);
+          const dist = Number(pm?.distance_m ?? 0);
+          return mins > 0 || dist >= 5;
+        });
+      candidates.sort((a, b) => {
+        const am = Number(a.pm?.minutes_played ?? 0);
+        const bm = Number(b.pm?.minutes_played ?? 0);
+        if (bm !== am) return bm - am;
+        return Number(b.pm?.distance_m ?? 0) - Number(a.pm?.distance_m ?? 0);
+      });
+      return candidates.slice(0, 30).map((c) => c.id);
+    }
     const set = new Set<number>();
     events.forEach((e) => {
       if (typeof e.player_track_id === 'number') set.add(e.player_track_id);
     });
-    // also include any ids in playerMetrics that aren't in events
-    if (playerMetrics) {
-      Object.keys(playerMetrics).forEach((k) => {
-        const n = Number(k);
-        if (!isNaN(n)) set.add(n);
-      });
-    }
     return Array.from(set);
   }, [events, playerMetrics]);
 
@@ -173,28 +187,6 @@ export function PlayerSpotlightPanel({
   useEffect(() => {
     if (selected === null && sortedTrackIds.length > 0) setSelected(sortedTrackIds[0]);
   }, [sortedTrackIds, selected]);
-
-  // Load track→player name/jersey mapping
-  useEffect(() => {
-    if (!matchId || matchId === 'demo') return;
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from('track_player_mapping')
-        .select('track_id, player_id, players ( name, squad_number )')
-        .eq('match_id', matchId);
-      if (cancelled || !data) return;
-      const map: Record<number, { name?: string; squad_number?: number }> = {};
-      data.forEach((row: any) => {
-        map[row.track_id] = {
-          name: row.players?.name,
-          squad_number: row.players?.squad_number,
-        };
-      });
-      setMapping(map);
-    })();
-    return () => { cancelled = true; };
-  }, [matchId]);
 
   const playerEvents = useMemo(
     () => (selected === null ? [] : events.filter((e) => e.player_track_id === selected)),
@@ -234,13 +226,6 @@ export function PlayerSpotlightPanel({
   const selectedHeatmap: HeatmapData | null =
     selected !== null ? (heatmaps?.[String(selected)] ?? heatmaps?.[selected] ?? null) : null;
 
-  const labelFor = (id: number) => {
-    const m = mapping[id];
-    if (m?.squad_number) return `#${m.squad_number}`;
-    return `#${id}`;
-  };
-  const nameFor = (id: number) => mapping[id]?.name || `Track ${id}`;
-
   return (
     <div className="flex flex-col h-full">
       <div className="px-5 pt-5 pb-3 border-b border-border/40">
@@ -249,7 +234,9 @@ export function PlayerSpotlightPanel({
             <UserCircle2 className="h-4 w-4" /> Player Spotlight
           </h2>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs">{trackIds.length} players</Badge>
+            <Badge variant="secondary" className="text-xs">
+              {trackIds.filter((id) => isIdentified(id)).length} identified · {trackIds.length} tracked
+            </Badge>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" className="h-7 text-xs rounded-full">
@@ -272,7 +259,7 @@ export function PlayerSpotlightPanel({
           {sortedTrackIds.length === 0 && (
             <p className="text-xs text-muted-foreground">No tracked players in this match.</p>
           )}
-          {sortedTrackIds.map((id) => (
+          {sortedTrackIds.slice(0, 30).map((id) => (
             <Button
               key={id}
               size="sm"

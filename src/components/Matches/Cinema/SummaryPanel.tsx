@@ -1,5 +1,6 @@
 import { Calendar, MapPin, FileText } from 'lucide-react';
 import { ScorelineCard } from './ScorelineCard';
+import type { CoachTagStats } from './useCoachTagStats';
 
 interface SummaryPanelProps {
   match: {
@@ -19,11 +20,15 @@ interface SummaryPanelProps {
     is_home?: boolean | null;
     age_group?: string | null;
   };
+  coachStats?: CoachTagStats;
 }
 
-export function SummaryPanel({ match }: SummaryPanelProps) {
+export function SummaryPanel({ match, coachStats }: SummaryPanelProps) {
   const home = match.home_team || 'Home';
   const away = match.away_team || 'Away';
+  const useTags = !!coachStats?.hasTags;
+  const homeScore = useTags ? coachStats!.homeScore : (match.home_score ?? null);
+  const awayScore = useTags ? coachStats!.awayScore : (match.away_score ?? null);
 
   return (
     <div className="flex flex-col h-full">
@@ -53,8 +58,8 @@ export function SummaryPanel({ match }: SummaryPanelProps) {
         <ScorelineCard
           homeTeam={home}
           awayTeam={away}
-          homeScore={match.home_score ?? null}
-          awayScore={match.away_score ?? null}
+          homeScore={homeScore}
+          awayScore={awayScore}
           homeColor={match.home_color}
           awayColor={match.away_color}
           homeLogoUrl={match.home_logo_url}
@@ -63,8 +68,61 @@ export function SummaryPanel({ match }: SummaryPanelProps) {
           isHome={match.is_home}
           ageGroup={match.age_group}
           status={match.status}
+          fromCoachTags={useTags}
+          result={coachStats?.result ?? null}
         />
+
+        {useTags && <CoachStatsStrip coachStats={coachStats!} homeName={home} awayName={away} />}
       </div>
     </div>
+  );
+}
+
+function CoachStatsStrip({
+  coachStats,
+  homeName,
+  awayName,
+}: {
+  coachStats: CoachTagStats;
+  homeName: string;
+  awayName: string;
+}) {
+  const rows: { label: string; key: keyof CoachTagStats['totals'] }[] = [
+    { label: 'Goals', key: 'goals' },
+    { label: 'Shots', key: 'shots' },
+    { label: 'Shots on target', key: 'shots_on_target' },
+    { label: 'Saves', key: 'saves' },
+    { label: 'Passes', key: 'passes' },
+    { label: 'Tackles', key: 'tackles' },
+  ];
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card/40 p-4">
+      <h4 className="text-xs uppercase tracking-wider text-muted-foreground mb-3">Coach-tagged stats</h4>
+      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 gap-y-1.5 text-sm">
+        <div />
+        <div className="text-[10px] uppercase text-muted-foreground text-right">{homeName}</div>
+        <div className="text-[10px] uppercase text-muted-foreground text-right">{awayName}</div>
+        <div className="text-[10px] uppercase text-muted-foreground text-right">Total</div>
+        {rows.map((r) => (
+          <FragmentRow key={r.key}
+            label={r.label}
+            home={coachStats.byTeam.home[r.key]}
+            away={coachStats.byTeam.away[r.key]}
+            total={coachStats.totals[r.key]}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FragmentRow({ label, home, away, total }: { label: string; home: number; away: number; total: number }) {
+  return (
+    <>
+      <div className="text-muted-foreground">{label}</div>
+      <div className="text-right tabular-nums">{home}</div>
+      <div className="text-right tabular-nums">{away}</div>
+      <div className="text-right tabular-nums font-medium">{total}</div>
+    </>
   );
 }
