@@ -1574,20 +1574,27 @@ class MetricsAggregator:
                 continue
             xs = [p[1] for p in positions]
             ys = [p[2] for p in positions]
-            # px → metres: assume pano width = ~105m (full-pitch)
-            pixels_per_metre = pano_w / 105.0
+            # Use calibrator when available; fall back to pitch-aware px/m estimate
+            if calibrator is not None:
+                ppm = calibrator.pixels_per_metre_estimate
+            else:
+                ppm = (pano_w * 0.85) / 80.0  # 9v9 fallback
 
-            # Per-frame speed (m/s) and total distance using explicit pixel-to-metre conversion
+            # Per-frame speed (m/s) and total distance
             total_px_dist = 0.0
             frame_speeds = []
             for i in range(1, len(xs)):
                 d_px = ((xs[i] - xs[i - 1]) ** 2 + (ys[i] - ys[i - 1]) ** 2) ** 0.5
                 total_px_dist += d_px
-                speed_ms = (d_px / pixels_per_metre) * fps
+                if calibrator is not None:
+                    d_m = calibrator.distance_metres(xs[i-1], ys[i-1], xs[i], ys[i])
+                else:
+                    d_m = d_px / ppm
+                speed_ms = d_m * fps   # fps = analysed_fps at the call site
                 frame_speeds.append(speed_ms)
 
-            dist_m = total_px_dist / pixels_per_metre
-            top_speed_ms = max(frame_speeds) if frame_speeds else 0.0
+            dist_m = total_px_dist / ppm
+            top_speed_ms = min(max(frame_speeds) if frame_speeds else 0.0, 11.0)
             top_speed_kmh = min(round(top_speed_ms * 3.6, 1), 40.0)
 
             # Count sprint bouts: consecutive frames above SPRINT_SPEED_MS threshold
@@ -2042,6 +2049,7 @@ def run_analysis(job_input: dict) -> dict:
             pano_w=frame_w,
             pano_h=frame_h,
             fps=analysed_fps,
+            calibrator=calibrator,
         )
         heatmaps = MetricsAggregator.build_heatmaps(
             player_tracks_filtered, frame_w, frame_h, grid_w=20, grid_h=12
