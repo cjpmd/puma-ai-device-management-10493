@@ -19,6 +19,18 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 RUN python3 -c "from ultralytics import YOLO; YOLO('yolov8m.pt')"
 RUN python3 -c "import easyocr; easyocr.Reader(['en'], gpu=False, verbose=False)"
 
+RUN pip3 install --no-cache-dir SoccerNet>=0.1.50 || pip3 install --no-cache-dir SoccerNet
+
+# Verify key imports and check BoT-SORT availability
+RUN python3 -c "
+import cv2, numpy as np
+import supervision as sv
+print('supervision version:', sv.__version__)
+has_botsort = hasattr(sv, 'BotSort') or hasattr(sv, 'BoTSORT')
+print('BotSort available:', has_botsort)
+print('All imports OK')
+"
+
 COPY gpu-server/*.py .
 
 CMD ["python3", "-u", "handler.py"]

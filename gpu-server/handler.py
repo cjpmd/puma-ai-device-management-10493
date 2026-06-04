@@ -28,6 +28,7 @@ from ultralytics import YOLO
 import supervision as sv
 from scipy.signal import correlate, butter, sosfilt
 from filterpy.kalman import KalmanFilter
+from pitch_calibration import PitchCalibrator
 
 
 # ─── Wasabi S3 helpers ────────────────────────────────────────────────
@@ -682,13 +683,32 @@ class PlayerTracker:
     Assigns persistent IDs so we can generate per-player heatmaps and stats.
     """
 
-    def __init__(self):
-        self.tracker = sv.ByteTrack(
-            track_activation_threshold=0.4,
-            lost_track_buffer=60,       # keep lost tracks for 2s at 30fps
-            minimum_matching_threshold=0.8,
-            frame_rate=30,
-        )
+    def __init__(self, analysed_fps: float = 2.0):
+        # Try BoT-SORT first (better re-identification across occlusions)
+        try:
+            self.tracker = sv.BotSort(
+                reid_weights=None,
+                device='cuda',
+                half=True,
+                track_high_thresh=0.45,
+                track_low_thresh=0.2,
+                new_track_thresh=0.55,
+                track_buffer=max(30, int(analysed_fps * 30)),  # 30s at analysed fps
+                match_thresh=0.8,
+            )
+            self._tracker_type = 'botsort'
+            print("Using BoT-SORT tracker")
+        except (ImportError, AttributeError, Exception):
+            # BotSort not available — use ByteTrack with corrected fps/buffer
+            self.tracker = sv.ByteTrack(
+                track_activation_threshold=0.45,
+                lost_track_buffer=max(30, int(analysed_fps * 30)),  # 30s of frames
+                minimum_matching_threshold=0.8,
+                frame_rate=max(1, int(analysed_fps)),
+            )
+            self._tracker_type = 'bytetrack_improved'
+            print(f"Using improved ByteTrack (analysed_fps={analysed_fps:.1f}, "
+                  f"buffer={max(30, int(analysed_fps * 30))} frames)")
         # track_id -> list of (frame_idx, cx, cy)
         self.tracks: dict[int, list] = {}
 
@@ -1509,7 +1529,8 @@ class EventDetector:
 class MetricsAggregator:
     @staticmethod
     def compute(events: list, player_tracks: dict, team_assignment: dict,
-                ball_positions: list, pano_w: int, pano_h: int, fps: float):
+                ball_positions: list, pano_w: int, pano_h: int, fps: float,
+                calibrator: "PitchCalibrator | None" = None):
         # ── Team metrics ──
         teams = {"A": MetricsAggregator._empty_team(), "B": MetricsAggregator._empty_team()}
         for ev in events:
@@ -1735,6 +1756,8 @@ def run_analysis(job_input: dict) -> dict:
     video_url  = job_input.get("video_url")
     target_fps = int(job_input.get("target_fps", 5))
     webhook_url = job_input.get("webhook_url")
+    pitch_length_m = float(job_input.get("pitch_length_m", 80.0))  # 9v9 default
+    pitch_width_m  = float(job_input.get("pitch_width_m",  50.0))  # 9v9 default
 
     if not job_id or not video_url:
         return {
@@ -1767,13 +1790,17 @@ def run_analysis(job_input: dict) -> dict:
               f"(~{native_fps/frame_step:.1f}fps analysed)")
 
         # Initialise detection and tracking components
+        analysed_fps    = native_fps / frame_step
         model           = YOLO("yolov8m.pt")
-        player_tracker  = PlayerTracker()
-        ball_pipeline   = BallTrackingPipeline(fps=native_fps / frame_step)
+        player_tracker  = PlayerTracker(analysed_fps=analysed_fps)
+        ball_pipeline   = BallTrackingPipeline(fps=analysed_fps)
 
-        # Touch tracker: pixels_per_metre assumes panoramic width ≈ 105m pitch length
-        pixels_per_metre = frame_w / 105.0
-        analysed_fps     = native_fps / frame_step
+        # Pitch calibration — will be attempted from first clear frame
+        calibrator = PitchCalibrator(pitch_length_m=pitch_length_m, pitch_width_m=pitch_width_m)
+        calibration_attempted = False
+        # Initial pixels_per_metre fallback until calibration runs
+        pixels_per_metre = frame_w * 0.85 / pitch_length_m
+
         from touch_tracker import TouchTracker
         touch_tracker    = TouchTracker(pixels_per_metre=pixels_per_metre, fps=analysed_fps)
         from pass_analyser import PassAnalyser
@@ -1819,6 +1846,20 @@ def run_analysis(job_input: dict) -> dict:
                 continue
 
             timestamp_ms = int((frame_idx / native_fps) * 1000)
+
+            # ── Pitch calibration — attempt once after first second of footage ──
+            if not calibration_attempted and frame_idx >= frame_step * int(analysed_fps):
+                success = calibrator.calibrate_from_frame(frame)
+                calibration_attempted = True
+                if success:
+                    print(f"[calibration] Homography computed successfully "
+                          f"({calibrator.pixels_per_metre_estimate:.2f} px/m)")
+                    # Update touch/pass trackers with accurate px/m
+                    pixels_per_metre = calibrator.pixels_per_metre_estimate
+                    touch_tracker.pixels_per_metre = pixels_per_metre
+                    pass_analyser.pixels_per_metre  = pixels_per_metre
+                else:
+                    pixels_per_metre = calibrator.pixels_per_metre_estimate
 
             # ── YOLO inference ──
             results = model(frame, verbose=False)
@@ -2117,6 +2158,14 @@ def run_analysis(job_input: dict) -> dict:
 
         print(f"  ✓ Players: {len(player_metrics)} real (from {raw_track_count} raw tracks, "
               f"{fragments_merged} fragments merged)")
+
+        # ── Clamp all player metrics to physically realistic ranges ──
+        for pm in player_metrics.values():
+            pm["top_speed_kmh"]     = min(float(pm.get("top_speed_kmh", 0)),      36.0)
+            pm["distance_m"]        = min(float(pm.get("distance_m", 0)),         12000.0)
+            pm["sprints"]           = min(int(pm.get("sprints", 0)),               40)
+            pm["touches_total"]     = min(int(pm.get("touches_total", 0)),         200)
+            pm["passes_attempted"]  = min(int(pm.get("passes_attempted", 0)),      150)
 
         # ── Merge touch + pass totals into team_metrics ──
         for team_id, tm in team_metrics.items():
