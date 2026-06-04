@@ -1446,20 +1446,21 @@ class MetricsAggregator:
                 continue
             xs = [p[1] for p in positions]
             ys = [p[2] for p in positions]
-            # crude px → metres: assume pano width = ~105m (full-pitch)
-            px_per_m = pano_w / 105.0
-            m_per_px = 1.0 / px_per_m if px_per_m else 0
+            # px → metres: assume pano width = ~105m (full-pitch)
+            pixels_per_metre = pano_w / 105.0
 
-            # Per-frame speed in m/s
+            # Per-frame speed (m/s) and total distance using explicit pixel-to-metre conversion
+            total_px_dist = 0.0
             frame_speeds = []
             for i in range(1, len(xs)):
                 d_px = ((xs[i] - xs[i - 1]) ** 2 + (ys[i] - ys[i - 1]) ** 2) ** 0.5
-                d_m = d_px * m_per_px
-                frame_speeds.append(d_m * fps)
+                total_px_dist += d_px
+                speed_ms = (d_px / pixels_per_metre) * fps
+                frame_speeds.append(speed_ms)
 
-            dist_m = sum(s / fps for s in frame_speeds)
+            dist_m = total_px_dist / pixels_per_metre
             top_speed_ms = max(frame_speeds) if frame_speeds else 0.0
-            top_speed_kmh = round(top_speed_ms * 3.6, 1)
+            top_speed_kmh = min(round(top_speed_ms * 3.6, 1), 40.0)
 
             # Count sprint bouts: consecutive frames above SPRINT_SPEED_MS threshold
             sprints = 0
@@ -1485,7 +1486,7 @@ class MetricsAggregator:
                 "xg": 0.0,
                 "distance_m": round(dist_m, 0),
                 "top_speed_kmh": top_speed_kmh,
-                "sprints": sprints,
+                "sprints": min(sprints, 30),
                 "minutes_played": round((positions[-1][0] - positions[0][0]) / fps / 60, 1),
             }
 
@@ -1779,8 +1780,19 @@ def run_analysis(job_input: dict) -> dict:
         print(f"👥 Tracked {len(player_tracker.tracks)} player IDs  "
               f"🎯 {len(ball_positions)} ball detections")
 
+        # ── Ghost track filter ──
+        # Only keep tracks seen for at least MIN_TRACK_FRAMES; real players in a
+        # 48-min match at 2fps appear in hundreds of frames, ghosts in 1-29.
+        MIN_TRACK_FRAMES = 30
+        valid_tracks = {
+            tid: positions
+            for tid, positions in player_tracker.tracks.items()
+            if len(positions) >= MIN_TRACK_FRAMES
+        }
+        print(f"  Ghost track filter: {len(player_tracker.tracks)} raw → {len(valid_tracks)} valid tracks")
+
         # ── Event detection, team assignment, metrics ──
-        team_assignment = TeamClassifier.assign_teams(player_tracker.tracks)
+        team_assignment = TeamClassifier.assign_teams(valid_tracks)
 
         # Back-fill team onto touches and passes now that assignment is known
         touch_tracker.assign_teams(team_assignment)
@@ -1789,7 +1801,7 @@ def run_analysis(job_input: dict) -> dict:
         # Exclude referee tracks from all downstream analytics
         from referee_filter import filter_referees
         referee_track_ids = filter_referees(
-            tracks=player_tracker.tracks,
+            tracks=valid_tracks,
             team_assignment=team_assignment,
             frame_w=frame_w,
             frame_h=frame_h,
@@ -1799,7 +1811,7 @@ def run_analysis(job_input: dict) -> dict:
 
         # Strip referee tracks from analytics inputs
         player_tracks_filtered = {
-            tid: pos for tid, pos in player_tracker.tracks.items()
+            tid: pos for tid, pos in valid_tracks.items()
             if tid not in referee_track_ids
         }
         team_assignment_filtered = {
@@ -1822,7 +1834,7 @@ def run_analysis(job_input: dict) -> dict:
             ball_positions=ball_positions,
             pano_w=frame_w,
             pano_h=frame_h,
-            fps=native_fps,
+            fps=analysed_fps,
         )
         heatmaps = MetricsAggregator.build_heatmaps(
             player_tracks_filtered, frame_w, frame_h, grid_w=20, grid_h=12
@@ -1847,10 +1859,10 @@ def run_analysis(job_input: dict) -> dict:
         from movement_network import build_pass_network
         pass_events_serialised = pass_analyser.pass_events_for_network()
         home_pass_network = build_pass_network(
-            pass_events_serialised, player_tracker.tracks, "A", frame_w, frame_h
+            pass_events_serialised, valid_tracks, "A", frame_w, frame_h
         )
         away_pass_network = build_pass_network(
-            pass_events_serialised, player_tracker.tracks, "B", frame_w, frame_h
+            pass_events_serialised, valid_tracks, "B", frame_w, frame_h
         )
         for network in (home_pass_network, away_pass_network):
             for node in network.get("nodes", []):
@@ -1865,11 +1877,17 @@ def run_analysis(job_input: dict) -> dict:
 
         # ── Confidence score ──
         # Product of: fraction of expected players tracked × fraction of frames with ball
-        players_tracked  = len([t for t in player_tracker.tracks if len(player_tracker.tracks[t]) >= 10])
+        players_tracked  = len([t for t in valid_tracks if len(valid_tracks[t]) >= 10])
         ball_frame_ratio = len(ball_positions) / max(1, processed_frames)
         confidence_score = round(
             min(players_tracked / 22, 1.0) * 0.6 + ball_frame_ratio * 0.4, 2
         )
+
+        # Output sanity caps — catch any remaining impossible values before returning
+        for pm in player_metrics.values():
+            pm["top_speed_kmh"] = min(pm.get("top_speed_kmh", 0), 40.0)
+            pm["distance_m"] = min(pm.get("distance_m", 0), 12000)
+            pm["sprints"] = min(pm.get("sprints", 0), 30)
 
         wall_time = round(time.time() - start_wall, 1)
         print(f"🏁 Analysis done in {wall_time}s  confidence={confidence_score}")
