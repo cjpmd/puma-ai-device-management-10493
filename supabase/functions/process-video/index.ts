@@ -9,7 +9,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
  *
  * Body:
  *   { job_id, session_id?, video_url?, stitched_url?, left_url?, right_url?,
- *     target_fps? }
+ *     target_fps?, pitch_length_m?, pitch_width_m? }
  *
  * - video_url / stitched_url: presigned HTTPS URL for an already-stitched video.
  * - left_url / right_url: Wasabi paths for the two donor cameras (analysis runs
@@ -46,6 +46,8 @@ Deno.serve(async (req) => {
       left_url,
       right_url,
       target_fps = 5,
+      pitch_length_m = 80,   // 9v9 default; pass 105 for 11v11, 60 for 7v7
+      pitch_width_m  = 50,
     } = body;
 
     if (!job_id) {
@@ -138,6 +140,8 @@ Deno.serve(async (req) => {
             left_video_url: left_url ?? null,
             right_video_url: right_url ?? null,
             target_fps,
+            pitch_length_m,
+            pitch_width_m,
             rosters,
             team_colors: teamColors,
             // Wasabi credentials so the handler can download presigned-URL-less paths
