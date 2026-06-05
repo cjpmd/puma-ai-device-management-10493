@@ -3,45 +3,49 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useDeepLinkHandler } from "@/hooks/useDeepLinkHandler";
 import { OrgTypeProvider } from "@/contexts/OrgTypeContext";
 import { ActiveContextProvider, useActiveContext } from "@/contexts/ActiveContextContext";
 import { AppShell } from "@/components/layout/AppShell";
 import { PlaceholderPage } from "@/components/layout/PlaceholderPage";
-import { IOSApp } from "./pages/ios/IOSApp";
 import { MobileNavShell } from "@/components/ios/MobileNavShell";
-import Index from "./pages/Index";
-import MLTraining from "./pages/MLTraining";
-import Analysis from "./pages/Analysis";
-import Devices from "./pages/Devices";
-import PitchCalibration from "./pages/PitchCalibration";
-import Matches from "./pages/Matches";
-import MatchDetail from "./pages/MatchDetail";
-import DemoMatch from "./pages/DemoMatch";
-import CameraCapture from "./pages/CameraCapture";
-import ScanQR from "./pages/ScanQR";
-import Auth from "./pages/Auth";
-import NotFound from "./pages/NotFound";
-import MyRecordings from "./pages/MyRecordings";
-import SharedVideo from "./pages/SharedVideo";
-import Dashboard from "./pages/Dashboard";
-import Players from "./pages/Players";
-import PlayerProfile from "./pages/PlayerProfile";
-import Medical from "./pages/Medical";
-import Welfare from "./pages/Welfare";
-import Scouting from "./pages/Scouting";
-import Compliance from "./pages/Compliance";
-import Settings from "./pages/Settings";
-import LogRPE from "./pages/LogRPE";
-import FitnessTesting from "./pages/FitnessTesting";
-import TravelEvents from "./pages/TravelEvents";
-import TravelEventDetail from "./pages/TravelEventDetail";
-import Squads from "./pages/Squads";
-import Development from "./pages/Development";
-import Coaching from "./pages/Coaching";
-import TestVideoAnalysis from "./pages/TestVideoAnalysis";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
+
+// Lazy-load every route so a transform/load failure in one page module
+// (e.g. a preview 502 on a leaf UI primitive) cannot blank the entire app.
+const IOSApp = lazy(() => import("./pages/ios/IOSApp").then(m => ({ default: m.IOSApp })));
+const Index = lazy(() => import("./pages/Index"));
+const MLTraining = lazy(() => import("./pages/MLTraining"));
+const Analysis = lazy(() => import("./pages/Analysis"));
+const Devices = lazy(() => import("./pages/Devices"));
+const PitchCalibration = lazy(() => import("./pages/PitchCalibration"));
+const Matches = lazy(() => import("./pages/Matches"));
+const MatchDetail = lazy(() => import("./pages/MatchDetail"));
+const DemoMatch = lazy(() => import("./pages/DemoMatch"));
+const CameraCapture = lazy(() => import("./pages/CameraCapture"));
+const ScanQR = lazy(() => import("./pages/ScanQR"));
+const Auth = lazy(() => import("./pages/Auth"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const MyRecordings = lazy(() => import("./pages/MyRecordings"));
+const SharedVideo = lazy(() => import("./pages/SharedVideo"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Players = lazy(() => import("./pages/Players"));
+const PlayerProfile = lazy(() => import("./pages/PlayerProfile"));
+const Medical = lazy(() => import("./pages/Medical"));
+const Welfare = lazy(() => import("./pages/Welfare"));
+const Scouting = lazy(() => import("./pages/Scouting"));
+const Compliance = lazy(() => import("./pages/Compliance"));
+const Settings = lazy(() => import("./pages/Settings"));
+const LogRPE = lazy(() => import("./pages/LogRPE"));
+const FitnessTesting = lazy(() => import("./pages/FitnessTesting"));
+const TravelEvents = lazy(() => import("./pages/TravelEvents"));
+const TravelEventDetail = lazy(() => import("./pages/TravelEventDetail"));
+const Squads = lazy(() => import("./pages/Squads"));
+const Development = lazy(() => import("./pages/Development"));
+const Coaching = lazy(() => import("./pages/Coaching"));
+const TestVideoAnalysis = lazy(() => import("./pages/TestVideoAnalysis"));
 
 const queryClient = new QueryClient();
 
@@ -83,6 +87,8 @@ const TierRoute = ({
 const AppRoutes = () => {
   useDeepLinkHandler();
   return (
+    <RouteErrorBoundary>
+    <Suspense fallback={<div className="flex items-center justify-center h-screen text-slate-400">Loading…</div>}>
     <Routes>
       {/* Public routes */}
       <Route path="/auth" element={<Auth />} />
@@ -126,6 +132,8 @@ const AppRoutes = () => {
 
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </Suspense>
+    </RouteErrorBoundary>
   );
 };
 
