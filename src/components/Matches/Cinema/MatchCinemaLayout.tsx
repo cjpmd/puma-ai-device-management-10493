@@ -128,6 +128,7 @@ export function MatchCinemaLayout({
           ref={videoRef}
           matchId={matchId}
           outputVideoPath={job?.output_video_path}
+          sourceVideoPath={job?.source_video_path}
           stitchedVideoPath={stitchedPath}
           demoVideoUrl={demoVideoUrl}
           events={mergedEvents}

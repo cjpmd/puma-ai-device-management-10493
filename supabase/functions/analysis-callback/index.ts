@@ -48,30 +48,27 @@ Deno.serve(async (req) => {
     }
 
     // Primary lookup: runpod_job_id (set by process-video when queuing)
-    let job: { id: string; match_id: string } | null = null;
+    let job: {
+      id: string;
+      match_id: string;
+      output_video_path: string | null;
+      output_highlights_path: string | null;
+      output_metadata_path: string | null;
+      source_video_path: string | null;
+    } | null = null;
 
     const { data: byRunpodId } = await adminClient
       .from("processing_jobs")
-      .select("id, match_id")
+      .select("id, match_id, output_video_path, output_highlights_path, output_metadata_path, source_video_path")
       .eq("runpod_job_id", runpodJobId)
       .maybeSingle();
     job = byRunpodId;
-
-    // Fallback: analysis_job_id (same value, older rows may only have this)
-    if (!job) {
-      const { data: byAnalysisId } = await adminClient
-        .from("processing_jobs")
-        .select("id, match_id")
-        .eq("analysis_job_id", runpodJobId)
-        .maybeSingle();
-      job = byAnalysisId;
-    }
 
     // Final fallback: job_id embedded in output body
     if (!job && output?.job_id) {
       const { data: byJobId } = await adminClient
         .from("processing_jobs")
-        .select("id, match_id")
+        .select("id, match_id, output_video_path, output_highlights_path, output_metadata_path, source_video_path")
         .eq("id", output.job_id)
         .maybeSingle();
       job = byJobId;
@@ -89,9 +86,28 @@ Deno.serve(async (req) => {
     const isFailed = status === "FAILED" || (!isComplete && status !== "IN_PROGRESS");
 
     if (isComplete && output) {
+      const resolvedVideoPath =
+        output.output_video_path ??
+        output.video_path ??
+        job.output_video_path ??
+        null;
+      const resolvedHighlightsPath =
+        output.output_highlights_path ??
+        output.highlights_path ??
+        job.output_highlights_path ??
+        null;
+      const resolvedMetadataPath =
+        output.output_metadata_path ??
+        output.metadata_path ??
+        job.output_metadata_path ??
+        null;
+
       const update: Record<string, unknown> = {
-        status: "completed",
+        status: "complete",
         completed_at: new Date().toISOString(),
+        output_video_path: resolvedVideoPath,
+        output_highlights_path: resolvedHighlightsPath,
+        output_metadata_path: resolvedMetadataPath,
         // Raw output stored in event_data for full result inspection
         event_data: output,
         // Structured fields for app features
@@ -149,46 +165,48 @@ Deno.serve(async (req) => {
       // Upsert player_match_stats
       const playerMetrics: Record<string, any> = output.player_metrics ?? {};
       if (Object.keys(playerMetrics).length > 0) {
-        const statsRows = Object.entries(playerMetrics).map(([trackIdStr, pm]: [string, any]) => ({
-          match_id:               job!.match_id,
-          processing_job_id:      job!.id,
-          track_id:               Number(trackIdStr),
-          team:                   pm.team ?? null,
-          distance_m:             pm.distance_m ?? null,
-          top_speed_kmh:          pm.top_speed_kmh ?? null,
-          sprints:                pm.sprints ?? null,
-          minutes_played:         pm.minutes_played ?? null,
-          passes:                 pm.passes ?? null,
-          passes_completed:       pm.passes_completed ?? null,
-          pass_success_pct:       pm.pass_success_pct ?? null,
-          shots:                  pm.shots ?? null,
-          tackles:                pm.tackles ?? null,
-          goals:                  0,
-          xg:                     pm.xg ?? null,
-          contribution_score:     pm.contribution_score ?? null,
-          touches_total:          pm.touches_total ?? pm.touches ?? null,
-          touches_receive:        pm.touches_receive ?? null,
-          touches_control:        pm.touches_control ?? null,
-          touches_pass:           pm.touches_pass ?? null,
-          touches_shot:           pm.touches_shot ?? null,
-          touches_dribble:        pm.touches_dribble ?? null,
-          // Only canonical confirmed jersey numbers — guesses live in
-          // jersey_number_guess on the raw output and shouldn't pollute stats.
-          jersey_number:          pm.jersey_number ?? null,
-          passes_attempted:       pm.passes_attempted ?? null,
-          passes_completed_count: pm.passes_completed_count ?? null,
-          pass_accuracy:          pm.pass_accuracy ?? null,
-          passes_forward:         pm.passes_forward ?? null,
-          passes_sideways:        pm.passes_sideways ?? null,
-          passes_back:            pm.passes_back ?? null,
-        }));
+        try {
+          const statsRows = Object.entries(playerMetrics).map(([trackIdStr, pm]: [string, any]) => ({
+            match_id:               job!.match_id,
+            processing_job_id:      job!.id,
+            track_id:               Number(trackIdStr),
+            team:                   pm.team ?? null,
+            distance_m:             pm.distance_m ?? null,
+            top_speed_kmh:          pm.top_speed_kmh ?? null,
+            sprints:                pm.sprints ?? null,
+            minutes_played:         pm.minutes_played ?? null,
+            passes:                 pm.passes ?? null,
+            passes_completed:       pm.passes_completed ?? null,
+            pass_success_pct:       pm.pass_success_pct ?? null,
+            shots:                  pm.shots ?? null,
+            tackles:                pm.tackles ?? null,
+            goals:                  0,
+            xg:                     pm.xg ?? null,
+            contribution_score:     pm.contribution_score ?? null,
+            touches_total:          pm.touches_total ?? pm.touches ?? null,
+            touches_receive:        pm.touches_receive ?? null,
+            touches_control:        pm.touches_control ?? null,
+            touches_pass:           pm.touches_pass ?? null,
+            touches_shot:           pm.touches_shot ?? null,
+            touches_dribble:        pm.touches_dribble ?? null,
+            jersey_number:          pm.jersey_number ?? null,
+            passes_attempted:       pm.passes_attempted ?? null,
+            passes_completed_count: pm.passes_completed_count ?? null,
+            pass_accuracy:          pm.pass_accuracy ?? null,
+            passes_forward:         pm.passes_forward ?? null,
+            passes_sideways:        pm.passes_sideways ?? null,
+            passes_back:            pm.passes_back ?? null,
+          }));
 
-        await adminClient
-          .from("player_match_stats")
-          .upsert(statsRows, {
-            onConflict: "match_id,processing_job_id,track_id",
-            ignoreDuplicates: false,
-          });
+          await adminClient
+            .from("player_match_stats")
+            .upsert(statsRows, {
+              onConflict: "match_id,processing_job_id,track_id",
+              ignoreDuplicates: false,
+            });
+        } catch (e) {
+          console.error("analysis-callback: player_match_stats upsert failed", e);
+        }
       }
 
       // ── Link tracks → roster players via confirmed jersey numbers ──
