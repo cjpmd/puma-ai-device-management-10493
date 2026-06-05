@@ -13,6 +13,7 @@ interface MatchOutputViewerProps {
     output_video_path: string | null;
     output_highlights_path: string | null;
     output_metadata_path: string | null;
+    source_video_path?: string | null;
   } | null;
 }
 
@@ -21,7 +22,7 @@ export function MatchOutputViewer({ matchId, matchTitle, job }: MatchOutputViewe
   const [loading, setLoading] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState<null | 'video' | 'highlights'>(null);
 
-  if (!job || (!job.output_video_path && !job.output_highlights_path)) {
+  if (!job || (!job.output_video_path && !job.output_highlights_path && !job.source_video_path)) {
     return null;
   }
 
@@ -31,7 +32,7 @@ export function MatchOutputViewer({ matchId, matchTitle, job }: MatchOutputViewe
       // If the stored output path is already a fully-qualified URL
       // (e.g. Wasabi presigned URL from a manual test), open it directly.
       const directPath =
-        fileType === 'video'      ? job?.output_video_path :
+        fileType === 'video'      ? job?.output_video_path || job?.source_video_path || null :
         fileType === 'highlights' ? job?.output_highlights_path :
         fileType === 'metadata'   ? job?.output_metadata_path : null;
       if (directPath && /^https?:\/\//i.test(directPath)) {
@@ -61,9 +62,9 @@ export function MatchOutputViewer({ matchId, matchTitle, job }: MatchOutputViewe
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {job.output_video_path && (
+        {(job.output_video_path || job.source_video_path) && (
           <div className="flex items-center justify-between gap-2 p-3 bg-muted rounded-lg">
-            <span className="text-sm font-medium">Final Follow Cam</span>
+            <span className="text-sm font-medium">{job.output_video_path ? 'Final Follow Cam' : 'Source Match Video'}</span>
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" onClick={() => handleGetUrl('video')} disabled={loading === 'video'}>
                 {loading === 'video' ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />} View
