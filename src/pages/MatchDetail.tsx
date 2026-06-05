@@ -16,6 +16,8 @@ import ProcessingConfigCard, { type ProcessingConfig } from '@/components/Matche
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/components/ui/use-toast';
 
+const isCompletedJob = (status?: string | null) => status === 'complete' || status === 'completed';
+
 const MatchDetail = () => {
   const { id } = useParams<{ id: string }>();
   const { match, videos, jobs, loading, refetch } = useMatchPolling(id);
@@ -23,15 +25,19 @@ const MatchDetail = () => {
   const [devOpen, setDevOpen] = useState(false);
   const [recordedAwaitingUpload, setRecordedAwaitingUpload] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
   const latestJob = jobs[0] || null;
-  const latestCompletedJob = jobs.find((job) => job.status === 'complete' || job.status === 'completed') || null;
-  const latestPlayableJob = jobs.find(
-    (job) => (job.status === 'complete' || job.status === 'completed') && !!job.output_video_path,
+  const latestCompletedJob = jobs.find((job) => isCompletedJob(job.status)) || null;
+  const latestAnalyticsJob = jobs.find(
+    (job) => isCompletedJob(job.status) && (!!job.event_data || !!job.player_metrics || !!job.heatmaps),
   ) || null;
+  const latestPlayableJob = jobs.find(
+    (job) => isCompletedJob(job.status) && (!!job.output_video_path || !!job.source_video_path),
+  ) || latestAnalyticsJob || null;
   const latestOutputJob = jobs.find(
     (job) =>
-      (job.status === 'complete' || job.status === 'completed') &&
-      (!!job.output_video_path || !!job.output_highlights_path || !!job.output_metadata_path),
-  ) || null;
+      isCompletedJob(job.status) &&
+      (!!job.output_video_path || !!job.output_highlights_path || !!job.output_metadata_path || !!job.source_video_path),
+  ) || latestPlayableJob || null;
+  const showVideoPendingCard = !!latestAnalyticsJob && !latestJob?.output_video_path;
 
   const leftVideo = videos.find((v) => v.camera_side === 'left');
   const rightVideo = videos.find((v) => v.camera_side === 'right');
@@ -154,6 +160,17 @@ const MatchDetail = () => {
               <Link to="/matches/demo">
                 <Button size="sm" variant="outline">View Demo</Button>
               </Link>
+            </CardContent>
+          </Card>
+        )}
+
+        {showVideoPendingCard && (
+          <Card className="border-border/60 bg-card/80">
+            <CardContent className="p-4 space-y-2">
+              <p className="text-sm font-medium">Analytics are ready, but the saved match video is still unavailable.</p>
+              <p className="text-sm text-muted-foreground">
+                I&apos;m using the best available source video fallback for playback on this match while the final output path catches up.
+              </p>
             </CardContent>
           </Card>
         )}
