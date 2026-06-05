@@ -13,6 +13,7 @@ export interface CinemaVideoHandle {
 interface CinemaVideoPlayerProps {
   matchId: string;
   outputVideoPath: string | null;
+  sourceVideoPath?: string | null;
   stitchedVideoPath?: string | null;
   demoVideoUrl?: string;
   events?: ControlEvent[];
@@ -26,6 +27,7 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
     {
       matchId,
       outputVideoPath,
+      sourceVideoPath,
       stitchedVideoPath,
       demoVideoUrl,
       events = [],
@@ -92,7 +94,7 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
 
     const loadVideo = async () => {
       // Prefer stitched path when available
-      const path = stitchedVideoPath || outputVideoPath;
+      const path = stitchedVideoPath || outputVideoPath || sourceVideoPath;
       if (!path) return;
       setLoading(true);
       try {
@@ -116,10 +118,10 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
     useEffect(() => {
       if (videoUrl) return;
       if (loading) return;
-      if (!outputVideoPath && !stitchedVideoPath) return;
+      if (!outputVideoPath && !stitchedVideoPath && !sourceVideoPath) return;
       loadVideo();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [outputVideoPath, stitchedVideoPath, videoUrl]);
+    }, [outputVideoPath, sourceVideoPath, stitchedVideoPath, videoUrl]);
 
     const handleExtractClip = async () => {
       if (clipIn === null || clipOut === null) return;
@@ -152,7 +154,7 @@ export const CinemaVideoPlayer = forwardRef<CinemaVideoHandle, CinemaVideoPlayer
         <div className="absolute inset-0 flex items-center justify-center bg-black">
           <Button
             onClick={loadVideo}
-            disabled={loading || (!outputVideoPath && !stitchedVideoPath)}
+            disabled={loading || (!outputVideoPath && !stitchedVideoPath && !sourceVideoPath)}
             size="lg"
             className="rounded-full"
           >
