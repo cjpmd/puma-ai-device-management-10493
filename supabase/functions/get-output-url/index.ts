@@ -50,13 +50,13 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
     }
 
-    const { match_id, file_type } = await req.json();
+    const { match_id, file_type, path } = await req.json();
 
-    if (!match_id || !file_type) {
-      return new Response(JSON.stringify({ error: "match_id and file_type required" }), { status: 400, headers: corsHeaders });
+    if (!match_id || (!file_type && !path)) {
+      return new Response(JSON.stringify({ error: "match_id and file_type or path required" }), { status: 400, headers: corsHeaders });
     }
 
-    if (!["video", "highlights", "metadata"].includes(file_type)) {
+    if (file_type && !["video", "highlights", "metadata"].includes(file_type)) {
       return new Response(JSON.stringify({ error: "file_type must be video, highlights, or metadata" }), { status: 400, headers: corsHeaders });
     }
 
@@ -77,6 +77,8 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Match not found" }), { status: 404, headers: corsHeaders });
     }
 
+    let storedValue: string | null = typeof path === "string" && path.trim() ? path.trim() : null;
+
     // Pick the latest completed job that actually has the requested output path.
     // The newest completed job may have null paths (partial/failed runs); skip those.
     const column =
@@ -95,37 +97,40 @@ Deno.serve(async (req) => {
       "created_at",
     ].join(", ");
 
-    const { data: jobs, error: jobErr } = await adminClient
-      .from("processing_jobs")
-      .select(selectColumns)
-      .eq("match_id", match_id)
-      .in("status", ["complete", "completed"])
-      .order("completed_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .limit(file_type === "video" ? 5 : 1);
+    if (!storedValue) {
+      const { data: jobs, error: jobErr } = await adminClient
+        .from("processing_jobs")
+        .select(selectColumns)
+        .eq("match_id", match_id)
+        .in("status", ["complete", "completed"])
+        .order("completed_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(file_type === "video" ? 5 : 1);
 
-    if (jobErr || !jobs || jobs.length === 0) {
-      return new Response(
-        JSON.stringify({ error: `No completed job has a ${file_type} output yet` }),
-        { status: 404, headers: corsHeaders },
-      );
+      if (jobErr || !jobs || jobs.length === 0) {
+        return new Response(
+          JSON.stringify({ error: `No completed job has a ${file_type} output yet` }),
+          { status: 404, headers: corsHeaders },
+        );
+      }
+
+      const selectedJob = jobs.find((job) => {
+        const row = job as Record<string, string | null>;
+        if (row[column]) return true;
+        return file_type === "video" && !!row.source_video_path;
+      });
+
+      if (!selectedJob) {
+        return new Response(
+          JSON.stringify({ error: `No completed job has a ${file_type} output yet` }),
+          { status: 404, headers: corsHeaders },
+        );
+      }
+
+      const selectedRow = selectedJob as Record<string, string | null>;
+      storedValue = selectedRow[column] || (file_type === "video" ? selectedRow.source_video_path : null);
     }
 
-    const selectedJob = jobs.find((job) => {
-      const row = job as Record<string, string | null>;
-      if (row[column]) return true;
-      return file_type === "video" && !!row.source_video_path;
-    });
-
-    if (!selectedJob) {
-      return new Response(
-        JSON.stringify({ error: `No completed job has a ${file_type} output yet` }),
-        { status: 404, headers: corsHeaders },
-      );
-    }
-
-    const selectedRow = selectedJob as Record<string, string | null>;
-    const storedValue = selectedRow[column] || (file_type === "video" ? selectedRow.source_video_path : null);
     if (!storedValue) {
       return new Response(JSON.stringify({ error: `No ${file_type} output available` }), { status: 404, headers: corsHeaders });
     }
