@@ -86,15 +86,23 @@ Deno.serve(async (req) => {
         ? "output_highlights_path"
         : "output_metadata_path";
 
+    const selectColumns = [
+      "output_video_path",
+      "output_highlights_path",
+      "output_metadata_path",
+      "source_video_path",
+      "completed_at",
+      "created_at",
+    ].join(", ");
+
     const { data: jobs, error: jobErr } = await adminClient
       .from("processing_jobs")
-      .select("output_video_path, output_highlights_path, output_metadata_path, completed_at, created_at")
+      .select(selectColumns)
       .eq("match_id", match_id)
       .in("status", ["complete", "completed"])
-      .not(column, "is", null)
       .order("completed_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
-      .limit(1);
+      .limit(file_type === "video" ? 5 : 1);
 
     if (jobErr || !jobs || jobs.length === 0) {
       return new Response(
@@ -103,7 +111,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    const storedValue = (jobs[0] as Record<string, string | null>)[column];
+    const selectedJob = jobs.find((job) => {
+      const row = job as Record<string, string | null>;
+      if (row[column]) return true;
+      return file_type === "video" && !!row.source_video_path;
+    });
+
+    if (!selectedJob) {
+      return new Response(
+        JSON.stringify({ error: `No completed job has a ${file_type} output yet` }),
+        { status: 404, headers: corsHeaders },
+      );
+    }
+
+    const selectedRow = selectedJob as Record<string, string | null>;
+    const storedValue = selectedRow[column] || (file_type === "video" ? selectedRow.source_video_path : null);
     if (!storedValue) {
       return new Response(JSON.stringify({ error: `No ${file_type} output available` }), { status: 404, headers: corsHeaders });
     }
