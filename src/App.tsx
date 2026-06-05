@@ -11,6 +11,7 @@ import { ActiveContextProvider, useActiveContext } from "@/contexts/ActiveContex
 import { AppShell } from "@/components/layout/AppShell";
 import { PlaceholderPage } from "@/components/layout/PlaceholderPage";
 import { MobileNavShell } from "@/components/ios/MobileNavShell";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 
 // Lazy-load every route so a transform/load failure in one page module
 // (e.g. a preview 502 on a leaf UI primitive) cannot blank the entire app.
@@ -86,6 +87,7 @@ const TierRoute = ({
 const AppRoutes = () => {
   useDeepLinkHandler();
   return (
+    <RouteErrorBoundary>
     <Suspense fallback={<div className="flex items-center justify-center h-screen text-slate-400">Loading…</div>}>
     <Routes>
       {/* Public routes */}
@@ -131,6 +133,7 @@ const AppRoutes = () => {
       <Route path="*" element={<NotFound />} />
     </Routes>
     </Suspense>
+    </RouteErrorBoundary>
   );
 };
 
