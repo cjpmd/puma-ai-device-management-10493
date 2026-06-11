@@ -1,3 +1,7 @@
+# Python (gpu-server / runpod workers)
+__pycache__/
+*.py[cod]
+
 # Logs
 logs
 *.log
