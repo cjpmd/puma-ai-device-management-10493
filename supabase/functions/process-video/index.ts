@@ -48,6 +48,9 @@ Deno.serve(async (req) => {
       target_fps = 5,
       pitch_length_m = 80,   // 9v9 default; pass 105 for 11v11, 60 for 7v7
       pitch_width_m  = 50,
+      // Cross-camera identity reconciliation + goal corroboration when a
+      // second iPhone angle exists. Off by default (roughly doubles GPU time).
+      enable_multicam_fusion = false,
     } = body;
 
     if (!job_id) {
@@ -142,6 +145,7 @@ Deno.serve(async (req) => {
             target_fps,
             pitch_length_m,
             pitch_width_m,
+            enable_multicam_fusion,
             rosters,
             team_colors: teamColors,
             // Wasabi credentials so the handler can download presigned-URL-less paths

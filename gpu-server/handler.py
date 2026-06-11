@@ -29,6 +29,8 @@ import supervision as sv
 from scipy.signal import correlate, butter, sosfilt
 from filterpy.kalman import KalmanFilter
 from pitch_calibration import PitchCalibrator
+from tracking import PlayerTracker, prefetch_reid_weights
+from goal_detector import GoalDetector, compute_audio_envelope
 
 
 # ─── Wasabi S3 helpers ────────────────────────────────────────────────
@@ -675,119 +677,10 @@ class DynamicZoom:
         return self.current_zoom
 
 
-# ─── Player tracking (ByteTrack) ────────────────────────────────────
-
-class PlayerTracker:
-    """
-    Tracks players across frames using ByteTrack via the supervision library.
-    Assigns persistent IDs so we can generate per-player heatmaps and stats.
-    """
-
-    def __init__(self, analysed_fps: float = 2.0):
-        # Try BoT-SORT first (better re-identification across occlusions)
-        try:
-            self.tracker = sv.BotSort(
-                reid_weights=None,
-                device='cuda',
-                half=True,
-                track_high_thresh=0.45,
-                track_low_thresh=0.2,
-                new_track_thresh=0.55,
-                track_buffer=max(30, int(analysed_fps * 30)),  # 30s at analysed fps
-                match_thresh=0.8,
-            )
-            self._tracker_type = 'botsort'
-            print("Using BoT-SORT tracker")
-        except (ImportError, AttributeError, Exception):
-            # BotSort not available — use ByteTrack with corrected fps/buffer
-            self.tracker = sv.ByteTrack(
-                track_activation_threshold=0.45,
-                lost_track_buffer=max(30, int(analysed_fps * 30)),  # 30s of frames
-                minimum_matching_threshold=0.8,
-                frame_rate=max(1, int(analysed_fps)),
-            )
-            self._tracker_type = 'bytetrack_improved'
-            print(f"Using improved ByteTrack (analysed_fps={analysed_fps:.1f}, "
-                  f"buffer={max(30, int(analysed_fps * 30))} frames)")
-        # track_id -> list of (frame_idx, cx, cy)
-        self.tracks: dict[int, list] = {}
-
-    def update_from_detections(self, person_dets: list, frame_idx: int) -> list:
-        """
-        Process pre-parsed person detections.
-        Returns list of (track_id, cx, cy, x1, y1, x2, y2).
-        """
-        if not person_dets:
-            return []
-
-        # Build supervision Detections object
-        xyxy = np.array([[d[2], d[3], d[4], d[5]] for d in person_dets])
-        confidence = np.array([d[6] for d in person_dets])
-
-        sv_detections = sv.Detections(
-            xyxy=xyxy,
-            confidence=confidence,
-        )
-
-        # Run ByteTrack
-        tracked = self.tracker.update_with_detections(sv_detections)
-
-        results_out = []
-        if tracked.tracker_id is not None:
-            for i, track_id in enumerate(tracked.tracker_id):
-                x1, y1, x2, y2 = tracked.xyxy[i]
-                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-                tid = int(track_id)
-
-                if tid not in self.tracks:
-                    self.tracks[tid] = []
-                self.tracks[tid].append((frame_idx, float(cx), float(cy)))
-
-                results_out.append((tid, cx, cy, x1, y1, x2, y2))
-
-        return results_out
-
-    def update(self, results, frame_idx: int) -> list:
-        """Legacy: process YOLO results directly."""
-        person_dets = parse_detections(results, PERSON_CLASSES)
-        return self.update_from_detections(person_dets, frame_idx)
-
-    def get_track_summary(self, fps: float) -> list:
-        """Return summarized per-player tracks for metadata output."""
-        summaries = []
-        for track_id, positions in self.tracks.items():
-            if len(positions) < 5:
-                continue  # skip very short tracks (noise)
-
-            frames = [p[0] for p in positions]
-            xs = [p[1] for p in positions]
-            ys = [p[2] for p in positions]
-
-            # Compute distance traveled (in pixels)
-            total_dist = sum(
-                np.sqrt((xs[i] - xs[i - 1]) ** 2 + (ys[i] - ys[i - 1]) ** 2)
-                for i in range(1, len(xs))
-            )
-
-            summaries.append({
-                "track_id": track_id,
-                "first_frame": frames[0],
-                "last_frame": frames[-1],
-                "duration_seconds": round((frames[-1] - frames[0]) / fps, 2),
-                "total_distance_px": round(total_dist, 1),
-                "avg_x": round(np.mean(xs), 1),
-                "avg_y": round(np.mean(ys), 1),
-                "num_detections": len(positions),
-                # Subsample positions for metadata (every 15 frames ≈ 0.5s)
-                "positions": [
-                    {"frame": p[0], "time": round(p[0] / fps, 2), "x": round(p[1], 1), "y": round(p[2], 1)}
-                    for p in positions[::15]
-                ],
-            })
-
-        # Sort by duration (longest tracks first)
-        summaries.sort(key=lambda s: s["duration_seconds"], reverse=True)
-        return summaries
+# ─── Player tracking ─────────────────────────────────────────────────
+# PlayerTracker moved to tracking.py: BoT-SORT (OSNet re-ID + camera-motion
+# compensation) primary backend with a tuned ByteTrack fallback and an
+# online re-association layer. See tracking.py for root-cause findings.
 
 
 # ─── Ball follower (with play-switch lead) ───────────────────────────
@@ -1015,7 +908,8 @@ def process_videos(
     # Init components
     stitcher = PanoramaStitcher()
     follower = SmoothFollower(smooth_factor=smooth_factor)
-    player_tracker = PlayerTracker()
+    # Players tracked on every 2nd frame → effective rate is fps/2
+    player_tracker = PlayerTracker(analysed_fps=fps_left / 2)
 
     # Read first frame to get panorama dimensions for play-switch and zoom
     ret_l, first_l = cap_left.read()
@@ -1084,7 +978,7 @@ def process_videos(
         if frame_idx % 2 == 0:
             person_dets = parse_detections(results, PERSON_CLASSES)
             last_yolo_person_dets = person_dets
-            player_tracker.update_from_detections(person_dets, frame_idx)
+            player_tracker.update_from_detections(person_dets, frame_idx, frame=panorama)
 
         # 3-stage ball tracking pipeline
         ball_result = ball_pipeline.update(yolo_ball_det, panorama)
@@ -1263,6 +1157,25 @@ class TeamClassifier:
         d = abs(h1 - h2) % 180.0
         return min(d, 180.0 - d)
 
+    # Tracks whose torso colour matches neither kit within this distance stay
+    # unassigned (team=None): referees, goalkeepers in a third colour, ball
+    # boys and spectators must not be forced onto a team.
+    KIT_DISTANCE_MAX = 1.2
+
+    @staticmethod
+    def _kit_distance(sample_hsv: tuple, kit_hsv: tuple) -> float:
+        """Perceptual-ish distance between a torso sample and a kit colour.
+        Hue is meaningless for achromatic kits (white/grey/black shirts have
+        near-zero saturation), so weight shifts to saturation+value there —
+        this was the main cause of team flips on white-vs-dark fixtures."""
+        h, s, v = sample_hsv
+        kh, ks, kv = kit_hsv
+        sv_d = abs(s - ks) / 255.0 + abs(v - kv) / 255.0
+        if ks < 50 or s < 50:  # achromatic kit or sample → hue unreliable
+            return sv_d * 1.5
+        hue_d = TeamClassifier._hue_distance(h, kh) / 90.0  # 0..2
+        return hue_d + 0.5 * sv_d
+
     @staticmethod
     def assign_teams_by_color(
         hsv_samples: dict[int, list[tuple[float, float, float]]],
@@ -1296,8 +1209,10 @@ class TeamClassifier:
 
         assignment: dict[int, str] = {}
         for tid, (h, s, v) in per_track.items():
-            d_home = TeamClassifier._hue_distance(h, home_hsv[0])
-            d_away = TeamClassifier._hue_distance(h, away_hsv[0])
+            d_home = TeamClassifier._kit_distance((h, s, v), home_hsv)
+            d_away = TeamClassifier._kit_distance((h, s, v), away_hsv)
+            if min(d_home, d_away) > TeamClassifier.KIT_DISTANCE_MAX:
+                continue  # neither kit — leave unassigned (referee/GK/bystander)
             assignment[tid] = "A" if d_home <= d_away else "B"
 
         # Sanity check: if all tracks land on one team, the colour signal is
@@ -1521,6 +1436,17 @@ class EventDetector:
             prev_in_zone = in_zone
 
         events.sort(key=lambda e: e["time"])
+
+        # Tag provenance + confidence. analysis-callback only persists events
+        # carrying source == "cv" and confidence >= 0.7 — these fields were
+        # never emitted before, so no CV event ever reached match_event_tags.
+        # Heuristic events sit below the tag threshold by design; confirmed
+        # goals from GoalDetector (appended by run_analysis) sit above it.
+        default_conf = {"possession_change": 0.45, "pass": 0.55,
+                        "tackle": 0.5, "shot": 0.6}
+        for ev in events:
+            ev.setdefault("source", "cv")
+            ev.setdefault("confidence", default_conf.get(ev["type"], 0.5))
         return events
 
 
@@ -1736,6 +1662,115 @@ def _download_video(url: str, dest: str, job_input: dict):
     download_from_wasabi(s3, bucket, key, dest)
 
 
+# ─── Multi-camera fusion helpers ───────────────────────────────────────────────
+
+def _analyse_secondary_camera(video_path: str, model, pitch_length_m: float,
+                              pitch_width_m: float, target_fps: float = 2.0) -> dict:
+    """Lightweight pass over a secondary iPhone view: player tracks, pitch
+    calibration, jersey OCR votes and goal candidates — enough for identity
+    reconciliation and corroboration, at a fraction of the primary pass cost."""
+    from jersey_ocr import JerseyNumberTracker
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"cannot open secondary camera video: {video_path}")
+    native_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_step = max(1, round(native_fps / target_fps))
+    analysed_fps = native_fps / frame_step
+
+    calibrator = PitchCalibrator(pitch_length_m=pitch_length_m, pitch_width_m=pitch_width_m)
+    tracker = PlayerTracker(analysed_fps=analysed_fps)
+    jersey = JerseyNumberTracker()
+    gd = GoalDetector(frame_w=frame_w, frame_h=frame_h, fps=analysed_fps,
+                      calibrator=calibrator, pitch_length_m=pitch_length_m,
+                      pitch_width_m=pitch_width_m, camera_view="secondary")
+    ball_pipeline = BallTrackingPipeline(fps=analysed_fps)
+
+    calibrated = False
+    frame_idx = 0
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        if frame_idx % frame_step != 0:
+            frame_idx += 1
+            continue
+        if not calibrated and frame_idx >= frame_step * int(max(1, analysed_fps)):
+            calibrator.calibrate_from_frame(frame)
+            calibrated = True
+
+        results = model(frame, verbose=False)
+        ball_dets = parse_detections(results, BALL_CLASSES)
+        yolo_ball = ((ball_dets[0][0], ball_dets[0][1], ball_dets[0][6])
+                     if ball_dets else None)
+        ball = ball_pipeline.update(yolo_ball, frame)
+        gd.update(frame_idx, frame_idx / native_fps, ball)
+
+        person_dets = parse_detections(results, PERSON_CLASSES)
+        tracked_now = tracker.update_from_detections(person_dets, frame_idx, frame=frame)
+        for tid, _cx, _cy, x1, y1, x2, y2 in tracked_now:
+            jersey.update(frame, tid, (x1, y1, x2, y2), team=None)
+        frame_idx += 1
+    cap.release()
+
+    _, goal_candidates = gd.finalize(None)
+    return {
+        "tracks": tracker.tracks,
+        "calibrator": calibrator,
+        "jersey": jersey,
+        "goal_candidates": goal_candidates,
+        "native_fps": native_fps,
+    }
+
+
+def _run_multicam_fusion(job_input: dict, primary_video: str, tmpdir: str, model,
+                         player_tracker, calibrator, jersey_tracker,
+                         native_fps: float, pitch_length_m: float,
+                         pitch_width_m: float) -> tuple[dict, list, float | None]:
+    """Cross-camera identity reconciliation + OCR pooling + goal corroboration.
+    Returns (multicam_info, secondary_goal_candidates, sync_offset_seconds)."""
+    from multicam import (estimate_sync_offset, project_tracks_to_pitch,
+                          reconcile_identities)
+
+    secondary_url = job_input.get("right_video_url") or job_input.get("left_video_url")
+    primary_url = job_input.get("video_url")
+    if not secondary_url or secondary_url == primary_url:
+        return {"enabled": True, "skipped": "no distinct secondary camera"}, [], None
+
+    sec_path = os.path.join(tmpdir, "secondary.mp4")
+    _download_video(secondary_url, sec_path, job_input)
+
+    # iPhones start recording at slightly different times — sync via audio
+    offset_s = estimate_sync_offset(primary_video, sec_path, tmpdir)
+    if offset_s is None:
+        print("  ⚠ multicam: audio sync failed, assuming aligned starts")
+        offset_s = 0.0
+    print(f"  🎥 multicam: sync offset {offset_s:+.2f}s")
+
+    sec = _analyse_secondary_camera(sec_path, model, pitch_length_m, pitch_width_m)
+
+    info: dict = {"enabled": True, "sync_offset_s": round(offset_s, 3),
+                  "secondary_tracks": len(sec["tracks"])}
+
+    # Identity reconciliation requires both homographies
+    primary_pitch = project_tracks_to_pitch(player_tracker.tracks, calibrator, native_fps)
+    secondary_pitch = project_tracks_to_pitch(sec["tracks"], sec["calibrator"], sec["native_fps"])
+    if primary_pitch and secondary_pitch:
+        mapping = reconcile_identities(primary_pitch, secondary_pitch, offset_s)
+        merged = jersey_tracker.merge_scores_from(sec["jersey"], mapping)
+        info.update({"reconciled_tracks": len(mapping), "ocr_pooled_tracks": merged})
+        print(f"  🎥 multicam: reconciled {len(mapping)} identities, "
+              f"pooled OCR for {merged} tracks")
+    else:
+        info["skipped_reconciliation"] = "missing pitch homography on one view"
+        print("  ⚠ multicam: pitch homography missing on one view — "
+              "identity reconciliation skipped (goal corroboration still active)")
+
+    return info, sec["goal_candidates"], offset_s
+
+
 # ─── Analysis-only pipeline ────────────────────────────────────────────────────
 
 def run_analysis(job_input: dict) -> dict:
@@ -1807,6 +1842,15 @@ def run_analysis(job_input: dict) -> dict:
         calibration_attempted = False
         # Initial pixels_per_metre fallback until calibration runs
         pixels_per_metre = frame_w * 0.85 / pitch_length_m
+
+        # Goal detection state machine — projects the ball through the pitch
+        # homography (reads calibrator state lazily, so calibration landing
+        # mid-video is picked up automatically)
+        goal_detector = GoalDetector(
+            frame_w=frame_w, frame_h=frame_h, fps=analysed_fps,
+            calibrator=calibrator, pitch_length_m=pitch_length_m,
+            pitch_width_m=pitch_width_m, camera_view="primary",
+        )
 
         from touch_tracker import TouchTracker
         touch_tracker    = TouchTracker(pixels_per_metre=pixels_per_metre, fps=analysed_fps)
@@ -1904,27 +1948,26 @@ def run_analysis(job_input: dict) -> dict:
             else:
                 stage_counts["none"] = stage_counts.get("none", 0) + 1
 
+            # ── Goal detection (state machine over fused ball estimate) ──
+            goal_detector.update(frame_idx, frame_idx / native_fps, ball)
+
             # ── Players ──
             person_dets = parse_detections(results, PERSON_CLASSES)
-            player_tracker.update_from_detections(person_dets, frame_idx)
+            tracked_now = player_tracker.update_from_detections(
+                person_dets, frame_idx, frame=frame
+            )
 
-            # ── Jersey OCR — run on confirmed tracked players every N frames ──
-            for tid, positions in player_tracker.tracks.items():
-                if positions and positions[-1][0] == frame_idx:
-                    # Find matching detection for this track's centroid
-                    tx, ty = positions[-1][1], positions[-1][2]
-                    for det in person_dets:
-                        cx, cy, x1, y1, x2, y2 = det[0], det[1], det[2], det[3], det[4], det[5]
-                        if abs(cx - tx) < 20 and abs(cy - ty) < 20:
-                            jersey_tracker.update(frame, tid, (x1, y1, x2, y2), team=None)
-                            # Sample torso HSV every Nth frame this track is seen
-                            c = hsv_sample_counts.get(tid, 0)
-                            if c % HSV_SAMPLE_EVERY_N == 0:
-                                hsv = _sample_torso_hsv(frame, (x1, y1, x2, y2))
-                                if hsv is not None:
-                                    track_hsv_samples.setdefault(tid, []).append(hsv)
-                            hsv_sample_counts[tid] = c + 1
-                            break
+            # ── Jersey OCR + torso HSV — fed directly from the tracker's
+            # output boxes (the old centroid re-matching against raw
+            # detections silently dropped players when boxes shifted) ──
+            for tid, _cx, _cy, x1, y1, x2, y2 in tracked_now:
+                jersey_tracker.update(frame, tid, (x1, y1, x2, y2), team=None)
+                c = hsv_sample_counts.get(tid, 0)
+                if c % HSV_SAMPLE_EVERY_N == 0:
+                    hsv = _sample_torso_hsv(frame, (x1, y1, x2, y2))
+                    if hsv is not None:
+                        track_hsv_samples.setdefault(tid, []).append(hsv)
+                hsv_sample_counts[tid] = c + 1
 
             # ── Touch detection ──
             # Build current frame's player positions from latest tracker state
@@ -1975,6 +2018,30 @@ def run_analysis(job_input: dict) -> dict:
             if len(positions) >= MIN_TRACK_FRAMES
         }
         print(f"  Ghost track filter: {len(player_tracker.tracks)} raw → {len(valid_tracks)} valid tracks")
+
+        # ── Multi-camera fusion (optional, enable_multicam_fusion flag) ──
+        # Reconciles player identities across iPhone views via pitch-space
+        # proximity, pools jersey OCR votes, and corroborates goal events.
+        multicam_info: dict = {"enabled": False}
+        secondary_goal_candidates: list = []
+        sec_offset_s: float | None = None
+        if job_input.get("enable_multicam_fusion"):
+            try:
+                multicam_info, secondary_goal_candidates, sec_offset_s = _run_multicam_fusion(
+                    job_input=job_input,
+                    primary_video=local_video,
+                    tmpdir=tmpdir,
+                    model=model,
+                    player_tracker=player_tracker,
+                    calibrator=calibrator,
+                    jersey_tracker=jersey_tracker,
+                    native_fps=native_fps,
+                    pitch_length_m=pitch_length_m,
+                    pitch_width_m=pitch_width_m,
+                )
+            except Exception as exc:
+                print(f"⚠ multicam fusion failed (continuing single-view): {exc}")
+                multicam_info = {"enabled": True, "error": str(exc)}
 
         # ── Event detection, team assignment, metrics ──
         team_assignment = TeamClassifier.assign_teams_by_color(
@@ -2041,6 +2108,45 @@ def run_analysis(job_input: dict) -> dict:
             pano_h=frame_h,
             fps=native_fps,
         )
+
+        # ── Goal detection finalisation ──
+        # Audio reaction corroboration (cheap: one ffmpeg pass + RMS envelope)
+        audio_env = None
+        try:
+            audio_env = compute_audio_envelope(local_video, tmpdir)
+        except Exception as exc:
+            print(f"  ⚠ audio envelope unavailable: {exc}")
+        confirmed_goals, goal_candidates = goal_detector.finalize(audio_env)
+        if secondary_goal_candidates and sec_offset_s is not None:
+            GoalDetector.corroborate(goal_candidates, secondary_goal_candidates, sec_offset_s)
+            confirmed_goals = [c for c in goal_candidates if c["status"] == "confirmed"]
+        print(f"  🥅 Goal detection: {len(confirmed_goals)} confirmed / "
+              f"{len(goal_candidates)} candidates")
+        for g in goal_candidates:
+            print(f"    [goal] t={g['time']}s side={g['side']} via={g['via']} "
+                  f"status={g['status']} conf={g['confidence']} "
+                  f"audio={g.get('audio_spike')} view={g['camera_view']}")
+
+        # Scorer attribution: last touch within 5s before the ball crossed
+        for g in confirmed_goals:
+            scorer, best_t = None, -1.0
+            for tch in touch_tracker.touches:
+                t_s = tch.timestamp_ms / 1000.0
+                if g["time"] - 5.0 <= t_s <= g["time"] and t_s > best_t:
+                    scorer, best_t = tch.track_id, t_s
+            g["player_track_id"] = scorer
+            events.append({
+                "time": g["time"],
+                "frame": g["frame"],
+                "type": "goal",
+                "player_track_id": scorer,
+                "team": team_assignment_filtered.get(scorer) if scorer is not None else None,
+                "side": g["side"],
+                "confidence": g["confidence"],
+                "source": "cv",
+            })
+        events.sort(key=lambda e: e["time"])
+
         team_metrics, player_metrics = MetricsAggregator.compute(
             events=events,
             player_tracks=player_tracks_filtered,
@@ -2164,6 +2270,14 @@ def run_analysis(job_input: dict) -> dict:
             elif tid not in surviving_tids:
                 ev["player_track_id"] = None
 
+        # Credit confirmed goals to the (post-dedupe) scorer's metrics
+        for ev in events:
+            if ev.get("type") == "goal":
+                tid = ev.get("player_track_id")
+                if tid is not None and str(tid) in player_metrics:
+                    pm = player_metrics[str(tid)]
+                    pm["goals"] = (pm.get("goals") or 0) + 1
+
         print(f"  ✓ Players: {len(player_metrics)} real (from {raw_track_count} raw tracks, "
               f"{fragments_merged} fragments merged)")
 
@@ -2214,6 +2328,12 @@ def run_analysis(job_input: dict) -> dict:
             pm["distance_m"] = min(pm.get("distance_m", 0), 12000)
             pm["sprints"] = min(pm.get("sprints", 0), 30)
 
+        # ── Structured quality metrics (production monitoring) ──
+        tracking_metrics = player_tracker.get_metrics()
+        ocr_metrics = jersey_tracker.get_metrics()
+        print(f"  📈 Tracking: {json.dumps(tracking_metrics)}")
+        print(f"  📈 OCR: {json.dumps(ocr_metrics)}")
+
         wall_time = round(time.time() - start_wall, 1)
         print(f"🏁 Analysis done in {wall_time}s  confidence={confidence_score}")
 
@@ -2221,6 +2341,13 @@ def run_analysis(job_input: dict) -> dict:
             "success": True,
             "job_id": job_id,
             "session_id": session_id,
+            # Goal detection (Pain point 3): every candidate, confirmed + rejected
+            "goal_events": goal_candidates,
+            "goals_confirmed": len(confirmed_goals),
+            # Quality metrics (Pain points 1 + 2)
+            "tracking_metrics": tracking_metrics,
+            "ocr_metrics": ocr_metrics,
+            "multicam": multicam_info,
             # ProcessingJobResult fields consumed by Cinema panels
             "events": events,           # maps to processing_jobs.event_data.events
             "player_metrics": player_metrics,
@@ -2341,5 +2468,19 @@ def handler(job):
         "metadata_path": metadata_key,
     }
 
+
+# Fetch + cache model weights at container startup (not bundled in the image):
+# OSNet re-ID for BoT-SORT, and the fine-tuned jersey digit classifier when
+# JERSEY_DIGIT_MODEL_URL is configured. Failures are non-fatal — the worker
+# falls back to ByteTrack / EasyOCR respectively.
+try:
+    prefetch_reid_weights()
+except Exception as _exc:
+    print(f"⚠ re-ID weight prefetch skipped: {_exc}")
+try:
+    from digit_classifier import fetch_weights as _fetch_digit_weights
+    _fetch_digit_weights()
+except Exception as _exc:
+    print(f"⚠ digit model prefetch skipped: {_exc}")
 
 runpod.serverless.start({"handler": handler})
