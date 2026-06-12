@@ -115,6 +115,10 @@ Deno.serve(async (req) => {
         team_metrics: output.team_stats ?? output.team_metrics ?? null,
         heatmaps: output.heatmaps ?? null,
         ball_tracking_data: output.ball_tracking ?? null,
+        // Structured pipeline-quality metrics (backward compatible: older
+        // workers simply don't send these)
+        tracking_metrics: output.tracking_metrics ?? null,
+        ocr_metrics: output.ocr_metrics ?? null,
         divergence_metrics: {
           confidence_score: output.confidence_score ?? null,
           duration_seconds: output.duration_seconds ?? null,
@@ -162,6 +166,42 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Persist goal-event candidates (confirmed, sub-threshold and rejected)
+      // for production precision/recall measurement
+      const goalEvents: any[] = Array.isArray(output.goal_events) ? output.goal_events : [];
+      if (goalEvents.length > 0) {
+        try {
+          const goalRows = goalEvents.map((g: any) => ({
+            match_id: job!.match_id,
+            processing_job_id: job!.id,
+            timestamp_ms: Math.round((g.time ?? 0) * 1000),
+            frame: g.frame ?? null,
+            side: g.side ?? null,
+            status: g.status ?? "candidate",
+            confidence: g.confidence ?? null,
+            camera_view: g.camera_view ?? null,
+            player_track_id: g.player_track_id ?? null,
+            detection_via: g.via ?? null,
+            corroboration: {
+              audio_spike: g.audio_spike ?? null,
+              frames_in_zone: g.frames_in_zone ?? null,
+              trajectory_aligned: g.trajectory_aligned ?? null,
+              yolo_frames_in_zone: g.yolo_frames_in_zone ?? null,
+              corroborated_by: g.corroborated_by ?? null,
+            },
+          }));
+          await adminClient
+            .from("goal_events")
+            .upsert(goalRows, {
+              onConflict: "processing_job_id,frame,side,camera_view",
+              ignoreDuplicates: false,
+            });
+          console.log(`analysis-callback: wrote ${goalRows.length} goal event rows`);
+        } catch (e) {
+          console.error("analysis-callback: goal_events upsert failed", e);
+        }
+      }
+
       // Upsert player_match_stats
       const playerMetrics: Record<string, any> = output.player_metrics ?? {};
       if (Object.keys(playerMetrics).length > 0) {
@@ -180,7 +220,7 @@ Deno.serve(async (req) => {
             pass_success_pct:       pm.pass_success_pct ?? null,
             shots:                  pm.shots ?? null,
             tackles:                pm.tackles ?? null,
-            goals:                  0,
+            goals:                  pm.goals ?? 0,
             xg:                     pm.xg ?? null,
             contribution_score:     pm.contribution_score ?? null,
             touches_total:          pm.touches_total ?? pm.touches ?? null,
