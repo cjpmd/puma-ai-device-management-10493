@@ -9,6 +9,9 @@ import { useMemo, useState } from 'react';
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip as RTooltip, Cell } from 'recharts';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+const isRecord = (value: unknown): value is Record<string, any> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
 interface MatchAnalyticsDashboardProps {
   matchId: string;
   job: {
@@ -25,20 +28,22 @@ interface MatchAnalyticsDashboardProps {
 }
 
 export function MatchAnalyticsDashboard({ matchId, job, demoInsights }: MatchAnalyticsDashboardProps) {
-  const ballTracking = job.ball_tracking_data || null;
-  const playerTracks = job.player_tracking_data || null;
-  const events = job.event_data || null;
-  const teamMetrics = job.team_metrics || null;
-  const playerMetrics = job.player_metrics || null;
-  const heatmaps = job.heatmaps || null;
-  const divergence = job.divergence_metrics || null;
+  const ballTracking = isRecord(job.ball_tracking_data) ? job.ball_tracking_data : null;
+  const playerTracks = Array.isArray(job.player_tracking_data) || isRecord(job.player_tracking_data)
+    ? job.player_tracking_data
+    : null;
+  const events = isRecord(job.event_data) ? job.event_data : null;
+  const teamMetrics = isRecord(job.team_metrics) ? job.team_metrics : null;
+  const playerMetrics = isRecord(job.player_metrics) ? job.player_metrics : null;
+  const heatmaps = isRecord(job.heatmaps) ? job.heatmaps : null;
+  const divergence = isRecord(job.divergence_metrics) ? job.divergence_metrics : null;
 
   const hasData = ballTracking || playerTracks || events || teamMetrics;
   if (!hasData) return null;
 
   const tracksArray = Array.isArray(playerTracks)
     ? playerTracks
-    : playerTracks
+    : isRecord(playerTracks)
       ? Object.entries(playerTracks).map(([key, val]: [string, any]) => ({
           track_id: Number(key),
           ...val,
