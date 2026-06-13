@@ -16,6 +16,12 @@ import { supabase } from '@/integrations/supabase/client';
 import type { TimelineEvent } from '@/types/video-analysis';
 import { useCoachTagStats } from './useCoachTagStats';
 
+const isRecord = (value: unknown): value is Record<string, any> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+const isPassNetwork = (value: unknown) =>
+  isRecord(value) && Array.isArray(value.nodes) && Array.isArray(value.edges);
+
 interface MatchCinemaLayoutProps {
   matchId: string;
   match: any;
@@ -42,21 +48,25 @@ export function MatchCinemaLayout({
   const [tagsVersion, setTagsVersion] = useState(0);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const cvEvents: TimelineEvent[] = (job?.event_data?.events || []).map((e: any) => ({
-    ...e,
-    source: 'cv' as const,
-  }));
+  const eventData = isRecord(job?.event_data) ? job.event_data : null;
+  const rawCvEvents = Array.isArray(eventData?.events) ? eventData.events : [];
+  const cvEvents: TimelineEvent[] = rawCvEvents
+    .filter((event: any) => Number.isFinite(event?.time))
+    .map((event: any) => ({
+      ...event,
+      source: 'cv' as const,
+    }));
 
-  const mergedEvents: TimelineEvent[] = [...cvEvents, ...coachTags].sort(
-    (a, b) => a.time - b.time,
-  );
+  const mergedEvents: TimelineEvent[] = [...cvEvents, ...coachTags]
+    .filter((event) => Number.isFinite(event?.time))
+    .sort((a, b) => a.time - b.time);
 
   const coachStats = useCoachTagStats(coachTags, match?.is_home);
 
-  const playerMetrics = job?.player_metrics || null;
-  const heatmaps = job?.heatmaps || null;
-  const homePassNetwork = job?.event_data?.home_pass_network ?? null;
-  const awayPassNetwork = job?.event_data?.away_pass_network ?? null;
+  const playerMetrics = isRecord(job?.player_metrics) ? job.player_metrics : null;
+  const heatmaps = isRecord(job?.heatmaps) ? job.heatmaps : null;
+  const homePassNetwork = isPassNetwork(eventData?.home_pass_network) ? eventData.home_pass_network : null;
+  const awayPassNetwork = isPassNetwork(eventData?.away_pass_network) ? eventData.away_pass_network : null;
   const handleSeek = (t: number) => videoRef.current?.seekTo(t);
 
   // Fetch coach tags once on mount

@@ -92,14 +92,19 @@ interface TeamNetworkProps {
   onNodeClick: (trackId: number) => void;
 }
 
+const hasRenderableNetwork = (network?: PassNetwork | null) =>
+  !!network && Array.isArray(network.nodes) && Array.isArray(network.edges);
+
 function TeamNetwork({ network, highlighted, onNodeClick }: TeamNetworkProps) {
+  const rawNodes = Array.isArray(network.nodes) ? network.nodes : [];
+  const rawEdges = Array.isArray(network.edges) ? network.edges : [];
   // Hide phantom nodes from fragmented tracks: keep nodes that are either
   // identified by jersey number OR have meaningful pass involvement.
-  const nodes = network.nodes.filter(
+  const nodes = rawNodes.filter(
     (n) => n.jersey_number != null || n.pass_count >= 3,
   );
   const visibleIds = new Set(nodes.map((n) => n.track_id));
-  const edges = network.edges.filter(
+  const edges = rawEdges.filter(
     (e) => visibleIds.has(e.from) && visibleIds.has(e.to),
   );
 
@@ -214,27 +219,29 @@ export function PassNetworkPanel({ homePassNetwork, awayPassNetwork }: PassNetwo
   const [highlighted, setHighlighted] = useState<number | null>(null);
 
   const network = team === 'home' ? homePassNetwork : awayPassNetwork;
+  const hasHomeNetwork = hasRenderableNetwork(homePassNetwork);
+  const hasAwayNetwork = hasRenderableNetwork(awayPassNetwork);
 
   const handleNodeClick = (trackId: number) => {
     setHighlighted(prev => (prev === trackId ? null : trackId));
   };
 
-  const highlightedNode = useMemo(
-    () => network?.nodes.find(n => n.track_id === highlighted) ?? null,
-    [network, highlighted],
-  );
+  const highlightedNode = useMemo(() => {
+    if (!hasRenderableNetwork(network)) return null;
+    return network.nodes.find(n => n.track_id === highlighted) ?? null;
+  }, [network, highlighted]);
 
   const highlightedEdges = useMemo(
     () =>
       highlighted == null
         ? []
-        : (network?.edges ?? []).filter(
+        : (!hasRenderableNetwork(network) ? [] : network.edges).filter(
             e => e.from === highlighted || e.to === highlighted,
           ),
     [network, highlighted],
   );
 
-  if (!homePassNetwork && !awayPassNetwork) {
+  if (!hasHomeNetwork && !hasAwayNetwork) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-sm gap-2">
         <span className="text-2xl">🕸</span>
@@ -268,7 +275,7 @@ export function PassNetworkPanel({ homePassNetwork, awayPassNetwork }: PassNetwo
       <div className="flex gap-4 flex-1 min-h-0">
         {/* Pitch SVG */}
         <div className="flex-1 min-h-0 aspect-[1.4] max-h-72">
-          {network ? (
+          {hasRenderableNetwork(network) ? (
             <TeamNetwork
               network={network}
               highlighted={highlighted}
